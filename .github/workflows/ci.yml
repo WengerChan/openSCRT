@@ -47,6 +47,9 @@ jobs:
       - name: Configure vcpkg environment
         shell: bash
         run: |
+          # vcpkg refuses to start when VCPKG_DEFAULT_BINARY_CACHE names a directory that does
+          # not exist, and a cold runner has none of these.
+          mkdir -p "$VCPKG_BINARY_CACHE" "$VCPKG_INSTALLED_DIR" "$VCPKG_ROOT_DIR"
           echo "VCPKG_ROOT=$VCPKG_ROOT_DIR" >> "$GITHUB_ENV"
           echo "VCPKG_DEFAULT_BINARY_CACHE=$VCPKG_BINARY_CACHE" >> "$GITHUB_ENV"
           echo "VCPKG_TARGET_TRIPLET=${{ matrix.triplet }}" >> "$GITHUB_ENV"
@@ -156,6 +159,8 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT_DIR/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET="$VCPKG_TARGET_TRIPLET" \
             -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" \
+            -DVCPKG_MANIFEST_MODE=OFF \
+            -DVCPKG_MANIFEST_INSTALL=OFF \
             -DVCPKG_MANIFEST_DIR="$VCPKG_MANIFEST_DIR" \
             -DCMAKE_PREFIX_PATH="$Qt6_DIR/..;$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET"
 
