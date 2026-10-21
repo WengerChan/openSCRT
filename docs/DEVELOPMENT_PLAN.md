@@ -1,0 +1,330 @@
+# openSCRT 分阶段研发计划（目标 / 任务 / 验收标准）
+
+> **上游文档**：[`securecrt_native_architecture_and_roadmap.md`](../securecrt_native_architecture_and_roadmap.md) 定义了技术选型、六层架构、模块拆解与五阶段里程碑。
+> **本文档**把该路线图翻译为可执行的软件工程计划：为每个阶段补齐**任务分解（带任务号）**、**可自动化的验收标准**、**CI 门禁**与**风险登记**。
+> 两者冲突时，以上游文档的技术选型为准；本文档只在"如何验证"与"如何拆任务"上做增量。
+
+---
+
+## 0. 使用方法
+
+- 每个任务有唯一编号（`P<阶段>-T<序号>`），编号一经分配不再复用。
+- 每个验收标准带 **证据等级**：
+  - **【CI】** — 由 GitHub Actions 自动判定，PR 合并前必须通过。
+  - **【CI-Perf】** — 由 CI 性能基准判定，仅在专用 runner 上有约束力。
+  - **【人工】** — 需人工评审 / 真实环境验证，必须在阶段验收记录中附截图或日志链接。
+- **阶段门禁（Gate）**：上一阶段所有 **【CI】** 条目为绿 + 验收记录已归档，才能开启下一阶段任务。
+- 本地环境**不作为验证路径**：编译、测试、覆盖率、性能基准一律以 GitHub Actions 结果为准；本地仅做代码编写与提交。
+
+---
+
+## 1. 阶段总览
+
+| 阶段 | 定位 | 上游文档任务数 | 本文新增任务 | 出口门禁 | 关键可交付物 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Phase 0** | 工程基线与自动化门禁（本文档新增） | — | 6 | 三平台 CI 全绿 + 覆盖率可查 | 可编译的模块化骨架、CI 流水线 |
+| **Phase 1** | 核心底座与 MVP 可用版 | 4 | 12 | 连接真实 Linux 服务器；刷屏 ≥60 FPS | 可用的 SSH 终端 MVP |
+| **Phase 2** | KeePass 双模凭据 + 全界面布局还原 | 4 | 11 | 20 并发会话广播；内存无明文密码 | 凭据中心 + 完整 UI 骨架 |
+| **Phase 3** | 多协议栈 + SFTP / Zmodem | 4 | 11 | Zmodem 百兆文件 MD5 一致 | 串口 / SFTP / Zmodem |
+| **Phase 4** | 高阶终端特性与运维效率套件 | 4 | 9 | 50 条正则下帧率衰减 ≤5% | 高亮 / Expect-Send / 日志 |
+| **Phase 5** | Python 脚本引擎与企业级打磨 | 3 | 10 | 10 个官方脚本零修改运行；50 会话 72h | 可发布版本 |
+
+**依赖关系**：`Phase 0 → Phase 1 → Phase 2`；`Phase 3` 与 `Phase 2` 可部分并行（依赖 Phase 1 的 `ITransportChannel` 冻结）；`Phase 4` 依赖 Phase 1 渲染管线；`Phase 5` 依赖 Phase 1 `crt.Screen` 游标语义 + Phase 2 Dialog 桥接。
+
+**为什么插入 Phase 0**：上游文档 Phase 1 第 1 项只要求"搭建 CMake + Qt6 工程骨架"，但把跨平台编译验证与测试门禁留在了里程碑验收里。工程上必须先有自动化门禁，否则后续 5 个阶段的验收全部依赖人工，无法规模化。因此新增 Phase 0（3–5 天）固化 CI，把"三端编译通过"从人工验收变为 CI 断言。
+
+---
+
+## 2. 通用工程规约
+
+### 2.1 分支与提交
+
+| 规则 | 说明 |
+| :--- | :--- |
+| 主干 | `main`，受保护，必须 CI 全绿才可合并 |
+| 特性分支 | `feat/<phase>-<任务号>-<短描述>`，如 `feat/p1-t04-vterm-statemachine` |
+| 提交粒度 | 一个任务号 = 一个 PR；跨任务改动必须拆 PR |
+| PR 门禁 | 必须关联任务号；【CI】全绿 + 至少 1 人 Review |
+
+### 2.2 编译规约（CI 强制）
+
+- `-Wall -Wextra -Wpedantic -Werror`（`OPENCRT_WARNINGS_AS_ERRORS=ON`），MSVC 用 `/W4 /WX`。
+- C++20 强制，`CMAKE_CXX_STANDARD_REQUIRED=ON`。
+- 禁止在全局命名空间引入符号；一律 `namespace openscrt::{layer}`。
+- `clang-format` 零 diff（CI 检查 `src/` 与 `tests/`）。
+- 依赖只经 `vcpkg.json` 声明，禁止直接引用系统库路径。
+
+### 2.3 测试与覆盖率规约
+
+| 层级 | 内容 | 标签 | 执行位置 |
+| :--- | :--- | :--- | :--- |
+| 单元测试 | 纯逻辑（网格、回滚、队列、状态机、协议编解码） | `unit` | 三平台全矩阵 |
+| 集成测试 | 容器内真实 SSH/串口/SFTP 端到端 | `unit` | Linux 单平台（docker） |
+| 性能基准 | 刷屏吞吐、渲染延迟、Argon2 KDF 耗时 | `perf` | Linux 单平台专用 runner |
+| 验收基准 | 内存增长、句柄泄漏、72h 稳定性 | `perf` | Linux 专用 runner（长时任务） |
+
+- 单元测试覆盖率目标：**Phase 0 ≥40% → Phase 1 ≥65% → Phase 2 起 ≥80%**（核心库 `openscrt_core` / `openscrt_terminal` / `openscrt_credential` 单独统计，要求 ≥90%）。
+- 每个任务**必须**附带至少一个测试；纯 UI 布局任务可豁免，但需在 PR 注明豁免理由。
+
+### 2.4 线程模型规约（源自上游文档 §2）
+
+以下约束是全局红线，任何阶段不得违反：
+
+1. **UI 主线程零阻塞**：网络读、磁盘 I/O、Argon2 派生禁止出现在 UI 线程。
+2. **跨线程数据只走队列**：生产者 → `SpscRingBuffer`（字节流）／合并信号 → UI 线程。
+3. **帧合并**：不得按数据包触发 `update()`；统一走 16ms（60Hz）/ 8ms（120Hz）帧定时器（上游文档 §6.1）。
+4. **内存安全**：凭据明文仅存在于 `SecureByteArray`（`sodium_malloc` + `mlock`），禁止写入会话配置文件与日志。
+
+---
+
+## 3. Phase 0 — 工程基线与自动化门禁（3–5 天）
+
+### 3.1 阶段目标
+让任意一次提交都能在三平台自动编译 + 跑测试 + 出覆盖率报告，且构建可复现（依赖锁定）。**本阶段不产出任何用户可见功能。**
+
+### 3.2 任务清单
+
+| 任务号 | 任务 | 产出物 | 依赖 |
+| :--- | :--- | :--- | :--- |
+| P0-T1 | 仓库骨架与模块化 CMake 骨架 | 顶层 `CMakeLists.txt`，8 个模块静态库目标 + `openscrt` 可执行目标，`CMakePresets.json` 三平台预设 | — |
+| P0-T2 | 依赖清单声明 | `vcpkg.json`（qtbase / qtserialport / libvterm / libssh / openssl / libsodium / pugixml / nlohmann-json / pybind11 / zlib / gtest），锁定 `builtin-baseline` | P0-T1 |
+| P0-T3 | GitHub Actions 流水线 | `.github/workflows/ci.yml`：三平台矩阵 + vcpkg 缓存 + CTest 分层（`unit` / `perf`）+ 覆盖率 artifact + clang-format 检查 | P0-T1 |
+| P0-T4 | 代码规约落地 | `.clang-format`、`.clang-tidy`、告警零容忍配置 | P0-T1 |
+| P0-T5 | 核心数据结构骨架 | `src/core/SpscRingBuffer.h`、`src/core/SecureByteArray.h`、`src/terminal/buffer/Cell.h` | P0-T1 |
+| P0-T6 | 测试基础设施 | GoogleTest 接入、`tests/CMakeLists.txt`、CTest 标签体系、覆盖率采集（lcov/gcov + gcovr） | P0-T1 |
+
+### 3.3 验收标准
+
+| # | 标准 | 证据等级 |
+| :--- | :--- | :--- |
+| P0-A1 | 推送任意 commit，`ubuntu-24.04` / `windows-2022` / `macos-14` 三个 job 均构建成功 | 【CI】 |
+| P0-A2 | `ctest -L unit` 在三平台全部通过，且至少存在 1 个真实测试用例 | 【CI】 |
+| P0-A3 | `ctest -L perf` 标签可被 CI 单独调度（至少 1 个占位基准用例可运行） | 【CI】 |
+| P0-A4 | `-Werror` 下零告警通过；`clang-format --dry-run --Werror` 零 diff | 【CI】 |
+| P0-A5 | 覆盖率报告作为 artifact 上传，且整体行覆盖率 ≥40% | 【CI】 |
+| P0-A6 | 从空 clone 到 CI 绿灯的冷启动（含依赖缓存）≤ 45 分钟 | 【CI】 |
+| P0-A7 | 依赖可复现：删除 vcpkg 缓存后重建，选中依赖版本与 `builtin-baseline` 一致 | 【人工】 |
+
+### 3.4 风险
+- **Qt6 安装耗时**：qtbase 经 vcpkg 编译需数小时。**对策**：CI 中 Qt 走 `jurplel/install-qt-action@v4`（aqtinstall 预编译包），vcpkg 仅负责非 Qt 依赖。此为对上游文档"vcpkg 管理依赖"的技术调整（性能必要），已在 `vcpkg.json` 注释中标注。
+- **macOS runner 架构**：优先固定 `macos-14`（arm64）并单独保留 `macos-13`（x86_64）观察位，避免后期 Universal Binary 打包阶段才暴露架构问题。
+
+---
+
+## 4. Phase 1 — 核心底座与 MVP 可用版（第 1–6 周）
+
+### 4.1 阶段目标
+交付一个可日常使用的 SSH 终端 MVP：高密度界面、多标签、正确渲染主流 TUI 程序、高速输出不卡顿。这是整个产品的性能与正确性地基，后续所有阶段都建立在此网格/队列/渲染契约之上。
+
+### 4.2 任务清单
+
+| 任务号 | 任务 | 产出物 | 依赖 |
+| :--- | :--- | :--- | :--- |
+| P1-T1 | 无锁 SPSC 环形队列 | `src/core/SpscRingBuffer.h`：单生产者单消费者，字节块进出，`tryRead`/`tryWrite`，满/空判定无锁 | P0-T5 |
+| P1-T2 | 终端字符网格 | `src/terminal/buffer/Cell.h`（16 字节对齐，含 codepoint / FG / BG / 属性位 / 双宽位）、`ScreenGrid.h`：光标、擦除、滚动、备用缓冲区切换 | P0-T5 |
+| P1-T3 | 环形回滚缓冲 | `src/terminal/buffer/RingScrollbackBuffer.h`：分页环形存储，可配置最高 128,000 行 | P1-T2 |
+| P1-T4 | VT 状态机 | `src/terminal/emulator/VtermStateMachine.h`（libvterm 定制扩展封装）：VT100 / VT220 / ANSI / Linux Console；备用屏幕；字符集转换（UTF-8 / GB18030） | P1-T2 |
+| P1-T5 | 256 色与 TrueColor | 调色板管理、默认色表、`SGR` 38/48 处理 | P1-T4 |
+| P1-T6 | Glyph Atlas 与脏矩形渲染器 | `src/terminal/renderer/GlyphAtlas.h`（ASCII + CJK 预渲染纹理图集）、`DirtyRectRenderer.h`（仅扫描 `is_dirty` 行） | P1-T2, P1-T5 |
+| P1-T7 | 终端画布控件 | `src/ui/workspace/TerminalCanvasWidget.h`：渲染接入、鼠标块选、Alt+拖拽列选、选区复制 | P1-T6 |
+| P1-T8 | 帧合并调度 | 16ms/8ms 帧定时器 + 脏行合并信号，验证"禁止按包触发 update" | P1-T6 |
+| P1-T9 | 传输通道抽象 | `src/protocols/ITransportChannel.h`：字节流、窗口尺寸变更（NAWS）、生命周期回调；冻结接口，后续阶段不得随意变更 | — |
+| P1-T10 | 本地 Shell 通道 | `src/protocols/local/LocalPtyChannel`：`forkpty`（POSIX）/ ConPTY（Windows） | P1-T9 |
+| P1-T11 | SSH2 通道 | `src/protocols/ssh/Ssh2Channel`：libssh 封装，密码认证 + 公钥认证（RSA / ECDSA / Ed25519），OpenSSH 与 VanDyke 私钥格式解析 | P1-T9 |
+| P1-T12 | 主窗口与工作区 | 菜单栏、`Session Manager` 树、多标签工作区、`Quick Connect` 对话框、会话配置持久化（`src/config/`） | P1-T7, P1-T11 |
+
+### 4.3 验收标准
+
+| # | 标准 | 证据等级 |
+| :--- | :--- | :--- |
+| P1-A1 | 三平台编译通过（由 Phase 0 门禁保证），并能连接 docker 内真实 Linux SSH 服务器 | 【CI】 |
+| P1-A2 | `vim`、`htop`、`tmux`、`less` 排版与色彩正确：对 `vttest` 用例集逐项比对基线截图（哈希比对，差异需人工确认后更新基线） | 【CI】+【人工】 |
+| P1-A3 | 执行 `seq 1 1000000`：UI 线程帧率 ≥60 FPS（采样自渲染线程 frame time p95 ≤16.7ms），内存增长 ≤256MB，UI 无卡顿 | 【CI-Perf】 |
+| P1-A4 | SPSC 队列在 `-fsanitize=thread` 下 1000 万次读写无数据竞争报告 | 【CI】 |
+| P1-A5 | 回滚缓冲写入 128,000 行后内存占用稳定，最旧行正确被覆盖；回滚检索延迟 p99 ≤1ms | 【CI-Perf】 |
+| P1-A6 | 备用屏幕（`vim`）进出不污染主屏；`tput smcup/rmcup` 序列正确处理 | 【CI】 |
+| P1-A7 | 真机验证：Windows/macOS/Linux 三端各连接 1 台真实服务器并完成交互式登录 | 【人工】 |
+| P1-A8 | 核心库 `openscrt_core` / `openscrt_terminal` 行覆盖率 ≥65% | 【CI】 |
+
+### 4.4 风险
+- **libvterm 定制扩展与上游脱节**：把定制点收敛到**唯一适配层** `VtermStateMachine`，禁止在业务代码里直接调 libvterm API，便于后续升级。
+- **CJK 双宽字符与光标对齐错位**：在 P1-T2 就把双宽位写进 `Cell` 位域，不允许后期加字段（会破坏 16 字节布局）。
+
+---
+
+## 5. Phase 2 — KeePass 双模凭据与全界面布局还原（第 7–11 周）
+
+### 5.1 阶段目标
+解决"密码不进配置文件"的硬需求，同时把 SecureCRT 的高密度界面骨架搭完整。本阶段是**安全属性最密集**的阶段，安全验收标准不可妥协。
+
+### 5.2 任务清单
+
+| 任务号 | 任务 | 产出物 | 依赖 |
+| :--- | :--- | :--- | :--- |
+| P2-T1 | 凭据提供者抽象 | `src/credential/ICredentialProvider.h`：统一检索与自动注入接口（`ICredentialProvider.h`） | — |
+| P2-T2 | 安全内存容器 | `src/credential/memory/SecureByteArray`：`sodium_malloc` + `mlock`，析构时 `sodium_memzero` + 解锁 | P2-T1 |
+| P2-T3 | KDBX 文件头解析 | `src/credential/kdbx/KdbxHeaderParser`：魔数校验、TLE / Variant Dictionary、算法 UUID、压缩标志、KDF 参数 | P2-T1 |
+| P2-T4 | KDBX 4 读取 | `Kdbx4Reader`：Argon2d/Argon2id 派生 + HMAC-SHA256 块流 + AES-256-CBC / ChaCha20 + zlib | P2-T3, P2-T2 |
+| P2-T5 | KDBX 3.1 读取 | `Kdbx3Reader`：SHA-256 复合主密钥 + AES-KDF + Twofish 可选 | P2-T3, P2-T2 |
+| P2-T6 | XML 索引与保护流 | `pugixml` 解析 Group/Entry；`ProtectedStream`（ChaCha20 / Salsa20）延迟还原明文 | P2-T4, P2-T5 |
+| P2-T7 | KDBX 热监听与自动锁定 | `QFileSystemWatcher` 增量刷新；闲置 N 分钟 / 最小化到托盘时清空主密钥 | P2-T6 |
+| P2-T8 | KeePassHTTP 客户端 | `src/credential/keepasshttp/KeePassHttpClient`：`associate` 绑定、`test-associate`、`get-logins`，AES-256-CBC JSON 载荷，关联信息存入系统凭据库 | P2-T1 |
+| P2-T9 | 条目选择器与会话绑定 | `KeePassSelectorDialog`；四策略绑定：Session Saved / Prompt Every Time / UUID / Auto-Match by Host | P2-T6, P2-T8 |
+| P2-T10 | 界面布局还原 | 四向分屏 Split/Tile、底部多分组 Button Bar、底部 Command Window（含全局广播模式） | P1-T12 |
+| P2-T11 | 原版配置导入器 | `src/config/importers/SecureCrtConfigImporter`：一键导入 SecureCRT XML/INI 会话树 | P1-T12 |
+
+### 5.3 验收标准
+
+| # | 标准 | 证据等级 |
+| :--- | :--- | :--- |
+| P2-A1 | 加载"主密码 + 密钥文件"的 `.kdbx`（KDBX 3.1 与 4.x 各一份）成功，双击会话自动注入密码完成 SSH 登录 | 【CI】（集成测试用容器内 keepass 生成的测试库） |
+| P2-A2 | 与开启 KeePassHttp 插件的 KeePass 2 完成 `associate` → `get-logins` 全流程（用 mock 服务端 + 真实服务端各验证一次） | 【CI】+【人工】 |
+| P2-A3 | **内存无明文**：进程 core dump / 内存扫描中无常驻明文密码（自动化扫描测试） | 【CI】 |
+| P2-A4 | Argon2 派生在 UI 线程零阻塞：解锁过程主线程事件循环最大卡顿 ≤50ms，有非阻塞进度指示 | 【CI-Perf】 |
+| P2-A5 | 解锁结果缓存：连续新建 10 个标签页只触发 1 次 Argon2 派生 | 【CI】 |
+| P2-A6 | Command Window 开启广播后，向 20 个并发 SSH 会话同步下发命令，全部收到且顺序一致 | 【CI】（集成测试） |
+| P2-A7 | 安全回归：`SecureByteArray` 析构后 mlock 页计数归零；`mlock` 失败时有降级路径而非崩溃 | 【CI】 |
+| P2-A8 | KDBX 文件被外部修改后自动刷新，且修改前后的条目查询结果分别正确 | 【CI】 |
+
+### 5.4 风险
+- **Argon2 在受限容器内超时**：CI 上 Argon2 参数不可用真实 KeePass 默认值（~1s）。**对策**：测试库使用低参数版本，同时单独保留一个"高参数"手工验证用例，明确 CI 测的是正确性不是性能。
+- **`mlock` 在容器中受 `RLIMIT_MEMLOCK` 限制**：必须实现降级路径（关闭 mlock 但仍 `sodium_malloc` + 显式清零），并在日志中明确告知用户降级发生。
+
+---
+
+## 6. Phase 3 — 多协议栈扩展与 SFTP / Zmodem 传输（第 12–16 周）
+
+### 6.1 阶段目标
+补齐工业设备接入与文件传输两条高价值链路，并在真实大文件场景验证吞吐与正确性。
+
+### 6.2 任务清单
+
+| 任务号 | 任务 | 产出物 | 依赖 |
+| :--- | :--- | :--- | :--- |
+| P3-T1 | 串口通道 | `src/protocols/serial/SerialChannel`：QSerialPort，非标波特率、5/6/7/8 数据位、五种校验位、1/1.5/2 停止位、RTS/CTS 与 XON/XOFF | P1-T9 |
+| P3-T2 | 串口热插拔与 Break / HexView | USB 串口热插拔枚举、Break 信号（Alt+B）、十六进制双栏监控视图 | P3-T1 |
+| P3-T3 | Telnet / Rlogin / Raw TCP | `src/protocols/telnet/`：RFC 854 状态机、NAWS 协商、Keep-Alive 空包、Telnet over TLS | P1-T9 |
+| P3-T4 | SFTP 子通道 | `src/transfer/sftp/SftpSubsystem`：复用已有 `ssh_session` 开启 `sftp` 子通道，不重复认证 | P1-T11 |
+| P3-T5 | SFTP 交互命令与双栏面板 | `lpwd`/`lcd`/`ls`/`cd`/`get`/`put`/`mget`/`mput`；`SftpDualPaneWidget` 拖拽传输 | P3-T4 |
+| P3-T6 | Zmodem 嗅探器 | `src/transfer/modem/ZmodemSniffer`：检测 `**\x18B00` / `**\x18B01`，拦截二进制流不污染屏幕 | P1-T4 |
+| P3-T7 | X/Y/Zmodem 状态机 | `XyzModemEngine`：lrzsz 兼容，CRC32 校验、流式收发、`OO` 结束后恢复终端仿真 | P3-T6 |
+| P3-T8 | SSH 端口转发 | Local / Remote / Dynamic（SOCKS4/5）转发器 | P1-T11 |
+| P3-T9 | 多级跳板机 | `SshJumpHostProxy`：级联代理通道 | P1-T11, P3-T8 |
+
+### 6.3 验收标准
+
+| # | 标准 | 证据等级 |
+| :--- | :--- | :--- |
+| P3-A1 | USB 转串口连接交换机 / 开发板：正常收发指令，Break 信号可被对端捕获 | 【人工】（CI 用虚拟串口对 `socat` 验证协议层） |
+| P3-A2 | 串口参数矩阵（波特率 × 数据位 × 校验 × 停止位 × 流控）自动化回归，每组合收发正确 | 【CI】（虚拟串口对，socat） |
+| P3-A3 | 终端内 `rz` / `sz` 自动弹窗选择文件并完成 **100MB** 文件传输，**MD5 100% 一致** | 【CI-Perf】 |
+| P3-A4 | Zmodem 传输期间屏幕无二进制乱码，`OO` 后终端仿真正确恢复 | 【CI】 |
+| P3-A5 | Zmodem 控制字符（`0x11`/`0x13`/`0x18`）正确转义，`can` 取消后通道可用 | 【CI】 |
+| P3-A6 | 右键标签页秒开 SFTP 标签，无需重复认证即可上传下载目录 | 【CI】（集成测试） |
+| P3-A7 | 端口转发：Local / Remote / Dynamic SOCKS5 三种模式各跑通一次真实转发 | 【CI】+【人工】 |
+| P3-A8 | 两级跳板机级联登录成功，端到端延迟增加可测 | 【人工】 |
+
+### 6.4 风险
+- **Zmodem 与终端仿真的状态互斥**：这是最容易出"偶发卡死"的模块。**对策**：把"终端仿真 ↔ Zmodem"的切换收敛为单一状态机（`ModemSessionState`），所有切换必须走它，禁止散落的 `if (zmodem_active)` 判定。
+
+---
+
+## 7. Phase 4 — 高阶终端特性与运维效率套件（第 17–21 周）
+
+### 7.1 阶段目标
+提供运维日常效率能力（关键字高亮、自动登录序列、日志归档、SSH Agent），且**不牺牲 Phase 1 建立的性能基线**。
+
+### 7.2 任务清单
+
+| 任务号 | 任务 | 产出物 | 依赖 |
+| :--- | :--- | :--- | :--- |
+| P4-T1 | 正则高亮引擎 | `src/terminal/renderer/KeywordHighlighter`：预编译 DFA 状态机，仅扫描视口，叠加样式不篡改原始缓冲 | P1-T6 |
+| P4-T2 | 多规则集管理 | Keyword Set 创建/编辑/启用，IP、`ERROR`/`WARN`、`up`/`down` 内置集 | P4-T1 |
+| P4-T3 | Expect / Send 期望序列 | `Logon Actions`：会话级自动登录，支持超时、重试、变量替换 | P1-T12 |
+| P4-T4 | `sudo` 自动响应 | 从凭据层取提权密码并应答，密码不落日志 | P4-T3, P2-T9 |
+| P4-T5 | 会话日志系统 | `src/terminal/logger/SessionLogger`：`%H_%Y%M%D_%h%m%s.log` 宏、连接自动开启、每行毫秒时间戳前缀、自动轮转 | P1-T12 |
+| P4-T6 | 自动重连 | 断线按策略自动重连、退避算法、重连期间会话树状态图标正确 | P1-T12 |
+| P4-T7 | SSH Agent 服务 | 托盘常驻 Agent（对标 Activator）+ Agent Forwarding | P1-T11 |
+| P4-T8 | 主机密钥管理器 | known_hosts 解析、信任策略（自动接受 / 提示 / 拒绝）、指纹校验 | P1-T11 |
+| P4-T9 | 性能回归验证 | 在启用 50 条正则 + 日志开启场景下复测刷屏基线 | P4-T1, P4-T5 |
+
+### 7.3 验收标准
+
+| # | 标准 | 证据等级 |
+| :--- | :--- | :--- |
+| P4-A1 | 开启 50 条正则的高亮集后，刷屏帧率相对 P1-A3 基线**下降不超过 5%** | 【CI-Perf】 |
+| P4-A2 | 日志开启时刷屏帧率下降 ≤3%（相对无日志基线） | 【CI-Perf】 |
+| P4-A3 | 正则高亮不篡改底层字符缓冲：关闭高亮后终端内容逐字节一致 | 【CI】 |
+| P4-A4 | 日志文件名宏 `%H_%Y%M%D_%h%m%s.log` 展开正确，并按日期与主机名分目录归档 | 【CI】 |
+| P4-A5 | 每行日志带毫秒精度时间戳前缀，且可通过选项关闭 | 【CI】 |
+| P4-A6 | 会话断开后按配置自动重连成功；重连期间标签图标为"正在重连" | 【CI】+【人工】 |
+| P4-A7 | 主机密钥变更时拒绝连接并给出指纹对比提示（防中间人回归测试） | 【CI】 |
+| P4-A8 | SSH Agent 转发后在远端 `ssh-add -l` 可见加载的密钥 | 【人工】 |
+
+### 7.4 风险
+- **高亮引擎拖慢渲染**：把正则扫描严格限定在**可见视口**且与渲染解耦（渲染读快照，高亮异步算）。P4-T9 的存在就是为了在 CI 里持续监控这条红线。
+
+---
+
+## 8. Phase 5 — Python 脚本引擎与企业级打磨交付（第 22–26 周）
+
+### 8.1 阶段目标
+让存量 SecureCRT 脚本零修改运行，并完成可发布的三端打包。**这是兼容性验收最硬的一步**：`crt.Screen.Synchronous` 的游标语义若实现错，脚本会随机死锁。
+
+### 8.2 任务清单
+
+| 任务号 | 任务 | 产出物 | 依赖 |
+| :--- | :--- | :--- | :--- |
+| P5-T1 | Python 运行时嵌入 | pybind11 + 内嵌 Python 3 宿主 `EmbeddedPythonHost`，模块名 `crt` | P1-T12 |
+| P5-T2 | `crt` 顶层应用对象 | `GetScriptTab()` / `GetTab(n)` / `GetTabCount()` / `Sleep(ms)` / `Quit()` / `Version` | P5-T1 |
+| P5-T3 | `crt.Screen` 与同步游标 | `Send` / `WaitForString` / `WaitForStrings` / `ReadString` / `Get` / `Clear` / `Synchronous` / `CurrentRow` / `CurrentColumn`；**独立消费游标**，彻底杜绝竞态 | P5-T1, P1-T4 |
+| P5-T4 | `crt.Session` | `Connect` / `ConnectInTab` / `Disconnect` / `Connected` / `Log` / `LogFileName` / `RemoteAddress` / `SetStatusText`，线程安全投递至主线程 | P5-T1, P1-T12 |
+| P5-T5 | `crt.Dialog` | `MessageBox` / `Prompt` / `FileOpenDialog`，`BlockingQueuedConnection` 主线程模态 | P5-T1 |
+| P5-T6 | `crt.Arguments` | `Count` / `GetArg(i)`，接收 `/ARG` 与按钮栏绑定参数 | P5-T1 |
+| P5-T7 | 脚本录制器 | `ScriptRecorder`：录制键盘输入与提示符，停止后导出标准 Python 脚本 | P5-T3 |
+| P5-T8 | 主题与配色库 | 深/浅色引擎、Solarized / Dracula / Monokai 等配色方案 | P1-T6 |
+| P5-T9 | DPI 适配 | 高分屏缩放，字形图集按 DPI 重建 | P5-T8 |
+| P5-T10 | 三端打包与签名 | 安装包（MSI / DMG / deb+rpm）、代码签名、macOS Universal Binary | P5-T9 |
+
+### 8.3 验收标准
+
+| # | 标准 | 证据等级 |
+| :--- | :--- | :--- |
+| P5-A1 | 选取 **10 个原版 SecureCRT 官方 Python 示例脚本**（含 `WaitForStrings`、`ReadString`、`ConnectInTab`），**无需修改代码**直接运行通过 | 【CI】（脚本回归套件，逐个断言退出码与输出） |
+| P5-A2 | `Synchronous = True` 时，`Send("cmd\r")` 后紧接 `WaitForString("$")` 在 10,000 次循环中零死锁 | 【CI-Perf】 |
+| P5-A3 | `Send` 后立即 `WaitForString` 的竞态回归：模拟千兆延迟，零漏检 | 【CI】 |
+| P5-A4 | `crt.Dialog.Prompt` 在脚本线程阻塞但不阻塞 UI 主线程（UI 可交互） | 【CI】+【人工】 |
+| P5-A5 | 录制器导出的脚本可直接回放成功 | 【CI】 |
+| P5-A6 | 高分屏（200% / 300%）下无模糊字形、布局错位 | 【人工】 |
+| P5-A7 | **50 个活跃会话连续运行 72 小时，零崩溃、零句柄泄漏**（内存与句柄曲线平稳） | 【CI-Perf】 |
+| P5-A8 | 三端安装包可安装、可卸载、可升级，签名校验通过 | 【人工】 |
+| P5-A9 | 主题切换后无残留配色（单元测试断言默认色恢复） | 【CI】 |
+
+### 8.4 风险
+- **72 小时稳定性测试跑不满 CI**：拆成"短时高频"（CI 必跑，如 2 小时 × 50 会话）+ "长时低频"（专用 runner 每周一次 72 小时），两档都必须有趋势看板。
+- **Python GIL 与脚本并发**：每个脚本独占工作线程 + 条件变量等待 `WaitForString`，跨线程唤醒必须走 Qt 队列回到主线程，禁止直接触碰 UI 对象。
+
+---
+
+## 9. 跨阶段验收证据留存规范
+
+每阶段验收（Gate）时必须归档以下材料，缺一不可：
+
+1. **CI 运行链接**（三平台 + perf runner 的 run URL）。
+2. **覆盖率报告**（artifact 或 Codecov 链接）。
+3. **性能基线对比表**（本阶段 vs Phase 1 基线，标注回归项与结论）。
+4. **人工验收记录**（截图 / 录屏 / 真实设备日志）。
+5. **遗留问题登记**（含是否阻塞下一阶段）。
+
+---
+
+## 10. 里程碑与门禁总表
+
+| 阶段 | 【CI】条目 | 【CI-Perf】条目 | 【人工】条目 | 出口判定 |
+| :--- | :--- | :--- | :--- | :--- |
+| Phase 0 | 6 | 0 | 1 | 三平台绿 + 覆盖率 ≥40% |
+| Phase 1 | 5 | 2 | 2 | 连接真实服务器 + 刷屏 ≥60 FPS |
+| Phase 2 | 6 | 1 | 1 | 20 会话广播 + 内存无明文 |
+| Phase 3 | 5 | 1 | 3 | Zmodem 100MB MD5 一致 |
+| Phase 4 | 5 | 2 | 1 | 50 正则下帧率衰减 ≤5% |
+| Phase 5 | 5 | 2 | 3 | 10 官方脚本零修改通过 + 72h 稳定 |

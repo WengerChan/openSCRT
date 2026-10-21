@@ -1,0 +1,216 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # vcpkg lives outside the tracked source tree; `.cache/` and `out/` are git-ignored.
+  VCPKG_ROOT_DIR: ${{ github.workspace }}/.cache/vcpkg
+  VCPKG_INSTALLED_DIR: ${{ github.workspace }}/out/vcpkg_installed
+  VCPKG_BINARY_CACHE: ${{ github.workspace }}/.cache/vcpkg/binary
+
+jobs:
+  build-test:
+    name: build-test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            preset: linux-ci
+            triplet: x64-linux
+            timeout: 60
+          - os: windows-2022
+            preset: windows-ci
+            triplet: x64-windows
+            # Cold-cache Windows builds the C/Crypto dependencies from source; give it room.
+            timeout: 90
+          - os: macos-14
+            preset: macos-ci
+            triplet: arm64-osx
+            timeout: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure vcpkg environment
+        shell: bash
+        run: |
+          echo "VCPKG_ROOT=$VCPKG_ROOT_DIR" >> "$GITHUB_ENV"
+          echo "VCPKG_DEFAULT_BINARY_CACHE=$VCPKG_BINARY_CACHE" >> "$GITHUB_ENV"
+          echo "VCPKG_TARGET_TRIPLET=${{ matrix.triplet }}" >> "$GITHUB_ENV"
+
+      - name: Cache vcpkg installed tree and downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.VCPKG_INSTALLED_DIR }}
+            ${{ env.VCPKG_ROOT_DIR }}/downloads
+            ${{ env.VCPKG_ROOT_DIR }}/packages
+            ${{ env.VCPKG_BINARY_CACHE }}
+          key: vcpkg-${{ runner.os }}-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ matrix.triplet }}-
+
+      - name: Acquire vcpkg at the manifest baseline
+        shell: bash
+        run: |
+          # Shallow fetch of exactly the pinned baseline commit: manifest mode needs that
+          # commit object for version resolution, and a full clone would be far slower.
+          BASELINE=$(python -c "import json;print(json.load(open('vcpkg.json'))['builtin-baseline'])")
+          git init -q "$VCPKG_ROOT_DIR"
+          git -C "$VCPKG_ROOT_DIR" remote add origin https://github.com/microsoft/vcpkg.git
+          git -C "$VCPKG_ROOT_DIR" fetch -q --depth 1 origin "$BASELINE"
+          git -C "$VCPKG_ROOT_DIR" checkout -q --force FETCH_HEAD
+          "$VCPKG_ROOT_DIR/vcpkg" version
+
+      - name: Set up MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Restore ccache
+        if: runner.os != 'Windows'
+        uses: seanmiddleditch/gha-setup-ccache-action@v5
+        with:
+          value: true
+
+      - name: Enable ccache as compiler launcher
+        if: runner.os != 'Windows'
+        shell: bash
+        # Windows: no compiler cache (sccache is not preinstalled on windows-2022), MSVC is fast enough.
+        run: echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache" >> "$GITHUB_ENV"
+
+      - uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: '>=3.28.3'
+          ninjaVersion: '1.11.1'
+
+      - name: Install Qt 6.8 + qtserialport (macOS)
+        if: runner.os == 'macOS'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          modules: qtserialport
+          aqtversion: 3.1.0
+          cache: true
+
+      - name: Install Qt 6.8 + qtserialport (Linux/Windows)
+        if: runner.os != 'macOS'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          modules: qtserialport
+          cache: true
+
+      - name: Install dependencies (vcpkg, manifest mode)
+        shell: bash
+        run: |
+          # Qt6 comes from install-qt-action above, NOT from vcpkg: building qtbase/qtserialport
+          # in CI is prohibitively slow. vcpkg.json stays the single source of truth -- this step
+          # derives a CI manifest without the two Qt ports and points VCPKG_MANIFEST_DIR at it,
+          # so `vcpkg install` never tries to build Qt. (VCPKG_MANIFEST_NO_DEFAULT_FEATURES is
+          # not a thing; overriding the manifest directory is the supported lever.)
+          export VCPKG_MANIFEST_DIR="$RUNNER_TEMP/vcpkg-ci-manifest"
+          mkdir -p "$VCPKG_MANIFEST_DIR"
+          python - "$VCPKG_MANIFEST_DIR" <<'PY'
+          import json, os, sys
+          out = sys.argv[1]
+          manifest = json.load(open("vcpkg.json", encoding="utf-8"))
+          manifest["dependencies"] = [d for d in manifest["dependencies"]
+                                       if d not in ("qtbase", "qtserialport")]
+          os.makedirs(out, exist_ok=True)
+          with open(os.path.join(out, "vcpkg.json"), "w", encoding="utf-8") as fh:
+              json.dump(manifest, fh, indent=2)
+          PY
+          echo "VCPKG_MANIFEST_DIR=$VCPKG_MANIFEST_DIR" >> "$GITHUB_ENV"
+          "$VCPKG_ROOT_DIR/vcpkg" install --triplet "$VCPKG_TARGET_TRIPLET"
+
+      - name: Configure (${{ matrix.preset }})
+        shell: bash
+        run: |
+          cmake --preset ${{ matrix.preset }} \
+            -DOPENCRT_ENABLE_COVERAGE=${{ runner.os == 'Linux' && 'ON' || 'OFF' }} \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT_DIR/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET="$VCPKG_TARGET_TRIPLET" \
+            -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" \
+            -DVCPKG_MANIFEST_DIR="$VCPKG_MANIFEST_DIR" \
+            -DCMAKE_PREFIX_PATH="$Qt6_DIR/..;$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET"
+
+      - name: Build (${{ matrix.preset }})
+        shell: bash
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test (unit tier)
+        shell: bash
+        # -L unit is mandatory: the test preset runs *everything*, so without this filter the
+        # perf tier would silently execute on Windows and macOS too.
+        run: ctest --test-dir out/build/${{ matrix.preset }} -C Release -L unit --output-on-failure --timeout 600
+
+      - name: Test (perf tier, Linux only)
+        if: runner.os == 'Linux'
+        continue-on-error: false
+        shell: bash
+        env:
+          # Reduced benchmark budget so CI stays fast; tests must read this to scale iterations.
+          OPENCRT_PERF_ITERS: "2000"
+        run: ctest --test-dir out/build/${{ matrix.preset }} -C Release -L perf --output-on-failure --timeout 600
+
+      # P0-A5: coverage report with an enforced floor. gcovr filters to the libraries that carry
+      # unit tests and drops src/app (a non-test executable that would report a permanent 0%).
+      - name: Coverage
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          pipx install gcovr || pip install --user gcovr
+          GCOVR=$(command -v gcovr || echo "$HOME/.local/bin/gcovr")
+          mkdir -p out/coverage
+          "$GCOVR" --root . --filter 'src/core/' --filter 'src/terminal/' \
+                   --filter 'src/protocols/' --exclude 'src/app/' \
+                   --exclude-unreachable-branches --exclude-throw-branches \
+                   --xml --html-details --print-summary \
+                   --fail-under-line 40 \
+                   -o out/coverage/coverage.xml
+
+      - name: Upload coverage report
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-linux
+          path: out/coverage
+          if-no-files-found: error
+
+  format:
+    name: format (ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: clang-format check
+        run: |
+          # NOTE: .clang-format is owned by the C++ writer and may not exist yet. This step must
+          # not be the reason CI goes red, so it reports a notice and exits 0 when the config is
+          # missing (or when there is nothing to check yet).
+          if [ ! -f .clang-format ]; then
+            echo "::notice::.clang-format not present yet - skipping clang-format check"
+            exit 0
+          fi
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang-format
+          FILES=$(find src tests -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) 2>/dev/null || true)
+          if [ -z "$FILES" ]; then
+            echo "::notice::no C++ sources to check yet - skipping clang-format check"
+            exit 0
+          fi
+          echo "$FILES" | xargs clang-format --dry-run --Werror
