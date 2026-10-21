@@ -63,6 +63,15 @@ jobs:
           restore-keys: |
             vcpkg-${{ runner.os }}-${{ matrix.triplet }}-
 
+      - name: Set up MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: '>=3.28.3'
+          ninjaVersion: '1.11.1'
+
       - name: Acquire vcpkg at the manifest baseline
         shell: bash
         run: |
@@ -73,11 +82,12 @@ jobs:
           git -C "$VCPKG_ROOT_DIR" remote add origin https://github.com/microsoft/vcpkg.git
           git -C "$VCPKG_ROOT_DIR" fetch -q --depth 1 origin "$BASELINE"
           git -C "$VCPKG_ROOT_DIR" checkout -q --force FETCH_HEAD
+          # The `vcpkg` driver is NOT tracked in the microsoft/vcpkg repo -- bootstrap-vcpkg.sh
+          # fetches or builds it into the root. Running it right after get-cmake guarantees a
+          # compiler and cmake are on PATH on every platform, including Windows where the
+          # runner's system cmake cannot be relied on before MSVC is initialised.
+          (cd "$VCPKG_ROOT_DIR" && ./bootstrap-vcpkg.sh -disableMetrics)
           "$VCPKG_ROOT_DIR/vcpkg" version
-
-      - name: Set up MSVC environment (Windows)
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
 
       # Compiler cache. Only matters for the non-Qt vcpkg dependencies, which are rebuilt
       # from source whenever the cache key moves.
@@ -95,11 +105,6 @@ jobs:
         shell: bash
         # Windows: no compiler cache (sccache is not preinstalled on windows-2022), MSVC is fast enough.
         run: echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache" >> "$GITHUB_ENV"
-
-      - uses: lukka/get-cmake@latest
-        with:
-          cmakeVersion: '>=3.28.3'
-          ninjaVersion: '1.11.1'
 
       - name: Install Qt 6.8 + qtserialport (macOS)
         if: runner.os == 'macOS'
