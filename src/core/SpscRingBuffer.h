@@ -30,12 +30,11 @@ class SpscRingBuffer {
                   "SpscRingBuffer stores bytes; element type must be trivially copyable so the "
                   "hot path can use memcpy without constructors");
 
-public:
+ public:
     using value_type = T;
 
     explicit SpscRingBuffer(std::size_t capacity)
-        : capacity_(capacity == 0 ? 1 : capacity),
-          buffer_(new T[capacity_ == 0 ? 1 : capacity_]) {}
+        : capacity_(capacity == 0 ? 1 : capacity), buffer_(new T[capacity_ == 0 ? 1 : capacity_]) {}
 
     SpscRingBuffer(const SpscRingBuffer&) = delete;
     SpscRingBuffer& operator=(const SpscRingBuffer&) = delete;
@@ -59,7 +58,8 @@ public:
     std::size_t write(const T* src, std::size_t count) noexcept {
         const auto tail = tail_.load(std::memory_order_relaxed);
         const auto head = head_.load(std::memory_order_acquire);
-        const std::size_t to_copy = std::min(count, capacity_ - static_cast<std::size_t>(tail - head));
+        const std::size_t to_copy =
+            std::min(count, capacity_ - static_cast<std::size_t>(tail - head));
         if (to_copy == 0) {
             return 0;
         }
@@ -110,7 +110,7 @@ public:
         tail_.store(0, std::memory_order_relaxed);
     }
 
-private:
+ private:
     const std::size_t capacity_;
     std::unique_ptr<T[]> buffer_;
     alignas(64) std::atomic<SequenceCounter> head_{0};  // consumer-owned

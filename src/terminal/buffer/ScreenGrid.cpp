@@ -12,7 +12,9 @@ void fillBlank(Cell* cells, int count) noexcept {
     }
 }
 
-int clampInt(int value, int lo, int hi) noexcept { return std::clamp(value, lo, hi); }
+int clampInt(int value, int lo, int hi) noexcept {
+    return std::clamp(value, lo, hi);
+}
 
 // UTF-8 encoder for the surrogate-free scalar range; invalid scalars become U+FFFD so a
 // corrupt byte stream can never emit an ill-formed sequence into a log file.
@@ -39,7 +41,9 @@ void appendUtf8(std::string& out, std::uint32_t cp) noexcept {
 
 }  // namespace
 
-ScreenGrid::ScreenGrid(int rows, int cols) { resize(rows, cols); }
+ScreenGrid::ScreenGrid(int rows, int cols) {
+    resize(rows, cols);
+}
 
 void ScreenGrid::resize(int rows, int cols) {
     rows = std::max(rows, 1);
@@ -69,7 +73,8 @@ void ScreenGrid::resize(int rows, int cols) {
             for (int row = 0; row < keep_rows; ++row) {
                 Cell* dst_primary = primary_.data() + static_cast<std::size_t>(row) * cols;
                 Cell* dst_alternate = alternate_.data() + static_cast<std::size_t>(row) * cols;
-                const Cell* src_primary = old_primary.data() + static_cast<std::size_t>(row) * old_cols;
+                const Cell* src_primary =
+                    old_primary.data() + static_cast<std::size_t>(row) * old_cols;
                 const Cell* src_alternate =
                     old_alternate.data() + static_cast<std::size_t>(row) * old_cols;
                 std::copy_n(src_primary, keep_cols, dst_primary);
@@ -182,7 +187,8 @@ void ScreenGrid::put(std::uint32_t codepoint, const CellStyle& style) {
         trail.setBlank();
         trail.fg = style.fg;
         trail.bg = style.bg;
-        trail.attrs = (style.attrs & ~cellattr::kWideLead) | cellattr::kWideTrail | cellattr::kDirty;
+        trail.attrs =
+            (style.attrs & ~cellattr::kWideLead) | cellattr::kWideTrail | cellattr::kDirty;
         ++cursor_column_;
     }
 
@@ -237,7 +243,9 @@ void ScreenGrid::setTabStop(int column) {
     }
 }
 
-void ScreenGrid::clearAllTabStops() { tab_stops_.clear(); }
+void ScreenGrid::clearAllTabStops() {
+    tab_stops_.clear();
+}
 
 void ScreenGrid::tabForward(int count) {
     if (empty()) {

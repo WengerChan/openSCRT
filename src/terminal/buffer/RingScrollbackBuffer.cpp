@@ -17,8 +17,8 @@ RingScrollbackBuffer::RingScrollbackBuffer(std::size_t capacity_lines)
 
 void RingScrollbackBuffer::push(std::string line) {
     const std::uint64_t absolute = total_written_;
-    const std::size_t page_slot =
-        static_cast<std::size_t>((absolute / kLinesPerPage) % static_cast<std::uint64_t>(page_count_));
+    const std::size_t page_slot = static_cast<std::size_t>((absolute / kLinesPerPage) %
+                                                           static_cast<std::uint64_t>(page_count_));
     const std::size_t line_slot = static_cast<std::size_t>(absolute % kLinesPerPage);
 
     auto& page = pages_[page_slot];
@@ -48,8 +48,8 @@ std::string RingScrollbackBuffer::at(std::size_t index_from_oldest) const {
         throw std::out_of_range("RingScrollbackBuffer::at: index past retained lines");
     }
     const std::uint64_t absolute = absoluteIndex(index_from_oldest);
-    const std::size_t page_slot =
-        static_cast<std::size_t>((absolute / kLinesPerPage) % static_cast<std::uint64_t>(page_count_));
+    const std::size_t page_slot = static_cast<std::size_t>((absolute / kLinesPerPage) %
+                                                           static_cast<std::uint64_t>(page_count_));
     const std::size_t line_slot = static_cast<std::size_t>(absolute % kLinesPerPage);
 
     const auto& page = pages_[page_slot];

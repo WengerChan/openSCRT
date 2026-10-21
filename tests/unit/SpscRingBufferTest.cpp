@@ -1,8 +1,6 @@
 // P1-A4 / P1-T1: the transport queue is the one piece of concurrent code everything else
 // depends on, so its wrap-around and ordering guarantees are pinned here explicitly.
 
-#include "core/SpscRingBuffer.h"
-
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -11,6 +9,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include "core/SpscRingBuffer.h"
 
 namespace openscrt::core {
 namespace {
@@ -128,8 +128,8 @@ TEST(SpscRingBufferTest, ConcurrentProducerAndConsumerLoseNoBytes) {
         std::vector<std::uint8_t> chunk(1024);
         std::uint64_t written = 0;
         while (written < kTotal && !failed.load(std::memory_order_relaxed)) {
-            const std::size_t n = static_cast<std::size_t>(
-                std::min<std::uint64_t>(chunk.size(), kTotal - written));
+            const std::size_t n =
+                static_cast<std::size_t>(std::min<std::uint64_t>(chunk.size(), kTotal - written));
             for (std::size_t i = 0; i < n; ++i) {
                 chunk[i] = static_cast<std::uint8_t>((written + i) & 0xFF);
             }

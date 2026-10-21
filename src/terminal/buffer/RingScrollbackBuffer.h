@@ -18,7 +18,7 @@
 namespace openscrt::terminal {
 
 class RingScrollbackBuffer {
-public:
+ public:
     static constexpr std::size_t kDefaultCapacityLines = 128000;
     static constexpr std::size_t kLinesPerPage = 4096;
 
@@ -51,7 +51,7 @@ public:
 
     void clear() noexcept;
 
-private:
+ private:
     // Absolute index of the line at index_from_oldest within the endless write sequence.
     [[nodiscard]] std::uint64_t absoluteIndex(std::size_t index_from_oldest) const noexcept;
 

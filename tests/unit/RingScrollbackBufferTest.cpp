@@ -1,17 +1,19 @@
 // P1-T3 / P1-A5: the scrollback ring must keep ordering across page recycling and never grow
 // past its configured line budget.
 
-#include "terminal/buffer/RingScrollbackBuffer.h"
-
 #include <gtest/gtest.h>
 
 #include <stdexcept>
 #include <string>
 
+#include "terminal/buffer/RingScrollbackBuffer.h"
+
 namespace openscrt::terminal {
 namespace {
 
-std::string lineNumber(std::size_t n) { return "line-" + std::to_string(n); }
+std::string lineNumber(std::size_t n) {
+    return "line-" + std::to_string(n);
+}
 
 TEST(RingScrollbackBufferTest, StartsEmpty) {
     RingScrollbackBuffer buffer(128);

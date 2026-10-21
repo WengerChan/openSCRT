@@ -5,13 +5,14 @@
 // to catch algorithmic regressions (an accidental O(n) lookup or a per-line allocation in the
 // hot path), not to certify a number. Scale with OPENCRT_PERF_ITERS on a dedicated runner.
 
-#include "terminal/buffer/RingScrollbackBuffer.h"
-
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <string>
+
+#include "terminal/buffer/RingScrollbackBuffer.h"
 
 namespace openscrt::terminal {
 namespace {
@@ -46,8 +47,8 @@ TEST(PerfScrollbackTest, FullRingWriteThroughput) {
     const auto elapsed = std::chrono::steady_clock::now() - start;
     const auto micros = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
 
-    const double per_line_us = iterations > 0 ? static_cast<double>(micros) / static_cast<double>(iterations)
-                                              : 0.0;
+    const double per_line_us =
+        iterations > 0 ? static_cast<double>(micros) / static_cast<double>(iterations) : 0.0;
     std::printf("[perf] scrollback push: %zu lines in %lld us (%.3f us/line)\n", iterations,
                 static_cast<long long>(micros), per_line_us);
     EXPECT_LE(buffer.size(), buffer.capacity());

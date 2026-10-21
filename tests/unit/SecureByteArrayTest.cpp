@@ -1,13 +1,13 @@
 // P2-A7 groundwork: SecureByteArray is the only sanctioned home for credential plaintext, so
 // its wipe/ownership contract is verified here even though the KDBX reader arrives in P2-T4.
 
-#include "core/SecureByteArray.h"
-
 #include <gtest/gtest.h>
 
 #include <cstring>
 #include <string>
 #include <utility>
+
+#include "core/SecureByteArray.h"
 
 namespace openscrt::core {
 namespace {

@@ -31,7 +31,7 @@ enum class EraseInDisplay : int {
 };
 
 class ScreenGrid {
-public:
+ public:
     ScreenGrid() = default;
     ScreenGrid(int rows, int cols);
 
@@ -104,7 +104,7 @@ public:
     // Moves lines that scrolled off the top into scrollback. Returns how many were moved.
     std::size_t flushScrolledOffTo(RingScrollbackBuffer& scrollback);
 
-private:
+ private:
     void clampCursor() noexcept;
     void ensureCursorVisible();
 

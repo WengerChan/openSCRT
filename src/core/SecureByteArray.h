@@ -19,7 +19,7 @@
 namespace openscrt::core {
 
 class SecureByteArray {
-public:
+ public:
     SecureByteArray() = default;
     explicit SecureByteArray(std::size_t size);
 
@@ -51,7 +51,7 @@ public:
     // Best-effort wipe that is not optimised away.
     void wipe() noexcept;
 
-private:
+ private:
     void release() noexcept;
 
     std::uint8_t* data_{nullptr};

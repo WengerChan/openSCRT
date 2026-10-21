@@ -1,3 +1,7 @@
+#include <cstdio>
+#include <cstring>
+#include <string>
+
 #include "config/ModuleInfo.h"
 #include "core/BuildInfo.h"
 #include "core/ModuleInfo.h"
@@ -9,10 +13,6 @@
 #include "terminal/ModuleInfo.h"
 #include "transfer/ModuleInfo.h"
 #include "ui/ModuleInfo.h"
-
-#include <cstdio>
-#include <cstring>
-#include <string>
 
 namespace {
 
@@ -37,8 +37,9 @@ void printVersion() {
     openscrt::core::SecureByteArray probe;
     probe.resize(1);
     if (!probe.locked()) {
-        std::printf("  note: mlock unavailable (RLIMIT_MEMLOCK); credential buffers will be "
-                    "zeroed but not pinned\n");
+        std::printf(
+            "  note: mlock unavailable (RLIMIT_MEMLOCK); credential buffers will be "
+            "zeroed but not pinned\n");
     }
     probe.wipe();
 }
@@ -55,7 +56,9 @@ int main(int argc, char** argv) {
         }
     }
 
-    std::printf("openscrt %s - terminal emulator bootstrap (Phase 0)\n", openscrt::core::kProjectVersion);
-    std::printf("The Qt workspace shell arrives in P1-T12; run with --version for build details.\n");
+    std::printf("openscrt %s - terminal emulator bootstrap (Phase 0)\n",
+                openscrt::core::kProjectVersion);
+    std::printf(
+        "The Qt workspace shell arrives in P1-T12; run with --version for build details.\n");
     return 0;
 }

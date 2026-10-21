@@ -61,7 +61,7 @@ struct WindowSize {
 };
 
 class ITransportChannel {
-public:
+ public:
     // Bytes arriving from the remote end. Invoked on the channel's own I/O worker thread,
     // never on the UI thread: the parser worker owns the consuming side.
     using DataCallback = std::function<void(const std::uint8_t* data, std::size_t size)>;
@@ -93,7 +93,7 @@ public:
 
     [[nodiscard]] virtual std::string remoteAddress() const = 0;
 
-protected:
+ protected:
     ITransportChannel() = default;
 };
 
@@ -102,7 +102,7 @@ using TransportChannelPtr = std::unique_ptr<ITransportChannel>;
 // Factory seam so the session manager can build a channel from a saved session descriptor
 // without depending on libssh / QSerialPort directly.
 class ITransportChannelFactory {
-public:
+ public:
     virtual ~ITransportChannelFactory() = default;
     virtual TransportChannelPtr create() const = 0;
 };

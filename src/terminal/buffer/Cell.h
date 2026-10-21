@@ -47,12 +47,8 @@ struct alignas(16) Cell {
     std::uint32_t attrs{cellattr::kDefaultFg | cellattr::kDefaultBg};
 
     [[nodiscard]] bool isBlank() const noexcept { return codepoint == 0; }
-    [[nodiscard]] bool isWideLead() const noexcept {
-        return (attrs & cellattr::kWideLead) != 0;
-    }
-    [[nodiscard]] bool isWideTrail() const noexcept {
-        return (attrs & cellattr::kWideTrail) != 0;
-    }
+    [[nodiscard]] bool isWideLead() const noexcept { return (attrs & cellattr::kWideLead) != 0; }
+    [[nodiscard]] bool isWideTrail() const noexcept { return (attrs & cellattr::kWideTrail) != 0; }
     [[nodiscard]] bool isDirty() const noexcept { return (attrs & cellattr::kDirty) != 0; }
     void markDirty() noexcept { attrs |= cellattr::kDirty; }
     void clearDirty() noexcept { attrs &= ~cellattr::kDirty; }
@@ -75,7 +71,8 @@ struct alignas(16) Cell {
     }
 };
 
-static_assert(sizeof(Cell) == 16, "Cell must stay 16 bytes; widening it breaks the scrollback budget");
+static_assert(sizeof(Cell) == 16,
+              "Cell must stay 16 bytes; widening it breaks the scrollback budget");
 static_assert(alignof(Cell) == 16, "Cell alignment keeps row indexing a shift");
 
 // Style applied by the parser before writing a glyph. Kept separate from Cell so SGR state
@@ -99,9 +96,7 @@ struct CellStyle {
         }
     }
 
-    [[nodiscard]] bool hasAttribute(std::uint32_t bit) const noexcept {
-        return (attrs & bit) != 0;
-    }
+    [[nodiscard]] bool hasAttribute(std::uint32_t bit) const noexcept { return (attrs & bit) != 0; }
 
     friend bool operator==(const CellStyle& a, const CellStyle& b) noexcept {
         return a.fg == b.fg && a.bg == b.bg && a.attrs == b.attrs;

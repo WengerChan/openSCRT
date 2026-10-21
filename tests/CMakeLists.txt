@@ -38,6 +38,11 @@ openscrt_add_test(unit_ring_scrollback_buffer
     SOURCES unit/RingScrollbackBufferTest.cpp
     LIBS openscrt_terminal)
 
+openscrt_add_test(unit_control_sequence_parser
+    LABEL unit
+    SOURCES unit/ControlSequenceParserTest.cpp
+    LIBS openscrt_terminal)
+
 # P1-A5: scrollback write throughput and lookup latency under a realistic 128k-line working
 # set. Iteration count is scaled by OPENCRT_PERF_ITERS so the shared CI runner stays inside
 # its budget while a dedicated runner can raise it.

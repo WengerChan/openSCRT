@@ -21,7 +21,9 @@ void ensureSodiumInitialized() {
 
 }  // namespace
 
-SecureByteArray::SecureByteArray(std::size_t size) { resize(size); }
+SecureByteArray::SecureByteArray(std::size_t size) {
+    resize(size);
+}
 
 SecureByteArray::SecureByteArray(SecureByteArray&& other) noexcept
     : data_(other.data_), size_(other.size_), locked_(other.locked_) {
@@ -40,7 +42,9 @@ SecureByteArray& SecureByteArray::operator=(SecureByteArray&& other) noexcept {
     return *this;
 }
 
-SecureByteArray::~SecureByteArray() { release(); }
+SecureByteArray::~SecureByteArray() {
+    release();
+}
 
 void SecureByteArray::resize(std::size_t size) {
     ensureSodiumInitialized();

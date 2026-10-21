@@ -1,11 +1,11 @@
 // P1-T2 / P1-A2 / P1-A6: the screen grid is the contract every escape sequence depends on, so
 // these tests assert observable grid behaviour rather than parser internals.
 
-#include "terminal/buffer/ScreenGrid.h"
-
 #include <gtest/gtest.h>
 
 #include <string>
+
+#include "terminal/buffer/ScreenGrid.h"
 
 namespace openscrt::terminal {
 namespace {
