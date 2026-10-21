@@ -146,9 +146,17 @@
 | P1-A7 | 真机验证：Windows/macOS/Linux 三端各连接 1 台真实服务器并完成交互式登录 | 【人工】 |
 | P1-A8 | 核心库 `openscrt_core` / `openscrt_terminal` 行覆盖率 ≥65% | 【CI】 |
 
-### 4.4 风险
-- **libvterm 定制扩展与上游脱节**：把定制点收敛到**唯一适配层** `VtermStateMachine`，禁止在业务代码里直接调 libvterm API，便于后续升级。
+### 4.4 已识别的路线图技术偏差
+
+| # | 偏差 | 证据 | 处置 |
+| :--- | :--- | :--- | :--- |
+| D1 | **`libvterm` 无法经 vcpkg 获取** | microsoft/vcpkg 无 `ports/libvterm`（对 baseline 与 main 分支的 `contents/ports/libvterm` 均返回 404）；上游 libvterm 只提供 autotools 构建，三平台 CI 均无 autotools 工具链 | 已从 `vcpkg.json` 移除。P1-T4 的转义序列前端（`ControlSequenceParser`）与屏幕网格自行实现；若后续确需 libvterm 的字符集处理，则以 `FetchContent` + 固定 commit 引入，并把定制点收敛在 `VtermStateMachine` 单一适配层 |
+| D2 | **Qt 不经 vcpkg** | qtbase 经 vcpkg 冷构建需数小时，CI 不可接受 | CI 用 `install-qt-action`（预编译包），vcpkg 只管非 Qt 依赖 |
+| D3 | **新增 Phase 0** | 路线图把"三端编译通过"放在 Phase 1 验收，但未建 CI，导致五阶段验收全靠人工 | 拆出 Phase 0 固化门禁 |
+
+### 4.5 风险
 - **CJK 双宽字符与光标对齐错位**：在 P1-T2 就把双宽位写进 `Cell` 位域，不允许后期加字段（会破坏 16 字节布局）。
+- **若后续引入 libvterm**：定制点必须收敛到**唯一适配层** `VtermStateMachine`，禁止在业务代码里直接调 libvterm API。
 
 ---
 

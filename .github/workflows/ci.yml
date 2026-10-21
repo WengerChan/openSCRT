@@ -112,7 +112,9 @@ jobs:
         with:
           version: 6.8.3
           modules: qtserialport
-          aqtversion: 3.1.0
+          # No aqtversion pin: the action builds the pip requirement as
+          # `aqtinstall${aqtversion}`, so a bare "3.1.0" becomes the nonexistent package
+          # "aqtinstall3.1.0". Leaving it unset installs the latest aqtinstall.
           cache: true
 
       - name: Install Qt 6.8 + qtserialport (Linux/Windows)

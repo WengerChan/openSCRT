@@ -8,7 +8,6 @@
     "gtest",
     "libssh",
     "libsodium",
-    "libvterm",
     "nlohmann-json",
     "openssl",
     "pybind11",
