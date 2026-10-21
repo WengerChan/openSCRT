@@ -128,22 +128,39 @@ jobs:
           modules: qtserialport
           cache: true
 
+      - name: Install autotools (autotools-based vcpkg ports)
+        shell: bash
+        # libsodium's port runs `autoreconf` at build time and hard-fails with an explicit
+        # "requires autoconf" CMake error when the tool is missing. None of the runner images
+        # ship it.
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq autoconf automake libtool
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            brew install autoconf automake libtool
+          fi
+
       - name: Install dependencies (vcpkg, manifest mode)
         shell: bash
         run: |
           # Qt6 comes from install-qt-action above, NOT from vcpkg: building qtbase/qtserialport
-          # in CI is prohibitively slow. vcpkg.json stays the single source of truth -- this step
-          # derives a CI manifest without the two Qt ports and points VCPKG_MANIFEST_DIR at it,
-          # so `vcpkg install` never tries to build Qt. (VCPKG_MANIFEST_NO_DEFAULT_FEATURES is
-          # not a thing; overriding the manifest directory is the supported lever.)
+          # in CI is prohibitively slow. pybind11 is dropped for the same reason -- its port
+          # depends on vcpkg's `python3`, which is a CPython source build that adds 20+ minutes
+          # to every run, and it is only needed from Phase 5 (scripting engine) onward.
+          # vcpkg.json stays the single source of truth -- this step derives the CI manifest by
+          # removing ports that are provisioned differently or not needed yet, and points
+          # VCPKG_MANIFEST_DIR at it so `vcpkg install` never reaches for them.
+          # (VCPKG_MANIFEST_NO_DEFAULT_FEATURES is not a thing; overriding the manifest
+          # directory is the supported lever.)
           export VCPKG_MANIFEST_DIR="$RUNNER_TEMP/vcpkg-ci-manifest"
           mkdir -p "$VCPKG_MANIFEST_DIR"
           python - "$VCPKG_MANIFEST_DIR" <<'PY'
           import json, os, sys
           out = sys.argv[1]
+          skip = ("qtbase", "qtserialport", "pybind11")
           manifest = json.load(open("vcpkg.json", encoding="utf-8"))
-          manifest["dependencies"] = [d for d in manifest["dependencies"]
-                                       if d not in ("qtbase", "qtserialport")]
+          manifest["dependencies"] = [d for d in manifest["dependencies"] if d not in skip]
           os.makedirs(out, exist_ok=True)
           with open(os.path.join(out, "vcpkg.json"), "w", encoding="utf-8") as fh:
               json.dump(manifest, fh, indent=2)
