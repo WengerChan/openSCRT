@@ -1,0 +1,11 @@
+.DS_Store
+# --- build / CI output ---
+build/
+out/
+vcpkg_installed/
+.cache/
+
+# --- editors / IDEs ---
+.vscode/
+.idea/
+*.swp
