@@ -41,7 +41,7 @@
     <UIRef Id="WixUI_InstallDir" />
     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
 
-    <Feature Id="Main" Title="openSCRT" Level="1" AllowAbsent="no">
+    <Feature Id="Main" Title="openSCRT" Level="1">
       <ComponentGroupRef Id="HarvestedPayload" />
       <ComponentRef Id="EnvironmentPath" />
     </Feature>
@@ -52,31 +52,33 @@
       </Directory>
     </Directory>
 
-    <Fragment>
-      <DirectoryRef Id="INSTALLFOLDER">
-        <Component Id="EnvironmentPath" Guid="{F5F26896-3F59-49F2-B03B-D7150654C017}">
-          <!-- PartPartialPath is the supported way to extend PATH (WiX 3.6+). Without it the
-               installer would overwrite PATH with only its own directory. -->
-          <Environment Id="openscrtPath"
-                       Name="PATH"
-                       Value="[INSTALLFOLDER]bin"
-                       System="yes"
-                       Action="set"
-                       Part="both"
-                       PartPartialPath="yes"
-                       Permanent="no" />
-          <!-- An Environment element cannot be a component KeyPath, so the registry value
-               doubles as one; it is also what gives Add/Remove Programs an uninstall entry
-               and a working "Installed on" location. -->
-          <RegistryValue Root="HKLM"
-                         Key="Software\openSCRT"
-                         Name="InstallDir"
-                         Type="string"
-                         Value="[INSTALLFOLDER]"
-                         KeyPath="yes" />
-        </Component>
-      </DirectoryRef>
-    </Fragment>
-
   </Product>
+
+  <!-- A Fragment is a sibling of Product, never a child of it (WiX 3 schema), and it is where the
+       harvested payload merges in. -->
+  <Fragment>
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="EnvironmentPath" Guid="{F5F26896-3F59-49F2-B03B-D7150654C017}">
+        <!-- PartPartialPath is the supported way to extend PATH (WiX 3.6+). Without it the
+             installer would overwrite PATH with only its own directory. -->
+        <Environment Id="openscrtPath"
+                     Name="PATH"
+                     Value="[INSTALLFOLDER]bin"
+                     System="yes"
+                     Action="set"
+                     Part="both"
+                     PartPartialPath="yes"
+                     Permanent="no" />
+        <!-- An Environment element cannot be a component KeyPath, so the registry value
+             doubles as one; it is also what gives Add/Remove Programs an uninstall entry
+             and a working "Installed on" location. -->
+        <RegistryValue Root="HKLM"
+                       Key="Software\openSCRT"
+                       Name="InstallDir"
+                       Type="string"
+                       Value="[INSTALLFOLDER]"
+                       KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
 </Wix>
