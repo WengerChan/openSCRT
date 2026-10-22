@@ -18,6 +18,10 @@ verified when `build-test (ubuntu-24.04)`, `build-test (windows-2022)` and `buil
 are green and `format (ubuntu-24.04)` passes. Use a local build only for fast iteration; never
 treat it as a substitute for CI.
 
+Cold start to green is budgeted at ≤45 min (DEVELOPMENT_PLAN P0-A6) and every job enforces a hard
+timeout, so a declared-but-unlinked dependency that triggers a source build trips it instead of
+quietly costing an hour.
+
 ![CI](https://github.com/<owner>/openSCRT/actions/workflows/ci.yml/badge.svg)
 
 Local commands, if you want them:

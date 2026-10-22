@@ -35,8 +35,11 @@ jobs:
           - os: windows-2022
             preset: windows-ci
             triplet: x64-windows
-            # Cold-cache Windows builds the C/Crypto dependencies from source; give it room.
-            timeout: 90
+            # P0-A6 puts the whole cold-start job at 45 min. This leg used to need 75.6 min,
+            # nearly all of it a vcpkg source build -- so the timeout is now the guardrail that
+            # catches a regression back into "install a port nothing links", not a licence to
+            # stay slow. If this ever fires, the cause is the dependency step, not the build.
+            timeout: 45
           - os: macos-14
             preset: macos-ci
             triplet: arm64-osx
@@ -148,10 +151,16 @@ jobs:
       - name: Install dependencies (vcpkg, manifest mode)
         shell: bash
         run: |
-          # Qt6 comes from install-qt-action above, NOT from vcpkg: building qtbase/qtserialport
-          # in CI is prohibitively slow. pybind11 is dropped for the same reason -- its port
-          # depends on vcpkg's `python3`, which is a CPython source build that adds 20+ minutes
-          # to every run, and it is only needed from Phase 5 (scripting engine) onward.
+          # Rule: CI installs exactly the ports the tree actually links -- libsodium and gtest.
+          # Everything else is provisioned elsewhere or not consumed yet, and a vcpkg port that
+          # nothing links is a source build nobody waits for.
+          #
+          # This is not a micro-optimisation. On windows-2022 the vcpkg step was 74.6 min of a
+          # 75.6 min job (run #6), because openssl + libssh were compiled from source on every
+          # cold cache -- and the plan's own cold-start gate (P0-A6) is 45 min for the whole
+          # job. The dropped ports below are referenced by ZERO find_package /
+          # pkg_check_modules / target_link_libraries and zero #includes in src/ and tests/.
+          #
           # vcpkg.json stays the single source of truth -- this step derives the CI manifest by
           # removing ports that are provisioned differently or not needed yet, and points
           # VCPKG_MANIFEST_DIR at it so `vcpkg install` never reaches for them.
@@ -161,16 +170,51 @@ jobs:
           mkdir -p "$VCPKG_MANIFEST_DIR"
           python - "$VCPKG_MANIFEST_DIR" <<'PY'
           import json, os, sys
+
           out = sys.argv[1]
-          skip = ("qtbase", "qtserialport", "pybind11")
+
+          # port -> why CI does not install it.
+          # A port belongs here only while nothing links it. The moment a phase starts
+          # consuming it, delete its entry here: the dependency is then already in vcpkg.json,
+          # vcpkg builds it, and CMAKE_PREFIX_PATH makes CMake find it. Skipping a port that
+          # IS linked fails fast and loudly at configure -- which is the point: a 3-minute
+          # "not found" beats a 75-minute build of something nobody wanted.
+          SKIP = {
+              "qtbase":        "Qt6 comes from install-qt-action (D2); a vcpkg qtbase build is hours",
+              "qtserialport":  "same Qt prebuilt package as qtbase",
+              "pybind11":      "pulls vcpkg's `python3`, a CPython source build worth +20 min (Phase 5)",
+              "libssh":        "not linked yet -- the SSH transport lands in Phase 1",
+              "openssl":       "not linked yet -- KDBX/crypto lands in Phase 2-3; heaviest MSVC build",
+              "nlohmann-json": "not linked yet -- session config persistence (src/config) lands in Phase 1",
+              "pugixml":       "not linked yet -- SecureCrtConfigImporter XML parsing lands in Phase 2",
+              "zlib":          "not linked yet -- transfer compression lands in Phase 3",
+          }
+
           manifest = json.load(open("vcpkg.json", encoding="utf-8"))
-          manifest["dependencies"] = [d for d in manifest["dependencies"] if d not in skip]
+
+          # Typo guard: a SKIP entry that no longer exists in vcpkg.json is a stale rule, and
+          # silently ignoring it would hide the drift that actually breaks the build.
+          unknown = sorted(set(SKIP) - set(manifest["dependencies"]))
+          if unknown:
+              sys.exit("SKIP names ports absent from vcpkg.json: " + ", ".join(unknown))
+
+          manifest["dependencies"] = [d for d in manifest["dependencies"] if d not in SKIP]
+          if not manifest["dependencies"]:
+              sys.exit("every declared port is skipped -- the manifest would be empty")
+
           os.makedirs(out, exist_ok=True)
           with open(os.path.join(out, "vcpkg.json"), "w", encoding="utf-8") as fh:
               json.dump(manifest, fh, indent=2)
+          print("vcpkg CI manifest installs:", " ".join(manifest["dependencies"]))
           PY
           echo "VCPKG_MANIFEST_DIR=$VCPKG_MANIFEST_DIR" >> "$GITHUB_ENV"
-          "$VCPKG_ROOT_DIR/vcpkg" install --triplet "$VCPKG_TARGET_TRIPLET"
+          # --x-install-root is not optional bookkeeping: without it vcpkg derives its own
+          # installed tree (observed at <repo>/vcpkg_installed) while CMake is told to look in
+          # out/vcpkg_installed, so configure cannot find a single header. Pin both sides to
+          # the same path.
+          "$VCPKG_ROOT_DIR/vcpkg" install \
+            --x-install-root="$VCPKG_INSTALLED_DIR" \
+            --triplet "$VCPKG_TARGET_TRIPLET"
 
       - name: Configure (${{ matrix.preset }})
         shell: bash
