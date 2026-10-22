@@ -31,10 +31,9 @@ std::vector<RowBand> DamageTracker::collect(ScreenGrid& grid) {
 }
 
 std::vector<RowBand> DamageTracker::collectAll(ScreenGrid& grid) {
-    if (grid.rows() <= 0) {
-        return {};
+    for (int row = 0; row < grid.rows(); ++row) {
+        grid.markRowDirty(row);
     }
-    grid.markRowDirty(0);  // One band is enough to make collect() report everything.
     return collect(grid);
 }
 

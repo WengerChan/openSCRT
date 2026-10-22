@@ -87,11 +87,13 @@ TEST_F(DamageTrackerTest, BandsAreSortedAndDisjoint) {
     for (int row : {9, 1, 6, 2}) {
         writeRow(row, 'x');
     }
+    // Rows 1 and 2 are adjacent so they merge; 6 and 9 each stand alone.
     const auto bands = DamageTracker::collect(grid);
-    ASSERT_EQ(bands.size(), 2u);
+    ASSERT_EQ(bands.size(), 3u);
     EXPECT_EQ(bands[0], (RowBand{1, 2}));
     EXPECT_EQ(bands[1], (RowBand{6, 6}));
-    EXPECT_EQ(bands[1].first, bands[0].last + 2) << "bands must not touch or overlap";
+    EXPECT_EQ(bands[2], (RowBand{9, 9}));
+    EXPECT_EQ(bands[1].first, bands[0].last + 4) << "bands must not touch or overlap";
 }
 
 TEST_F(DamageTrackerTest, CollectAllIgnoresCurrentDamage) {
