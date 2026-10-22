@@ -115,7 +115,6 @@ class ScreenGrid {
 
  private:
     void clampCursor() noexcept;
-    void ensureCursorVisible();
 
     int rows_ = 0;
     int cols_ = 0;

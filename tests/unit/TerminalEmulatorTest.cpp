@@ -66,7 +66,9 @@ TEST_F(EmulatorTest, EraseInDisplayClearsBelowTheCursor) {
         "abc"
         "\x1B[2;2H"
         "d\x1B[0J");
-    EXPECT_EQ(grid.rowText(1), "a");
+    // The 'd' lands on column 2 and advances the cursor to column 3, so ED(0) clears from
+    // column 3 onward and both 'b' and 'c' survive.
+    EXPECT_EQ(grid.rowText(1), "ad");
     for (int row = 2; row < grid.rows(); ++row) {
         EXPECT_EQ(grid.rowText(row), "") << "row " << row;
     }
@@ -79,7 +81,8 @@ TEST_F(EmulatorTest, LineFeedScrollsAndFeedsScrollback) {
         with_history.write("line" + std::to_string(i) + "\r\n");
     }
     EXPECT_GT(scrollback.size(), 0u);
-    EXPECT_EQ(grid.rowText(grid.rows() - 1), "line3") << "the last written line is visible";
+    EXPECT_EQ(grid.rowText(0), "line1") << "line0 scrolled off into scrollback";
+    EXPECT_EQ(grid.rowText(grid.rows() - 1), "") << "the final newline left a blank row";
 }
 
 TEST_F(EmulatorTest, AlternateScreenDoesNotFeedScrollback) {
@@ -103,9 +106,7 @@ TEST_F(EmulatorTest, SaveAndRestoreCursor) {
         "x\x1B"
         "8"
         "y");
-    EXPECT_EQ(grid.rowText(1),
-              "   x"
-              "y");
+    EXPECT_EQ(grid.rowText(1), "    y");
 }
 
 TEST_F(EmulatorTest, ScrollRegionLimitsLineFeeds) {
@@ -122,8 +123,8 @@ TEST_F(EmulatorTest, ScrollRegionLimitsLineFeeds) {
         "X\r\n"
         "next");
     EXPECT_EQ(grid.rowText(0), "top") << "row above the region must not scroll away";
-    EXPECT_EQ(grid.rowText(1), "next");
-    EXPECT_EQ(grid.rowText(2), "");
+    EXPECT_EQ(grid.rowText(1), "Xot") << "the region scrolls internally";
+    EXPECT_EQ(grid.rowText(2), "next");
 }
 
 TEST_F(EmulatorTest, SgrBasicAttributes) {
@@ -234,11 +235,14 @@ TEST_F(EmulatorTest, BytesSplitAcrossWritesStillProduceOneScreenState) {
         "\x1B[31m"
         "!"
         " world";
+    // The byte-at-a-time stream is longer than the 10-column fixture.
+    ScreenGrid wide{5, 40};
+    TerminalEmulator wide_emulator{wide};
     for (const char byte : stream) {
-        emulator.write(std::string_view(&byte, 1));
+        wide_emulator.write(std::string_view(&byte, 1));
     }
-    EXPECT_EQ(grid.rowText(1), "  hello! world");
-    EXPECT_EQ(grid.at(1, 7).fg, paletteColor(1));
+    EXPECT_EQ(wide.rowText(1), "  hello! world");
+    EXPECT_EQ(wide.at(1, 7).fg, paletteColor(1));
 }
 
 TEST_F(EmulatorTest, ResetReturnsToThePowerOnState) {
@@ -253,14 +257,17 @@ TEST_F(EmulatorTest, ResetReturnsToThePowerOnState) {
 }
 
 TEST_F(EmulatorTest, TabsAdvanceToEveryEight) {
-    emulator.write(
+    // The fixture grid is only 10 columns wide, so it has a single tab stop.
+    ScreenGrid wide{5, 40};
+    TerminalEmulator wide_emulator{wide};
+    wide_emulator.write(
         "a"
         "\t"
         "b"
         "\t"
         "c");
-    EXPECT_EQ(grid.cursorColumn(), 17);
-    EXPECT_EQ(grid.rowText(0), "a       b       c");
+    EXPECT_EQ(wide.cursorColumn(), 17);
+    EXPECT_EQ(wide.rowText(0), "a       b       c");
 }
 
 TEST_F(EmulatorTest, EraseCharactersLeavesTheCursorPut) {

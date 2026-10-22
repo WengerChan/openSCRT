@@ -146,20 +146,14 @@ void ScreenGrid::clampCursor() noexcept {
     cursor_column_ = clampInt(cursor_column_, 0, cols_ - 1);
 }
 
-void ScreenGrid::ensureCursorVisible() {
-    // The cursor is constrained to the scrolling region, per DECSTBM.
-    if (cursor_row_ < scroll_top_) {
-        cursor_row_ = scroll_top_;
-    } else if (cursor_row_ > scroll_bottom_) {
-        cursor_row_ = scroll_bottom_;
-    }
-}
-
 void ScreenGrid::put(std::uint32_t codepoint, const CellStyle& style) {
     if (empty()) {
         return;
     }
-    ensureCursorVisible();
+    // Deliberately no scroll-region clamping here. DECSTBM constrains *scrolling*, not the
+    // cursor: a program may position anywhere on the screen and write there, and full-screen
+    // TUIs do exactly that. Clamping in put() silently relocated such writes into the
+    // region, which is how `[2;3r` followed by a write to row 1 lost row 1.
 
     // Codepoint 0 is how the parser spells NUL; treat it as a no-op blank so it never
     // overwrites a glyph that is already on screen.
