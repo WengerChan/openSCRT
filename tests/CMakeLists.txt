@@ -44,6 +44,11 @@ openscrt_add_test(unit_ring_scrollback_buffer
     SOURCES unit/RingScrollbackBufferTest.cpp
     LIBS openscrt_terminal)
 
+openscrt_add_test(unit_damage_tracker
+    LABEL unit
+    SOURCES unit/DamageTrackerTest.cpp
+    LIBS openscrt_terminal)
+
 openscrt_add_test(unit_frame_coalescer
     LABEL unit
     SOURCES unit/FrameCoalescerTest.cpp
