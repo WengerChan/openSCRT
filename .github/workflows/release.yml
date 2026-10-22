@@ -206,13 +206,20 @@ jobs:
           # MSYS rewrites any argument that looks like a POSIX path, so a bare `/dependents`
           # arrives at dumpbin as "C:/Program Files/Git/dependents" and the command dies with a
           # confusing exit code. MSYS2_ARG_CONV_EXCL switches that off for this one call.
-          dumpbin_deps() { MSYS2_ARG_CONV_EXCL='*' dumpbin /dependents "$1"; }
+          DEPS=$(MSYS2_ARG_CONV_EXCL='*' dumpbin /dependents "$EXE" \
+                 | sed -n 's/^[[:space:]]*\([A-Za-z0-9_.-]*\.dll\)[[:space:]]*$/\1/p')
+          if [ -z "$DEPS" ]; then
+            echo "::error::could not read the dependency table out of dumpbin"
+            MSYS2_ARG_CONV_EXCL='*' dumpbin /dependents "$EXE"
+            exit 1
+          fi
+          echo "imports:"; for dll in $DEPS; do echo "  $dll"; done
 
           # windeployqt refuses anything it does not recognise as a Qt binary and exits 1.
           # Phase 0 links Qt6::Core but calls nothing into it, so the linker records no Qt import
-          # and there is genuinely nothing to deploy. Gate on the import table rather than on the
-          # tool's opinion: when P1-T12 adds the Qt shell this branch starts firing by itself.
-          if dumpbin_deps "$EXE" | grep -qiE '[A-Za-z0-9_-]*Qt6[A-Za-z0-9_-]*\.dll'; then
+          # and there is genuinely nothing for it to deploy. Gate on the import table rather than
+          # on the tool's opinion: when P1-T12 adds the Qt shell this branch starts firing.
+          if echo "$DEPS" | grep -qiE '[A-Za-z0-9_-]*Qt6[A-Za-z0-9_-]*\.dll'; then
             if [ -z "$WINDEPLOYQT" ]; then
               echo "::error::the binary imports Qt but windeployqt.exe was not found"
               exit 1
@@ -223,25 +230,38 @@ jobs:
             echo "::notice::the binary imports no Qt library yet (Phase 0 links Qt6::Core but never calls into it); skipping windeployqt"
           fi
 
-          # The MSVC runtime is a real DLL import of this exe and is not guaranteed to exist on a
-          # user machine, so it is bundled explicitly -- windeployqt would normally do this. The
-          # glob has to run on an MSYS path: VCToolsRedistDir arrives Windows-shaped and matches
-          # nothing under bash.
-          CRT_DIR="${VCToolsRedistDir:-}"
-          if [ -n "$CRT_DIR" ]; then
-            CRT_POSIX="$(cygpath -u "$CRT_DIR")"
-            shopt -s nullglob
-            CRT_DLLS=("$CRT_POSIX"/x64/Microsoft.VC*.CRT/*.dll)
-            shopt -u nullglob
-            if [ ${#CRT_DLLS[@]} -gt 0 ]; then
-              cp -f "${CRT_DLLS[@]}" "$STAGE_POSIX/bin/"
-              echo "MSVC CRT bundled: ${CRT_DLLS[*]##*/}"
-            else
-              echo "::warning::no MSVC redistributable DLL under $CRT_POSIX/x64"
+          # Bundle every remaining imported DLL that Windows does not ship: vcpkg's libsodium.dll
+          # (and openssl/libssh once those phases link them), the MSVC runtime, and the Universal
+          # CRT forwarders, which live in System32\downlevel rather than System32. Resolving from
+          # the toolchains that produced the imports means a new dependency is picked up by being
+          # linked, not by someone remembering to add it here.
+          shopt -s nullglob
+          SEARCH_DIRS=(
+            "$(cygpath -u "$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET/bin")"
+            "$(cygpath -u "$QT_ROOT_DIR")/bin"
+            "$(cygpath -u "$VCToolsRedistDir")"/x64/Microsoft.VC*.CRT
+            "$(cygpath -u "$WindowsSdkDir")"Redist/ucrt/DLLs/x64
+          )
+          shopt -u nullglob
+          for dll in $DEPS; do
+            if [ -f "$STAGE_POSIX/bin/$dll" ] || [ -f "$SYSTEMROOT/System32/$dll" ]; then
+              continue
             fi
-          else
-            echo "::warning::VCToolsRedistDir is unset -- the MSVC runtime will not be bundled"
-          fi
+            found=""
+            for dir in "${SEARCH_DIRS[@]}"; do
+              [ -d "$dir" ] || continue
+              if [ -f "$dir/$dll" ]; then
+                found="$dir/$dll"
+                break
+              fi
+            done
+            if [ -z "$found" ]; then
+              echo "::warning::$dll is imported but was not found in any toolchain directory"
+              continue
+            fi
+            cp -f "$found" "$STAGE_POSIX/bin/"
+            echo "bundled $dll from ${found/$STAGE_POSIX\//}"
+          done
 
           echo "staged files:"
           find "$STAGE_POSIX" -type f | sed "s|$STAGE_POSIX/||"
