@@ -324,26 +324,27 @@ jobs:
           $version = '${{ steps.version.outputs.version }}'
           $pkg = Join-Path $env:GITHUB_WORKSPACE 'out/pkg'
           $stageName = "openscrt-$version-windows-x64"
+          $productWxs = Join-Path $env:GITHUB_WORKSPACE 'packaging/windows/Product.wxs'
 
           Push-Location $pkg
           try {
             # The file list is harvested, not hand-written: windeployqt's output changes with
             # the Qt version, and a stale <File> list produces an MSI whose payload cannot start.
             # -srd drops the staging folder itself, so the tree lands directly in Program Files.
-            & heat dir $stageName -cg HarvestedPayload -dr INSTALLFOLDER -srd -suid -ag -out harvest.wxs
+            & heat @('dir', $stageName, '-cg', 'HarvestedPayload', '-dr', 'INSTALLFOLDER',
+                     '-srd', '-suid', '-ag', '-out', 'harvest.wxs')
             if ($LASTEXITCODE -ne 0) { throw "heat failed with $LASTEXITCODE" }
 
+            # Every argument goes through an array with explicit quoting. PowerShell's handling of
+            # a bareword like -dProductVersion=$version is not worth depending on: in a previous
+            # run candle received the literal text "$version" and rejected the Product version.
             # WiX v3.14 ships preinstalled on the windows-2022 image (candle/light/heat).
-            & candle -nologo -arch x64 `
-              -ext WixUIExtension -ext WixUtilExtension `
-              -dProductVersion=$version `
-              -out product.wixobj `
-              (Join-Path $env:GITHUB_WORKSPACE 'packaging/windows/Product.wxs')
+            & candle @('-nologo', '-arch', 'x64', '-ext', 'WixUIExtension', '-ext', 'WixUtilExtension',
+                       "-dProductVersion=$version", '-out', 'product.wixobj', $productWxs)
             if ($LASTEXITCODE -ne 0) { throw "candle failed with $LASTEXITCODE" }
 
-            & light -nologo -ext WixUIExtension -ext WixUtilExtension `
-              product.wixobj harvest.wxs `
-              -out "openSCRT-$version-windows-x64.msi"
+            & light @('-nologo', '-ext', 'WixUIExtension', '-ext', 'WixUtilExtension',
+                      'product.wixobj', 'harvest.wxs', '-out', "openSCRT-$version-windows-x64.msi")
             if ($LASTEXITCODE -ne 0) { throw "light failed with $LASTEXITCODE" }
           } finally {
             Pop-Location
