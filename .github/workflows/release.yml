@@ -343,8 +343,13 @@ jobs:
                        "-dProductVersion=$version", '-out', 'product.wixobj', $productWxs)
             if ($LASTEXITCODE -ne 0) { throw "candle failed with $LASTEXITCODE" }
 
+            # light only accepts compiled .wixobj input; handing it harvest.wxs fails with
+            # LGHT0048 ("must use 'wixOutput' as the document element name").
+            & candle @('-nologo', '-arch', 'x64', '-out', 'harvest.wixobj', 'harvest.wxs')
+            if ($LASTEXITCODE -ne 0) { throw "candle (harvest) failed with $LASTEXITCODE" }
+
             & light @('-nologo', '-ext', 'WixUIExtension', '-ext', 'WixUtilExtension',
-                      'product.wixobj', 'harvest.wxs', '-out', "openSCRT-$version-windows-x64.msi")
+                      'product.wixobj', 'harvest.wixobj', '-out', "openSCRT-$version-windows-x64.msi")
             if ($LASTEXITCODE -ne 0) { throw "light failed with $LASTEXITCODE" }
           } finally {
             Pop-Location
