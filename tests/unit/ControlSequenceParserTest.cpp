@@ -324,7 +324,10 @@ TEST_F(ParserTest, DcsPayloadNeverReachesTheScreen) {
         "hidden data"
         "\x1B\\"
         "visible");
-    ASSERT_EQ(sink.count(), 1u);
+    // Only the text after the string terminator reaches the sink, one event per character.
+    // None of the DCS payload may appear.
+    const std::string trailing = "visible";
+    ASSERT_EQ(sink.count(), trailing.size());
     EXPECT_EQ(only().kind, RecordedEvent::Kind::kPrint);
     EXPECT_EQ(only().value, static_cast<std::uint32_t>('v'));
 }

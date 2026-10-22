@@ -123,7 +123,9 @@ TEST(ScreenGridTest, EraseInLineScopes) {
     writeText(grid2, "0123456789");
     grid2.setCursor(0, 4);
     grid2.eraseInLine(EraseInLine::kCursorToStart);
-    EXPECT_EQ(grid2.rowText(0), "56789");
+    // Columns 0-4 become blanks, and rowText keeps interior blanks as spaces so the
+    // remaining columns keep their positions.
+    EXPECT_EQ(grid2.rowText(0), "     56789");
 
     ScreenGrid grid3(1, 10);
     writeText(grid3, "0123456789");

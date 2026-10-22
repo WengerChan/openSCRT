@@ -296,9 +296,10 @@ void ControlSequenceParser::stepCsiIntermediate(std::uint8_t byte) noexcept {
 }
 
 void ControlSequenceParser::stepOsc(std::uint8_t byte) noexcept {
-    if (osc_overflow_) {
-        return;  // Keep discarding until the terminator arrives.
-    }
+    // Terminators must be handled before the overflow check. Once the payload buffer is full
+    // the rest of the stream is discarded, but BEL/ST still has to end the sequence --
+    // otherwise an oversized OSC never dispatches and the parser stays wedged in kOscString
+    // for every subsequent byte.
     switch (byte) {
         case 0x07:  // BEL terminator
             finishOsc();
@@ -312,7 +313,11 @@ void ControlSequenceParser::stepOsc(std::uint8_t byte) noexcept {
     if (isAbort(byte)) {
         state_ = State::kGround;
         osc_buffer_.clear();
+        osc_overflow_ = false;
         return;
+    }
+    if (osc_overflow_) {
+        return;  // Keep discarding until the terminator arrives.
     }
     if (osc_buffer_.size() >= kMaxOscPayload) {
         osc_overflow_ = true;
@@ -408,6 +413,7 @@ void ControlSequenceParser::finishOsc() noexcept {
     sink_->oscDispatch(sequence);
     state_ = State::kGround;
     osc_buffer_.clear();
+    osc_overflow_ = false;
 }
 
 }  // namespace openscrt::terminal
