@@ -43,7 +43,7 @@
          recorded by the product already on the machine. -->
     <CustomAction Id="SetArpInstallLocation" Property="ARPINSTALLLOCATION" Value="[INSTALLFOLDER]" />
     <InstallExecuteSequence>
-      <Custom Action="SetArpInstallLocation">NOT Installed</Custom>
+      <Custom Action="SetArpInstallLocation" After="InstallInitialize">NOT Installed</Custom>
     </InstallExecuteSequence>
 
     <UIRef Id="WixUI_InstallDir" />
@@ -51,7 +51,7 @@
     <!-- "Installed on" in Add/Remove Programs. A CustomAction is the only thing that formats the
          value: MSI stores whatever sits in the Property table verbatim, so a plain
          Property/Value pair ends up displayed as the literal text "[INSTALLFOLDER]". -->
-    <Property Id="ARPINSTALLLOCATION" Value="" />
+    <Property Id="ARPINSTALLLOCATION" />
 
     <Feature Id="Main" Title="openSCRT" Level="1">
       <ComponentGroupRef Id="HarvestedPayload" />
