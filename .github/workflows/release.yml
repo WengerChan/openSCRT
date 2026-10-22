@@ -518,4 +518,7 @@ jobs:
 
             Both bundle every DLL the binary imports -- `libsodium`, the UCRT forwarders, and, once the Qt shell lands, the Qt runtime -- so neither needs Qt installed.
 
+            This release is the Phase 0 CLI bootstrap: it has no window yet, so double-clicking
+            `openscrt.exe` shows a message explaining what it is. The Qt shell arrives in P1-T12.
+
             Verify a download against `SHA256SUMS.txt`.

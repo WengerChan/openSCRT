@@ -34,7 +34,9 @@ uploading: the staged exe must report its version, and the MSI is unpacked with 
 the extracted binary is run.
 
 **The 0.1.x binaries are the Phase 0 CLI bootstrap** — `openscrt --version` prints the linked
-module versions. The Qt workspace shell arrives in P1-T12 (DEVELOPMENT_PLAN).
+module versions. There is no window yet, so double-clicking `openscrt.exe` shows a short message
+explaining that instead of a console that flashes and closes. The Qt workspace shell arrives in
+P1-T12 (DEVELOPMENT_PLAN).
 
 ## Building
 
