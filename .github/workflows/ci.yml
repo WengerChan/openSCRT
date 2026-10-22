@@ -221,13 +221,23 @@ jobs:
           # openssl, pybind11...) even though the script printed "gtest libsodium". Classic
           # mode reads no manifest at all, so the root file can never leak in again.
           mapfile -t CI_PORTS < "$VCPKG_MANIFEST_DIR/ports.txt"
-          # Explicit specs mean classic mode, but clear the variable too so there is no path
-          # by which vcpkg can fall back to the root manifest.
-          unset VCPKG_MANIFEST_DIR
           SPECS=()
           for port in "${CI_PORTS[@]}"; do SPECS+=("${port}:${VCPKG_TARGET_TRIPLET}"); done
-          echo "vcpkg classic-mode install: ${SPECS[*]}"
-          "$VCPKG_ROOT_DIR/vcpkg" install "${SPECS[@]}"
+
+          # Classic mode is selected by the working directory, not by a flag: vcpkg treats
+          # "there is a vcpkg.json in CWD (or above it)" as manifest mode and then rejects
+          # explicit package arguments outright --
+          #   error: In manifest mode, `vcpkg install` does not support individual package
+          #   arguments.
+          # The repo root has a vcpkg.json, so running from there always means manifest mode.
+          # Running from an empty scratch dir outside the workspace leaves no manifest within
+          # reach, which is what actually forces classic mode. Clearing VCPKG_MANIFEST_DIR too,
+          # so no environment variable can point it back at a manifest.
+          CLASSIC_DIR="$RUNNER_TEMP/vcpkg-classic-mode"
+          mkdir -p "$CLASSIC_DIR"
+          unset VCPKG_MANIFEST_DIR
+          echo "vcpkg classic-mode install in $CLASSIC_DIR: ${SPECS[*]}"
+          ( cd "$CLASSIC_DIR" && "$VCPKG_ROOT_DIR/vcpkg" install "${SPECS[@]}" )
 
       - name: Configure (${{ matrix.preset }})
         shell: bash
