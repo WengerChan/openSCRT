@@ -13,6 +13,7 @@
 #include <functional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "terminal/buffer/Cell.h"
@@ -130,6 +131,7 @@ class ScreenGrid {
     // Set when the cursor sat on the last column after a put; the next put wraps first.
     // This is what makes xterm-compatible right-margin behaviour work.
     bool pending_wrap_ = false;
+    ScrolledOffHandler scrolled_off_;
 };
 
 }  // namespace openscrt::terminal
