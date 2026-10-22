@@ -53,6 +53,10 @@ jobs:
           echo "VCPKG_ROOT=$VCPKG_ROOT_DIR" >> "$GITHUB_ENV"
           echo "VCPKG_DEFAULT_BINARY_CACHE=$VCPKG_BINARY_CACHE" >> "$GITHUB_ENV"
           echo "VCPKG_TARGET_TRIPLET=${{ matrix.triplet }}" >> "$GITHUB_ENV"
+          # The runner images already ship python3, cmake and ninja. Without this, vcpkg
+          # builds its own host copies -- which meant a full CPython source build (gettext,
+          # libiconv, libuuid, python3) in every run, and that build then failed in autoreconf.
+          echo "VCPKG_FORCE_SYSTEM_BINARIES=1" >> "$GITHUB_ENV"
 
       - name: Cache vcpkg installed tree and downloads
         uses: actions/cache@v4
