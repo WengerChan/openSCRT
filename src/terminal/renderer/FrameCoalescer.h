@@ -39,7 +39,7 @@ class FrameCoalescer {
     // there is pending work, or the refresh interval has elapsed since the last frame.
     [[nodiscard]] bool shouldRepaint(std::chrono::steady_clock::time_point now) noexcept {
         const bool dirty = pending_.load(std::memory_order_acquire);
-        const bool first_frame = last_frame_ == time_point{};
+        const bool first_frame = !painted_;
 
         // The very first tick always paints: a freshly shown widget has to draw itself even
         // when the session has produced no output yet, otherwise the canvas stays undefined
@@ -54,6 +54,7 @@ class FrameCoalescer {
         pending_.store(false, std::memory_order_release);
         forced_ = false;
         last_frame_ = now;
+        painted_ = true;
         frames_.fetch_add(1, std::memory_order_relaxed);
         return true;
     }
@@ -90,6 +91,10 @@ class FrameCoalescer {
     std::atomic<std::uint64_t> frames_{0};
     // UI-thread only; does not need synchronisation because only that thread reads or writes it.
     time_point last_frame_{};
+    // A separate flag rather than `last_frame_ == time_point{}`: the epoch is a perfectly
+    // legal time_point, so a first frame painted at t=0 would otherwise leave the sentinel
+    // set and every subsequent tick would look like a first frame.
+    bool painted_{false};
     bool forced_{false};
 };
 
