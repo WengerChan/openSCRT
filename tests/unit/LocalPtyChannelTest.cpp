@@ -88,7 +88,9 @@ TEST(LocalPtyChannelTest, RunsACommandAndReturnsItsOutput) {
     ASSERT_TRUE(channel.connectAsync().ok);
     readUntil(channel, "$");
 
-    channel.send("echo openscrt-marker\n");
+    // The channel is in raw mode, so Enter is CR. Sending LF would not be a line
+    // terminator to the shell's line editor -- the same reason a real terminal emits CR.
+    channel.send("echo openscrt-marker\r");
     const std::string output = readUntil(channel, "openscrt-marker");
     EXPECT_NE(output.find("openscrt-marker"), std::string::npos);
 }
@@ -101,7 +103,9 @@ TEST(LocalPtyChannelTest, NonInteractiveModeReturnsCleanOutput) {
     LocalPtyChannel channel{options};
 
     ASSERT_TRUE(channel.connectAsync().ok);
-    EXPECT_EQ(readUntil(channel, "openscrt-exact"), "openscrt-exact\r\n");
+    // Raw mode has OPOST off, so the PTY no longer expands \n to \r\n. A terminal
+    // application is responsible for its own line endings.
+    EXPECT_EQ(readUntil(channel, "openscrt-exact"), "openscrt-exact\n");
 }
 
 TEST(LocalPtyChannelTest, DataCallbackSeesTheSameBytesAsTheRing) {
@@ -113,7 +117,7 @@ TEST(LocalPtyChannelTest, DataCallbackSeesTheSameBytesAsTheRing) {
     ASSERT_TRUE(channel.connectAsync().ok);
 
     readUntil(channel, "$");
-    channel.send("echo callback-path\n");
+    channel.send("echo callback-path\r");
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(5000);
     while (via_callback.find("callback-path") == std::string::npos &&
@@ -156,7 +160,7 @@ TEST(LocalPtyChannelTest, DrivesTheTerminalEmulatorEndToEnd) {
     ASSERT_TRUE(channel.connectAsync().ok);
     readUntil(channel, "$");
 
-    channel.send("echo end-to-end\n");
+    channel.send("echo end-to-end\r");
 
     std::uint8_t buffer[1024];
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(5000);
