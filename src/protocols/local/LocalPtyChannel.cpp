@@ -84,6 +84,8 @@ struct LocalPtyChannel::Platform {
 
 #endif
 
+LocalPtyChannel::LocalPtyChannel() : LocalPtyChannel(Options{}) {}
+
 LocalPtyChannel::LocalPtyChannel(Options options)
     : options_(std::move(options)), ring_(options_.ring_capacity) {
     if (options_.shell.empty()) {

@@ -38,7 +38,10 @@ class LocalPtyChannel final : public ITransportChannel {
         std::size_t ring_capacity{64 * 1024};
     };
 
-    explicit LocalPtyChannel(Options options = Options{});
+    // Split rather than a default argument: using Options' default member initialisers in a
+    // default argument inside the enclosing class is not usable before the class is complete.
+    LocalPtyChannel();
+    explicit LocalPtyChannel(Options options);
     ~LocalPtyChannel() override;
 
     LocalPtyChannel(const LocalPtyChannel&) = delete;
