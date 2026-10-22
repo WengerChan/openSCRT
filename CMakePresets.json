@@ -61,8 +61,6 @@
     {
       "name": "linux-ci",
       "configurePreset": "linux-ci",
-      "outputOnFailure": true,
-      "timeout": 600,
       "execution": {
         "noTestsAction": "error"
       }
@@ -71,8 +69,6 @@
       "name": "windows-ci",
       "configurePreset": "windows-ci",
       "configuration": "Release",
-      "outputOnFailure": true,
-      "timeout": 600,
       "execution": {
         "noTestsAction": "error"
       }
@@ -80,8 +76,6 @@
     {
       "name": "macos-ci",
       "configurePreset": "macos-ci",
-      "outputOnFailure": true,
-      "timeout": 600,
       "execution": {
         "noTestsAction": "error"
       }

@@ -210,7 +210,7 @@ jobs:
           with open(os.path.join(out, "vcpkg.json"), "w", encoding="utf-8") as fh:
               json.dump(manifest, fh, indent=2)
           print("vcpkg CI installs:", " ".join(manifest["dependencies"]))
-          with open(os.path.join(out, "ports.txt"), "w", encoding="utf-8") as fh:
+          with open(os.path.join(out, "ports.txt"), "w", encoding="utf-8", newline="\n") as fh:
               fh.write("\n".join(manifest["dependencies"]))
           PY
 
@@ -224,6 +224,22 @@ jobs:
           SPECS=()
           for port in "${CI_PORTS[@]}"; do SPECS+=("${port}:${VCPKG_TARGET_TRIPLET}"); done
 
+          # Bash 3.2 (the macOS runner's /bin/bash) has no mapfile, and the Windows runner's Git Bash
+          # hands back CRLF-terminated lines. Both bit run #10, so read the file with a portable
+          # loop and strip the carriage return explicitly.
+          set -f
+          SPECS=""
+          while IFS= read -r port || [ -n "$port" ]; do
+            port="${port%$'\r'}"
+            [ -z "$port" ] && continue
+            SPECS="${SPECS} ${port}:${VCPKG_TARGET_TRIPLET}"
+          done < "$VCPKG_MANIFEST_DIR/ports.txt"
+          set +f
+          if [ -z "${SPECS// /}" ]; then
+            echo "::error::no ports left to install after applying the SKIP table"
+            exit 1
+          fi
+
           # Classic mode is selected by the working directory, not by a flag: vcpkg treats
           # "there is a vcpkg.json in CWD (or above it)" as manifest mode and then rejects
           # explicit package arguments outright --
@@ -236,8 +252,8 @@ jobs:
           CLASSIC_DIR="$RUNNER_TEMP/vcpkg-classic-mode"
           mkdir -p "$CLASSIC_DIR"
           unset VCPKG_MANIFEST_DIR
-          echo "vcpkg classic-mode install in $CLASSIC_DIR: ${SPECS[*]}"
-          ( cd "$CLASSIC_DIR" && "$VCPKG_ROOT_DIR/vcpkg" install "${SPECS[@]}" )
+          echo "vcpkg classic-mode install in $CLASSIC_DIR:${SPECS}"
+          ( cd "$CLASSIC_DIR" && "$VCPKG_ROOT_DIR/vcpkg" install ${SPECS} )
 
       - name: Configure (${{ matrix.preset }})
         shell: bash
