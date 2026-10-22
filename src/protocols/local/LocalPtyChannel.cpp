@@ -369,7 +369,10 @@ void LocalPtyChannel::send(std::string_view text) {
 }
 
 bool LocalPtyChannel::resizeWindow(const WindowSize& size) {
-#if !defined(_WIN32)
+#if defined(_WIN32)
+    static_cast<void>(size);  // no native transport until ConPTY lands
+    return false;
+#else
     if (platform_->master < 0) {
         return false;
     }
@@ -377,8 +380,6 @@ bool LocalPtyChannel::resizeWindow(const WindowSize& size) {
     native.ws_row = static_cast<unsigned short>(size.rows);
     native.ws_col = static_cast<unsigned short>(size.columns);
     return ioctl(platform_->master, TIOCSWINSZ, &native) == 0;
-#else
-    return false;
 #endif
 }
 
