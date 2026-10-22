@@ -4,6 +4,7 @@
 #include <QPainter>
 #include <QRawFont>
 #include <algorithm>
+#include <utility>
 
 namespace openscrt::ui {
 namespace {
@@ -55,11 +56,18 @@ int GlyphAtlas::reserveRow() {
     }
     const int row = next_row_++;
     used_slots_ += columns_;
-    if (atlas_.height() < metrics_.cell_height * (next_row_ + 1)) {
-        // Keep one spare row so there is always somewhere to put the next glyph.
-        atlas_ = atlas_.copy(0, 0, kAtlasWidth, metrics_.cell_height * (next_row_ + 1));
-        atlas_.fill(QRect(0, next_row_ * metrics_.cell_height, kAtlasWidth, metrics_.cell_height),
-                    Qt::transparent);
+    const int wanted_height = metrics_.cell_height * (next_row_ + 1);
+    if (atlas_.height() < wanted_height) {
+        // Keep one spare row so there is always somewhere to put the next glyph. QImage has
+        // no region fill, so grow by allocating a fresh transparent image and blitting the
+        // old contents onto it.
+        QImage grown(kAtlasWidth, wanted_height, QImage::Format_ARGB32_Premultiplied);
+        grown.fill(Qt::transparent);
+        {
+            QPainter painter(&grown);
+            painter.drawImage(0, 0, atlas_);
+        }
+        atlas_ = std::move(grown);
     }
     return row;
 }

@@ -88,7 +88,8 @@ void TerminalRenderer::paintCell(int row, int column) {
     }
 
     painter.setPen(foreground);
-    const QString text = QString::fromUcs4(&value.codepoint, 1);
+    const char32_t scalar = static_cast<char32_t>(value.codepoint);
+    const QString text = QString::fromUcs4(&scalar, 1);
     painter.drawText(QPointF(target.x(), target.y() + atlas_.metrics().baseline), text);
 }
 

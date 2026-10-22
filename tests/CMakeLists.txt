@@ -49,7 +49,7 @@ openscrt_add_test(unit_ring_scrollback_buffer
 openscrt_add_test(unit_terminal_renderer
     LABEL unit
     SOURCES unit/TerminalRendererTest.cpp
-    LIBS openscrt_ui)
+    LIBS openscrt_ui Qt6::Gui)
 set_tests_properties(unit_terminal_renderer PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 

@@ -43,7 +43,7 @@ class TerminalRenderer {
     void resize(int rows, int columns);
 
     [[nodiscard]] const QImage& backbuffer() const noexcept { return backbuffer_; }
-    [[nodiscard]] const CellMetrics& cellMetrics() const noexcept {
+    [[nodiscard]] terminal::CellMetrics cellMetrics() const noexcept {
         return {atlas_.metrics().cell_width, atlas_.metrics().cell_height};
     }
 
