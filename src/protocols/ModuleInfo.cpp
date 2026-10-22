@@ -1,5 +1,7 @@
 #include "protocols/ModuleInfo.h"
 
+#include "core/BuildInfo.h"
+
 namespace openscrt::protocols {
 
 const char* moduleName() noexcept {
@@ -7,7 +9,9 @@ const char* moduleName() noexcept {
 }
 
 const char* moduleVersion() noexcept {
-    return "0.1.0";
+    // Phase 0 placeholder: modules have no version of their own yet, so they report the
+    // project version rather than a second number that drifts from the installer.
+    return openscrt::core::kProjectVersion;
 }
 
 }  // namespace openscrt::protocols

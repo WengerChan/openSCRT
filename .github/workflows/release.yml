@@ -420,6 +420,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          # The version the tag resolved to, so this check never has to be edited per release.
+          $version = '${{ steps.version.outputs.version }}'
           $msi = (Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE 'out/pkg/*.msi')).FullName
           $installDir = Join-Path $env:ProgramFiles 'openSCRT'
           $log = Join-Path $env:RUNNER_TEMP 'msiexec-install.log'
@@ -448,8 +450,8 @@ jobs:
           if (-not $entry) { throw 'no Add/Remove Programs entry named openSCRT' }
           $props = Get-ItemProperty $entry.PSPath
           "ARP: version=$($props.DisplayVersion) location=$($props.InstallLocation)"
-          if ($props.DisplayVersion -notlike '0.1.0*') {
-            throw "Add/Remove Programs reports version $($props.DisplayVersion), expected 0.1.0"
+          if ($props.DisplayVersion -notlike "$version*") {
+            throw "Add/Remove Programs reports version $($props.DisplayVersion), expected $version"
           }
           if ($props.InstallLocation -notlike "*openSCRT*") {
             throw "Add/Remove Programs install location is '$($props.InstallLocation)', expected a path ending in openSCRT"
