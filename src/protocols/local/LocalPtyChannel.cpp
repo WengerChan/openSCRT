@@ -49,7 +49,10 @@ void applyRawMode(int fd) {
     attributes.c_lflag &= ~static_cast<tcflag_t>(ECHO | ECHONL | ICANON | ISIG);
     attributes.c_iflag &= ~static_cast<tcflag_t>(ICRNL | INLCR | ISTRIP);
     attributes.c_oflag &= ~static_cast<tcflag_t>(OPOST);
-    attributes.c_cc[VMIN] = 0;
+    // VMIN must be 1, not 0. VMIN=0/VTIME=0 is the setting an *application* uses to poll
+    // stdin without blocking; applied to the line discipline it makes every read() return
+    // immediately with zero bytes, which a shell reads as EOF and exits on.
+    attributes.c_cc[VMIN] = 1;
     attributes.c_cc[VTIME] = 0;
     tcsetattr(fd, TCSANOW, &attributes);
 }
