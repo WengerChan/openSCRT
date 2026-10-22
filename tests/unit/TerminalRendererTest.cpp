@@ -108,7 +108,7 @@ TEST_F(RendererTest, ResetDiscardsEverythingRasterised) {
 
 TEST_F(RendererTest, CleanGridPaintsNothing) {
     EXPECT_EQ(renderer_->repaintDamage(), 0) << "no damage must not cost a repaint";
-    EXPECT_EQ(renderer_->stats().frames, 0);
+    EXPECT_EQ(renderer_->stats().repaint_frames, 0);
 }
 
 TEST_F(RendererTest, OneDirtyRowCostsOneRowOfPaint) {
@@ -122,7 +122,7 @@ TEST_F(RendererTest, AdjacentRowsCoalesceIntoOnePaintPass) {
         writeRow(row, "x");
     }
     EXPECT_EQ(renderer_->repaintDamage(), 3);
-    EXPECT_EQ(renderer_->stats().frames, 1) << "three dirty rows, one repaint";
+    EXPECT_EQ(renderer_->stats().repaint_frames, 1) << "three dirty rows, one repaint";
 }
 
 TEST_F(RendererTest, FullScreenDamagePaintsEveryRowOnce) {
@@ -232,7 +232,7 @@ TEST_F(RendererTest, CoalescerAndRendererAgreeOnFrameCount) {
 
     EXPECT_TRUE(coalescer.shouldRepaint(std::chrono::steady_clock::time_point{}));
     const int painted = renderer_->repaintDamage();
-    EXPECT_EQ(renderer_->stats().frames, 1);
+    EXPECT_EQ(renderer_->stats().repaint_frames, 1);
     EXPECT_EQ(painted, 1) << "only the row that received the text";
     EXPECT_FALSE(coalescer.shouldRepaint(std::chrono::steady_clock::time_point{}))
         << "a second immediate tick must not repaint again";

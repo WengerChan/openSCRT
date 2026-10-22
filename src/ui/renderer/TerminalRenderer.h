@@ -54,8 +54,10 @@ class TerminalRenderer {
     // Unconditional full repaint: expose, resize, font or theme change.
     int repaintAll();
 
+    // `frames` is avoided for the same reason as in FrameCoalescer: Qt defines it as a
+    // macro and this header is reachable from translation units that include Qt.
     struct Stats {
-        int frames{0};
+        int repaint_frames{0};
         int rows_painted{0};
         int rows_skipped{0};
     };

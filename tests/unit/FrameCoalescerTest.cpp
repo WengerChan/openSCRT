@@ -86,7 +86,7 @@ TEST(FrameCoalescerTest, IdleTerminalDoesNotRepaint) {
     for (int ms = 100; ms <= 1000; ms += 100) {
         EXPECT_FALSE(coalescer.shouldRepaint(at(ms))) << "at " << ms << " ms";
     }
-    EXPECT_EQ(coalescer.stats().frames, 1u);
+    EXPECT_EQ(coalescer.stats().repaint_frames, 1u);
 }
 
 TEST(FrameCoalescerTest, WorkArrivingMidIntervalWaitsForTheBoundary) {
@@ -130,10 +130,11 @@ TEST(FrameCoalescerTest, SignallingFromManyThreadsLosesNoWork) {
         thread.join();
     }
 
-    EXPECT_EQ(coalescer.stats().signals, static_cast<std::uint64_t>(kThreads * kSignalsPerThread));
+    EXPECT_EQ(coalescer.stats().output_events,
+              static_cast<std::uint64_t>(kThreads * kSignalsPerThread));
     EXPECT_TRUE(coalescer.framePending()) << "signals from any thread must leave work pending";
     EXPECT_TRUE(coalescer.shouldRepaint(at(0)));
-    EXPECT_EQ(coalescer.stats().frames, 1u);
+    EXPECT_EQ(coalescer.stats().repaint_frames, 1u);
 }
 
 }  // namespace

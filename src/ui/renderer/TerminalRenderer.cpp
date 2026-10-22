@@ -126,7 +126,7 @@ int TerminalRenderer::repaintDamage() {
     for (const auto& band : bands) {
         painted += band.rowCount();
     }
-    ++stats_.frames;
+    ++stats_.repaint_frames;
     stats_.rows_painted += painted;
     stats_.rows_skipped += rows - painted;
     last_paint_ms_ =
@@ -137,7 +137,7 @@ int TerminalRenderer::repaintDamage() {
 int TerminalRenderer::repaintAll() {
     const auto start = std::chrono::steady_clock::now();
     paintBand(0, grid_->rows() - 1);
-    ++stats_.frames;
+    ++stats_.repaint_frames;
     stats_.rows_painted += grid_->rows();
     last_paint_ms_ =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
