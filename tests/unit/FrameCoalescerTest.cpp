@@ -19,7 +19,9 @@ namespace {
 using Clock = std::chrono::steady_clock;
 using Ms = std::chrono::milliseconds;
 
-Ms at(int elapsed_ms) {
+// Deterministic clock ticks. time_point is nanosecond-based, so it has to be built from a
+// duration rather than from a millisecond count directly.
+Clock::time_point at(int elapsed_ms) {
     return Clock::time_point(Ms(elapsed_ms));
 }
 
