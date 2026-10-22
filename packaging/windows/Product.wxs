@@ -38,12 +38,20 @@
 
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- Sets ARPINSTALLLOCATION from the resolved directory, so the control panel shows a path
+         instead of the property name. Runs only on a fresh install; an upgrade keeps the location
+         recorded by the product already on the machine. -->
+    <CustomAction Id="SetArpInstallLocation" Property="ARPINSTALLLOCATION" Value="[INSTALLFOLDER]" />
+    <InstallExecuteSequence>
+      <Custom Action="SetArpInstallLocation">NOT Installed</Custom>
+    </InstallExecuteSequence>
+
     <UIRef Id="WixUI_InstallDir" />
     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
-    <!-- Without this, Add/Remove Programs shows a product with a blank "Installed on". The value
-         needs brackets: without them MSI stores the literal text "INSTALLFOLDER" and the UI shows
-         exactly that. -->
-    <Property Id="ARPINSTALLLOCATION" Value="[INSTALLFOLDER]" />
+    <!-- "Installed on" in Add/Remove Programs. A CustomAction is the only thing that formats the
+         value: MSI stores whatever sits in the Property table verbatim, so a plain
+         Property/Value pair ends up displayed as the literal text "[INSTALLFOLDER]". -->
+    <Property Id="ARPINSTALLLOCATION" Value="" />
 
     <Feature Id="Main" Title="openSCRT" Level="1">
       <ComponentGroupRef Id="HarvestedPayload" />
