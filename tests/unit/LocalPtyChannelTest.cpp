@@ -75,7 +75,12 @@ TEST(LocalPtyChannelTest, ConnectStartsAWorkingShell) {
     ASSERT_TRUE(result.ok) << result.error;
     EXPECT_EQ(channel.state(), TransportState::kConnected);
     EXPECT_EQ(channel.kind(), TransportKind::kLocalPty);
-    EXPECT_NE(readUntil(channel, "$"), "");
+
+    // Liveness is a command round-trip, not a prompt. Whether an interactive shell prints a
+    // prompt, and whether its line editor consumes one, is the shell's business -- the
+    // channel only has to carry bytes in both directions.
+    channel.send("echo alive\r");
+    EXPECT_NE(readUntil(channel, "alive").find("alive"), std::string::npos);
 }
 
 TEST(LocalPtyChannelTest, ReportsItsRemoteAddress) {
@@ -86,10 +91,8 @@ TEST(LocalPtyChannelTest, ReportsItsRemoteAddress) {
 TEST(LocalPtyChannelTest, RunsACommandAndReturnsItsOutput) {
     LocalPtyChannel channel{shellOptions()};
     ASSERT_TRUE(channel.connectAsync().ok);
-    readUntil(channel, "$");
 
-    // The channel is in raw mode, so Enter is CR. Sending LF would not be a line
-    // terminator to the shell's line editor -- the same reason a real terminal emits CR.
+    // Raw mode: Enter is CR, not LF -- the same reason a real terminal emits CR.
     channel.send("echo openscrt-marker\r");
     const std::string output = readUntil(channel, "openscrt-marker");
     EXPECT_NE(output.find("openscrt-marker"), std::string::npos);
@@ -115,8 +118,6 @@ TEST(LocalPtyChannelTest, DataCallbackSeesTheSameBytesAsTheRing) {
         via_callback.append(reinterpret_cast<const char*>(data), size);
     });
     ASSERT_TRUE(channel.connectAsync().ok);
-
-    readUntil(channel, "$");
     channel.send("echo callback-path\r");
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(5000);
@@ -158,8 +159,6 @@ TEST(LocalPtyChannelTest, DrivesTheTerminalEmulatorEndToEnd) {
     ::openscrt::terminal::TerminalEmulator emulator{grid};
 
     ASSERT_TRUE(channel.connectAsync().ok);
-    readUntil(channel, "$");
-
     channel.send("echo end-to-end\r");
 
     std::uint8_t buffer[1024];
