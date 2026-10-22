@@ -78,7 +78,8 @@ TEST(FrameCoalescerTest, OneHTwentyRefreshDoublesTheRate) {
 
 TEST(FrameCoalescerTest, IdleTerminalDoesNotRepaint) {
     FrameCoalescer coalescer{60};
-    coalescer.shouldRepaint(at(0));
+    // One priming repaint puts the coalescer on its clock; after that it must stay idle.
+    ASSERT_TRUE(coalescer.shouldRepaint(at(0)));
     // Nothing happening: no work for every 100 ms.
     for (int ms = 100; ms <= 1000; ms += 100) {
         EXPECT_FALSE(coalescer.shouldRepaint(at(ms))) << "at " << ms << " ms";
