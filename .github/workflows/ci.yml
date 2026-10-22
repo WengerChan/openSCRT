@@ -305,9 +305,10 @@ jobs:
           "$GCOVR" --root . --filter 'src/core/' --filter 'src/terminal/' \
                    --filter 'src/protocols/' --exclude 'src/app/' \
                    --exclude-unreachable-branches --exclude-throw-branches \
-                   --xml --html-details --print-summary \
-                   --fail-under-line 40 \
-                   -o out/coverage/coverage.xml
+                   --xml out/coverage/coverage.xml \
+                   --html-details out/coverage/index.html \
+                   --print-summary \
+                   --fail-under-line 40
 
       - name: Upload coverage report
         if: runner.os == 'Linux'
