@@ -15,21 +15,20 @@
   putting %ProgramFiles%\openSCRT\bin on PATH so the openscrt command works from any shell.
 -->
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-
-  <?define Manufacturer = "openSCRT" ?>
-  <?define UpgradeCode = "{6F4A1E52-9C1B-4C7A-9F2D-8B6C0D5E7A31}" ?>
-
+  <!-- Manufacturer and UpgradeCode are literals on purpose: UpgradeCode must stay byte-identical
+       for every release ever, and the only value that has to change per build (ProductVersion)
+       arrives through candle's -dProductVersion. -->
   <Product Id="*"
            Name="openSCRT"
            Language="1033"
            Version="$(var.ProductVersion)"
-           Manufacturer="$(define.Manufacturer)"
-           UpgradeCode="$(define.UpgradeCode)">
+           Manufacturer="openSCRT"
+           UpgradeCode="{6F4A1E52-9C1B-4C7A-9F2D-8B6C0D5E7A31}">
 
     <Package InstallerVersion="500"
              Compressed="yes"
              InstallScope="perMachine"
-             Description="openSCRT $(var.ProductVersion) -- SecureCRT-alike terminal emulator" />
+             Description="openSCRT $(var.ProductVersion), a SecureCRT-alike terminal emulator" />
 
     <!-- UpgradeCode is the identity that ties v0.1.0 to v0.2.0. Without a stable one every
          release installs side by side and the user ends up with two copies on PATH. -->
