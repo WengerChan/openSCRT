@@ -83,8 +83,13 @@ jobs:
 
       - uses: lukka/get-cmake@latest
         with:
-          cmakeVersion: '>=3.28.3'
-          ninjaVersion: '1.11.1'
+          # Pinned to the 3.31 line on purpose. An open-ended '>=3.28.3' resolved to CMake
+          # 4.4.4, and the pinned vcpkg toolchain (2025-09 baseline) does not cooperate with
+          # CMake 4's prefix-path handling: every find_package came back empty even though
+          # vcpkg had installed the ports. cmake_minimum_required in this repo is 3.28, so
+          # 3.31 is a supported, deliberately chosen toolchain -- not a floor.
+          cmakeVersion: '~3.31.0'
+          ninjaVersion: '1.12.1'
 
       - name: Acquire vcpkg at the manifest baseline
         shell: bash
@@ -265,7 +270,8 @@ jobs:
             -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" \
             -DVCPKG_MANIFEST_DIR="$VCPKG_MANIFEST_DIR" \
             -DVCPKG_MANIFEST_INSTALL=OFF \
-            -DCMAKE_PREFIX_PATH="$Qt6_DIR/..;$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET"
+            -DCMAKE_PREFIX_PATH="$Qt6_DIR/..;$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET" \
+            -DGTest_ROOT="$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET"
 
       - name: Build (${{ matrix.preset }})
         shell: bash
