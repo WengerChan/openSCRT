@@ -405,7 +405,9 @@ jobs:
             "{0}  {1}" -f (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower(), $f.Name
           }
           $sums = Join-Path $pkg 'SHA256SUMS.txt'
-          $lines | Set-Content -Path $sums -Encoding ascii
+          # LF, not CRLF: Set-Content would emit CRLF and the trailing \r becomes part of the file
+          # name, which makes `sha256sum -c` / `shasum -c` fail on macOS and Linux.
+          [System.IO.File]::WriteAllText($sums, ($lines -join "`n") + "`n")
           Get-Content $sums
 
       - name: Upload installer artifacts
