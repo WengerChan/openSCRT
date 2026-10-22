@@ -173,6 +173,13 @@ void ScreenGrid::put(std::uint32_t codepoint, const CellStyle& style) {
         pending_wrap_ = false;
     }
 
+    // A double-width glyph needs two columns. When only one is left, wrap now: writing the
+    // lead cell there would leave its trailing half with nowhere to go and corrupt the row.
+    if (style.hasAttribute(cellattr::kWideLead) && cursor_column_ + 1 >= cols_) {
+        carriageReturn();
+        lineFeed();
+    }
+
     Cell& cell = at(cursor_row_, cursor_column_);
     cell.codepoint = codepoint;
     cell.fg = style.fg;
@@ -467,6 +474,11 @@ std::string ScreenGrid::toUtf8(const Cell* cells, int count) {
         }
         if (cells[i].codepoint != 0) {
             appendUtf8(out, cells[i].codepoint);
+        } else {
+            // A blank cell is still a column. Dropping it would shift everything after the
+            // gap leftwards, which corrupts column alignment for search, copy and logs.
+            // Trailing blanks never reach here -- rowText trims them first.
+            out.push_back(' ');
         }
     }
     return out;

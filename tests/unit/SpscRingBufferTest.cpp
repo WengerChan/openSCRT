@@ -66,19 +66,23 @@ TEST(SpscRingBufferTest, TryWriteAllRejectsPartialRequests) {
 TEST(SpscRingBufferTest, SurvivesRepeatedWrapAround) {
     Buffer buffer(5);
     std::uint8_t next_write = 0;
-    std::uint8_t next_read = 0;
 
-    // 1000 short bursts, deliberately irregular sizes so every offset inside the ring is hit.
+    // 1000 short bursts with deliberately irregular sizes so every offset inside the ring is
+    // hit. Each burst writes and then drains: the buffer starts empty, so reading before
+    // writing would be reading nothing.
     for (int burst = 0; burst < 1000; ++burst) {
         const std::size_t chunk = static_cast<std::size_t>(burst % 4) + 1;
-        std::vector<std::uint8_t> out(chunk);
-        EXPECT_EQ(buffer.read(out.data(), chunk), chunk) << "burst " << burst;
-        for (std::uint8_t value : out) {
-            EXPECT_EQ(value, next_read) << "burst " << burst;
-            ++next_read;
+
+        std::vector<std::uint8_t> in(chunk);
+        for (std::size_t i = 0; i < chunk; ++i) {
+            in[i] = static_cast<std::uint8_t>(next_write + i);
         }
-        const std::vector<std::uint8_t> in(next_write, next_write + chunk);
-        EXPECT_EQ(buffer.write(in.data(), chunk), chunk) << "burst " << burst;
+        ASSERT_EQ(buffer.write(in.data(), chunk), chunk) << "burst " << burst;
+
+        std::vector<std::uint8_t> out(chunk);
+        ASSERT_EQ(buffer.read(out.data(), chunk), chunk) << "burst " << burst;
+        EXPECT_EQ(out, in) << "burst " << burst;
+
         next_write = static_cast<std::uint8_t>(next_write + chunk);
     }
 }

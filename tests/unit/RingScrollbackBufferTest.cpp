@@ -106,9 +106,13 @@ TEST(RingScrollbackBufferTest, ClearResetsCounters) {
     EXPECT_EQ(buffer.at(0), "y");
 }
 
-TEST(RingScrollbackBufferTest, DefaultCapacityMatchesRoadmapMaximum) {
+TEST(RingScrollbackBufferTest, DefaultCapacityCoversTheRoadmapMaximum) {
     RingScrollbackBuffer buffer;
-    EXPECT_EQ(buffer.capacity(), RingScrollbackBuffer::kDefaultCapacityLines);
+    // The ring wraps on a page boundary, so the effective capacity is rounded up to a whole
+    // number of pages: 128,000 is not a multiple of 4096, so the buffer holds 131,072 lines.
+    // The contract is "at least the roadmap maximum", not "exactly".
+    EXPECT_GE(buffer.capacity(), RingScrollbackBuffer::kDefaultCapacityLines);
+    EXPECT_EQ(buffer.capacity() % RingScrollbackBuffer::kLinesPerPage, 0u);
 }
 
 }  // namespace

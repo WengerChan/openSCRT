@@ -58,7 +58,7 @@ TEST(ScreenGridTest, AutoWrapAfterLastColumn) {
     EXPECT_EQ(grid.cursorColumn(), 3);
     grid.put(kCharA);
     EXPECT_EQ(grid.rowText(0), "abcd");
-    EXPECT_EQ(grid.rowText(1), "a");
+    EXPECT_EQ(grid.rowText(1), "A");
 }
 
 TEST(ScreenGridTest, LineFeedAtBottomScrolls) {
@@ -213,11 +213,12 @@ TEST(ScreenGridTest, WideGlyphOccupiesTwoCells) {
 }
 
 TEST(ScreenGridTest, WideGlyphWrapsRatherThanSplittingAtMargin) {
-    ScreenGrid grid(2, 3);
-    grid.put(kCharA);  // cursor -> 1
+    // 2 columns: after 'A' exactly one column is left, which is not enough for a wide glyph.
+    ScreenGrid grid(2, 2);
+    grid.put(kCharA);
     CellStyle style;
     style.setAttribute(cellattr::kWideLead, true);
-    grid.put(0x4E2D, style);  // only 2 columns used, one left over
+    grid.put(0x4E2D, style);
 
     EXPECT_EQ(grid.rowText(0), "A");
     EXPECT_EQ(grid.rowText(1), "\xE4\xB8\xAD");
