@@ -6,13 +6,23 @@
 #include <utility>
 
 #if defined(_WIN32)
+// Already on the command line via the shared warning options; redefining it trips C4005,
+// which -Werror turns into a build failure.
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 #else
 #include <fcntl.h>
 #include <poll.h>
-#include <pty.h>
 #include <signal.h>
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || \
+    defined(__DragonFly__)
+// macOS and the BSDs ship openpty in libutil, not in <pty.h>.
+#include <util.h>
+#else
+#include <pty.h>
+#endif
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <termios.h>
@@ -333,6 +343,9 @@ void LocalPtyChannel::send(const std::uint8_t* data, std::size_t size) {
     if (data == nullptr || size == 0) {
         return;
     }
+#if defined(_WIN32)
+    static_cast<void>(size);  // no native transport until ConPTY lands
+#endif
 #if !defined(_WIN32)
     if (platform_->master < 0) {
         return;
