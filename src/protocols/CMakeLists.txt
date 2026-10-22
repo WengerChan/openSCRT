@@ -3,8 +3,10 @@
 
 add_library(openscrt_protocols STATIC
     ModuleInfo.cpp
-    ITransportChannel.cpp)
+    ITransportChannel.cpp
+    local/LocalPtyChannel.cpp)
 
 target_include_directories(openscrt_protocols PUBLIC ${PROJECT_SOURCE_DIR}/src)
 
-target_link_libraries(openscrt_protocols PUBLIC openscrt_warnings PRIVATE openscrt_core)
+target_link_libraries(openscrt_protocols PUBLIC openscrt_warnings PRIVATE openscrt_core
+                                    openscrt_terminal)
