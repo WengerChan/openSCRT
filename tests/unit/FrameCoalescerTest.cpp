@@ -25,10 +25,12 @@ Clock::time_point at(int elapsed_ms) {
     return Clock::time_point(Ms(elapsed_ms));
 }
 
-TEST(FrameCoalescerTest, StartsIdle) {
+TEST(FrameCoalescerTest, StartsIdleButStillDrawsTheFirstFrame) {
     FrameCoalescer coalescer{60};
     EXPECT_FALSE(coalescer.framePending());
-    EXPECT_FALSE(coalescer.shouldRepaint(at(0)));
+    // No output has arrived, but a freshly shown canvas still has to paint itself once.
+    EXPECT_TRUE(coalescer.shouldRepaint(at(0)));
+    EXPECT_FALSE(coalescer.shouldRepaint(at(4)));
 }
 
 TEST(FrameCoalescerTest, SignalCausesExactlyOneFrame) {

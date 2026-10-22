@@ -39,28 +39,33 @@ class FrameCoalescer {
     // there is pending work, or the refresh interval has elapsed since the last frame.
     [[nodiscard]] bool shouldRepaint(std::chrono::steady_clock::time_point now) noexcept {
         const bool dirty = pending_.load(std::memory_order_acquire);
+        const bool first_frame = last_frame_ == time_point{};
 
-        if (dirty) {
-            // Only paint when the interval has actually elapsed. This is what bounds the frame
-            // rate when output never stops arriving.
-            if (last_frame_ != time_point{} && now - last_frame_ < interval_) {
-                return false;
-            }
+        // The very first tick always paints: a freshly shown widget has to draw itself even
+        // when the session has produced no output yet, otherwise the canvas stays undefined
+        // until the first byte arrives.
+        if (!forced_ && !first_frame && now - last_frame_ < interval_) {
+            return false;  // Too soon. pending_ stays set so the work is not lost.
         }
-        // No work and nothing scheduled: stay idle so an idle terminal does not burn CPU.
-        if (!dirty && (last_frame_ == time_point{} || now - last_frame_ < interval_)) {
-            return false;
+        if (!dirty && !first_frame) {
+            return false;  // Idle and already painted: do not burn a core.
         }
 
         pending_.store(false, std::memory_order_release);
+        forced_ = false;
         last_frame_ = now;
         frames_.fetch_add(1, std::memory_order_relaxed);
         return true;
     }
 
     // Forces the next shouldRepaint() to repaint regardless of the interval. Used when the
-    // window is exposed or resized.
-    void invalidate() noexcept { pending_.store(true, std::memory_order_release); }
+    // window is exposed or resized, where waiting a frame would visibly lag the interaction.
+    // UI thread only: `forced_` is deliberately not atomic because it always accompanies a
+    // pending flag that is.
+    void invalidate() noexcept {
+        pending_.store(true, std::memory_order_release);
+        forced_ = true;
+    }
 
     [[nodiscard]] std::chrono::milliseconds interval() const noexcept { return interval_; }
 
@@ -85,6 +90,7 @@ class FrameCoalescer {
     std::atomic<std::uint64_t> frames_{0};
     // UI-thread only; does not need synchronisation because only that thread reads or writes it.
     time_point last_frame_{};
+    bool forced_{false};
 };
 
 }  // namespace openscrt::terminal
