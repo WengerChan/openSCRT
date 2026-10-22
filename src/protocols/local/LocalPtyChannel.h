@@ -38,7 +38,7 @@ class LocalPtyChannel final : public ITransportChannel {
         std::size_t ring_capacity{64 * 1024};
     };
 
-    explicit LocalPtyChannel(Options options = {});
+    explicit LocalPtyChannel(Options options = Options{});
     ~LocalPtyChannel() override;
 
     LocalPtyChannel(const LocalPtyChannel&) = delete;

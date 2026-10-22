@@ -11,6 +11,7 @@
 #else
 #include <fcntl.h>
 #include <poll.h>
+#include <pty.h>
 #include <signal.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
