@@ -28,7 +28,8 @@ struct Theme {
 
 class TerminalRenderer {
  public:
-    TerminalRenderer(ScreenGrid& grid, RingScrollbackBuffer* scrollback = nullptr);
+    TerminalRenderer(terminal::ScreenGrid& grid,
+                     terminal::RingScrollbackBuffer* scrollback = nullptr);
     ~TerminalRenderer();
 
     TerminalRenderer(const TerminalRenderer&) = delete;
@@ -66,11 +67,11 @@ class TerminalRenderer {
  private:
     void paintBand(int first_row, int last_row);
     void paintCell(int row, int column);
-    [[nodiscard]] GlyphStyle styleFor(const Cell& cell) const noexcept;
-    [[nodiscard]] QColor resolve(const Cell& cell, bool foreground) const;
+    [[nodiscard]] GlyphStyle styleFor(const terminal::Cell& cell) const noexcept;
+    [[nodiscard]] QColor resolve(const terminal::Cell& cell, bool foreground) const;
 
-    ScreenGrid* grid_;
-    RingScrollbackBuffer* scrollback_;
+    terminal::ScreenGrid* grid_;
+    terminal::RingScrollbackBuffer* scrollback_;
     GlyphAtlas atlas_;
     Theme theme_;
     QImage backbuffer_;

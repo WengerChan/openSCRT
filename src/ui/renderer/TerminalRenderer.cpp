@@ -7,7 +7,8 @@
 
 namespace openscrt::ui {
 
-TerminalRenderer::TerminalRenderer(ScreenGrid& grid, RingScrollbackBuffer* scrollback)
+TerminalRenderer::TerminalRenderer(terminal::ScreenGrid& grid,
+                                   terminal::RingScrollbackBuffer* scrollback)
     : grid_(&grid), scrollback_(scrollback) {
     theme_.background = QColor(terminal::defaultBackground());
     theme_.foreground = QColor(terminal::defaultForeground());
@@ -39,7 +40,7 @@ void TerminalRenderer::resize(int rows, int columns) {
     repaintAll();
 }
 
-GlyphStyle TerminalRenderer::styleFor(const Cell& cell) const noexcept {
+GlyphStyle TerminalRenderer::styleFor(const terminal::Cell& cell) const noexcept {
     const bool bold = cell.hasAttribute(terminal::cellattr::kBold);
     const bool italic = cell.hasAttribute(terminal::cellattr::kItalic);
     if (bold && italic) {
@@ -48,7 +49,7 @@ GlyphStyle TerminalRenderer::styleFor(const Cell& cell) const noexcept {
     return bold ? GlyphStyle::kBold : (italic ? GlyphStyle::kItalic : GlyphStyle::kRegular);
 }
 
-QColor TerminalRenderer::resolve(const Cell& cell, bool foreground) const {
+QColor TerminalRenderer::resolve(const terminal::Cell& cell, bool foreground) const {
     const std::uint32_t packed = foreground ? cell.fg : cell.bg;
     const std::uint32_t is_default =
         foreground ? terminal::cellattr::kDefaultFg : terminal::cellattr::kDefaultBg;
@@ -60,11 +61,11 @@ QColor TerminalRenderer::resolve(const Cell& cell, bool foreground) const {
 }
 
 void TerminalRenderer::paintCell(int row, int column) {
-    const Cell* cell = grid_->rowData(row);
+    const terminal::Cell* cell = grid_->rowData(row);
     if (cell == nullptr) {
         return;
     }
-    const Cell& value = cell[column];
+    const terminal::Cell& value = cell[column];
 
     const int width = atlas_.metrics().cell_width;
     const int height = atlas_.metrics().cell_height;
@@ -100,8 +101,8 @@ void TerminalRenderer::paintBand(int first_row, int last_row) {
         QPainter painter(&backbuffer_);
         painter.fillRect(0, row * height, grid_->cols() * width, height, theme_.background);
         for (int column = 0; column < grid_->cols(); ++column) {
-            const Cell* cells = grid_->rowData(row);
-            const Cell& cell = cells[column];
+            const terminal::Cell* cells = grid_->rowData(row);
+            const terminal::Cell& cell = cells[column];
             if (cell.isBlank() && cell.hasAttribute(terminal::cellattr::kDefaultBg)) {
                 continue;  // Already painted by the row fill.
             }

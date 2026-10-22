@@ -58,7 +58,7 @@ int GlyphAtlas::reserveRow() {
     if (atlas_.height() < metrics_.cell_height * (next_row_ + 1)) {
         // Keep one spare row so there is always somewhere to put the next glyph.
         atlas_ = atlas_.copy(0, 0, kAtlasWidth, metrics_.cell_height * (next_row_ + 1));
-        atlas_.fill(next_row_ * metrics_.cell_height, 0, kAtlasWidth, metrics_.cell_height,
+        atlas_.fill(QRect(0, next_row_ * metrics_.cell_height, kAtlasWidth, metrics_.cell_height),
                     Qt::transparent);
     }
     return row;
@@ -99,7 +99,9 @@ QRect GlyphAtlas::ensureGlyph(std::uint32_t codepoint, GlyphStyle style) {
         QPainter painter(&glyph);
         painter.setRenderHint(QPainter::Antialiasing, true);
         painter.setPen(Qt::white);
-        const QString text = QString::fromUcs4(&codepoint, 1);
+        // The uint overload of fromUcs4 is deprecated in Qt 6.8; the char32_t one is not.
+        const char32_t scalar = static_cast<char32_t>(codepoint);
+        const QString text = QString::fromUcs4(&scalar, 1);
         painter.drawText(QPointF(0, metrics_.baseline), text);
     }
     QPainter painter(&atlas_);
