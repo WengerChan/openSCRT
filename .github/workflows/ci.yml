@@ -260,6 +260,21 @@ jobs:
           echo "vcpkg classic-mode install in $CLASSIC_DIR:${SPECS}"
           ( cd "$CLASSIC_DIR" && "$VCPKG_ROOT_DIR/vcpkg" install ${SPECS} )
 
+      - name: Diagnose vcpkg installed tree
+        shell: bash
+        run: |
+          # Facts, not guesses: every find_package failure so far has been diagnosed from the
+          # error text alone. This prints what vcpkg actually produced and what CMake will be
+          # told to look at, so the next failure is attributable.
+          echo "=== triplet: $VCPKG_TARGET_TRIPLET"
+          echo "=== installed root exists? $([ -d "$VCPKG_INSTALLED_DIR" ] && echo yes || echo NO)"
+          echo "=== top level:"; ls -1 "$VCPKG_INSTALLED_DIR" 2>&1 | head -10
+          echo "=== triplet dir:"; ls -1 "$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET" 2>&1 | head -10
+          echo "=== lib/:"; ls -1 "$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET/lib" 2>&1 | head -10
+          echo "=== share/gtest:"; ls -1 "$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET/share/gtest" 2>&1 | head -10
+          echo "=== include/gtest:"; ls -1 "$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET/include" 2>&1 | head -5
+          echo "=== status files:"; ls -1 "$VCPKG_INSTALLED_DIR/vcpkg" 2>&1 | head -5
+
       - name: Configure (${{ matrix.preset }})
         shell: bash
         run: |
