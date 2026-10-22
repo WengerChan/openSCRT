@@ -436,6 +436,7 @@ jobs:
           if ($props.DisplayVersion -notlike '0.1.0*') {
             throw "Add/Remove Programs reports version $($props.DisplayVersion), expected 0.1.0"
           }
+          if (-not $props.InstallLocation) { throw 'Add/Remove Programs has no install location' }
 
           Invoke-Msi @('/x', "`"$msi`"", '/qn', '/norestart', '/l*v', "`"$log`"")
           if (Test-Path $installDir) { throw "uninstall left $installDir behind" }

@@ -40,6 +40,8 @@
 
     <UIRef Id="WixUI_InstallDir" />
     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <!-- Without this, Add/Remove Programs shows a product with a blank "Installed on". -->
+    <Property Id="ARPINSTALLLOCATION" Value="INSTALLFOLDER" />
 
     <Feature Id="Main" Title="openSCRT" Level="1">
       <ComponentGroupRef Id="HarvestedPayload" />
