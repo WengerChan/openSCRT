@@ -1,7 +1,13 @@
 # Test tree. Two CTest tiers so CI can gate correctness on every platform but keep the slow
 # performance budget to a single Linux runner (docs/DEVELOPMENT_PLAN.md 2.3).
 
-find_package(GTest CONFIG REQUIRED)
+# Module mode, not CONFIG mode. The vcpkg gtest port builds GoogleTest and runs
+# vcpkg_cmake_config_fixup(CONFIG_PATH lib/cmake/GTest), but across the three runner
+# images CMake's config-package search did not resolve GTestConfig.cmake even with the
+# installed tree on CMAKE_PREFIX_PATH. CMake's own FindGTest module searches the library
+# and include directories directly, which is exactly the vcpkg layout, and it has
+# defined GTest::gtest / GTest::gtest_main since CMake 3.20.
+find_package(GTest REQUIRED)
 
 add_library(openscrt_test_support INTERFACE)
 target_link_libraries(openscrt_test_support INTERFACE GTest::gtest GTest::gtest_main
