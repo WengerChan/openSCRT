@@ -396,6 +396,51 @@ jobs:
           & $exe.FullName --version
           if ($LASTEXITCODE -ne 0) { throw "the installed binary exited with $LASTEXITCODE" }
 
+      # The administrative image above proves the payload. This proves the installer: it installs
+      # for real, lands where a user would look, registers in Add/Remove Programs, runs from
+      # Program Files, and removes itself again. The Windows runner is an administrator, so a
+      # per-machine install needs no elevation trickery -- this is the only machine in the loop
+      # that can answer "does it actually install?".
+      - name: Verify a real install and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = (Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE 'out/pkg/*.msi')).FullName
+          $installDir = Join-Path $env:ProgramFiles 'openSCRT'
+          $log = Join-Path $env:RUNNER_TEMP 'msiexec-install.log'
+
+          function Invoke-Msi([string[]]$Arguments) {
+            $p = Start-Process msiexec -ArgumentList $Arguments -Wait -PassThru
+            # 3010 is "reboot required", which /norestart should prevent but must not fail on.
+            if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) {
+              throw "msiexec $($Arguments -join ' ') failed with $($p.ExitCode); see $log"
+            }
+            "msiexec exit $($p.ExitCode)"
+          }
+
+          Invoke-Msi @('/i', "`"$msi`"", '/qn', '/norestart', '/l*v', "`"$log`"")
+
+          $exe = Join-Path $installDir 'bin\openscrt.exe'
+          if (-not (Test-Path $exe)) { throw "install did not place openscrt.exe at $exe" }
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) { throw "the installed binary exited with $LASTEXITCODE" }
+
+          # An installer that leaves no Add/Remove Programs entry cannot be uninstalled from the UI.
+          $uninstallKey = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
+          $entry = Get-ChildItem $uninstallKey |
+                   Where-Object { (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).DisplayName -eq 'openSCRT' } |
+                   Select-Object -First 1
+          if (-not $entry) { throw 'no Add/Remove Programs entry named openSCRT' }
+          $props = Get-ItemProperty $entry.PSPath
+          "ARP: version=$($props.DisplayVersion) location=$($props.InstallLocation)"
+          if ($props.DisplayVersion -notlike '0.1.0*') {
+            throw "Add/Remove Programs reports version $($props.DisplayVersion), expected 0.1.0"
+          }
+
+          Invoke-Msi @('/x', "`"$msi`"", '/qn', '/norestart', '/l*v', "`"$log`"")
+          if (Test-Path $installDir) { throw "uninstall left $installDir behind" }
+          "install and uninstall both verified"
+
       - name: Checksums
         shell: pwsh
         run: |
