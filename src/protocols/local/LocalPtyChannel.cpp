@@ -47,7 +47,10 @@ void applyRawMode(int fd) {
         return;
     }
     attributes.c_lflag &= ~static_cast<tcflag_t>(ECHO | ECHONL | ICANON | ISIG);
-    attributes.c_iflag &= ~static_cast<tcflag_t>(ICRNL | INLCR | ISTRIP);
+    // ICRNL stays ON, deliberately. A terminal emulator has to behave like xterm's sane
+    // mode: the Enter key sends CR, and the line discipline turns that into NL for the
+    // child. Clearing it means a shell waiting for a newline never sees one.
+    attributes.c_iflag &= ~static_cast<tcflag_t>(INLCR | ISTRIP);
     attributes.c_oflag &= ~static_cast<tcflag_t>(OPOST);
     // VMIN must be 1, not 0. VMIN=0/VTIME=0 is the setting an *application* uses to poll
     // stdin without blocking; applied to the line discipline it makes every read() return
