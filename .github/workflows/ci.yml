@@ -209,21 +209,21 @@ jobs:
           os.makedirs(out, exist_ok=True)
           with open(os.path.join(out, "vcpkg.json"), "w", encoding="utf-8") as fh:
               json.dump(manifest, fh, indent=2)
-          print("vcpkg CI installs:", " ".join(manifest["dependencies"]))
+          # newline="\n" matters: on the Windows runner a text-mode write produces CRLF,
+          # and the stray \r then rides along inside "gtest\r:x64-windows" and makes vcpkg
+          # reject the package spec.
           with open(os.path.join(out, "ports.txt"), "w", encoding="utf-8", newline="\n") as fh:
-              fh.write("\n".join(manifest["dependencies"]))
+              fh.write("\n".join(manifest["dependencies"]) + "\n")
+          print("vcpkg CI installs:", " ".join(manifest["dependencies"]))
           PY
+
+          # Point CMake at the SAME reduced manifest, so vcpkg.cmake computes the installed-tree
+          # prefix path from it. It never reads the repo-root vcpkg.json, which still lists
+          # qtbase and friends for local builds.
+          echo "VCPKG_MANIFEST_DIR=$VCPKG_MANIFEST_DIR" >> "$GITHUB_ENV"
 
           # Install in CLASSIC mode with explicit port names, not manifest mode.
           #
-          # Run #8 proved manifest mode was resolving the root vcpkg.json instead of the
-          # derived one: the install plan came back with all 51 packages (qtbase, libssh,
-          # openssl, pybind11...) even though the script printed "gtest libsodium". Classic
-          # mode reads no manifest at all, so the root file can never leak in again.
-          mapfile -t CI_PORTS < "$VCPKG_MANIFEST_DIR/ports.txt"
-          SPECS=()
-          for port in "${CI_PORTS[@]}"; do SPECS+=("${port}:${VCPKG_TARGET_TRIPLET}"); done
-
           # Bash 3.2 (the macOS runner's /bin/bash) has no mapfile, and the Windows runner's Git Bash
           # hands back CRLF-terminated lines. Both bit run #10, so read the file with a portable
           # loop and strip the carriage return explicitly.
@@ -263,9 +263,8 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT_DIR/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET="$VCPKG_TARGET_TRIPLET" \
             -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" \
-            -DVCPKG_MANIFEST_MODE=OFF \
-            -DVCPKG_MANIFEST_INSTALL=OFF \
             -DVCPKG_MANIFEST_DIR="$VCPKG_MANIFEST_DIR" \
+            -DVCPKG_MANIFEST_INSTALL=OFF \
             -DCMAKE_PREFIX_PATH="$Qt6_DIR/..;$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET"
 
       - name: Build (${{ matrix.preset }})
