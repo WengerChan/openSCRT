@@ -23,10 +23,11 @@ git tag v0.1.0 && git push origin v0.1.0
 
 | Asset | Install |
 | --- | --- |
-| `openSCRT-<version>-windows-x64.msi` | Double-click. Per-machine install to `%ProgramFiles%\openSCRT`, `bin` added to `PATH`, uninstall entry in Add/Remove Programs. |
+| `openSCRT-<version>-windows-x64.msi` | Double-click. Per-machine install to `%ProgramFiles%\openSCRT` with an uninstall entry in Add/Remove Programs. The installer does not touch `PATH` — add `%ProgramFiles%\openSCRT\bin` yourself if you want the command on `PATH`. |
 | `openSCRT-<version>-windows-x64-portable.zip` | Unzip anywhere, run `bin\openscrt.exe`. No installer, no admin rights. |
 
-Both carry the Qt 6.8 runtime, so neither needs Qt installed. Verify a download against the
+Both bundle every DLL the binary imports (`libsodium`, the UCRT forwarders, and — once the Qt
+shell lands — the Qt runtime), so neither needs Qt installed. Verify a download against the
 `SHA256SUMS.txt` attached to the release. Packaging lives in
 [`.github/workflows/release.yml`](.github/workflows/release.yml) and verifies itself before
 uploading: the staged exe must report its version, and the MSI is unpacked with `msiexec /a` and

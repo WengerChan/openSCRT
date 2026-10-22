@@ -43,7 +43,7 @@
 
     <Feature Id="Main" Title="openSCRT" Level="1">
       <ComponentGroupRef Id="HarvestedPayload" />
-      <ComponentRef Id="EnvironmentPath" />
+      <ComponentRef Id="UninstallRegistry" />
     </Feature>
 
     <Directory Id="TARGETDIR" Name="SourceDir">
@@ -55,23 +55,17 @@
   </Product>
 
   <!-- A Fragment is a sibling of Product, never a child of it (WiX 3 schema), and it is where the
-       harvested payload merges in. -->
+       harvested payload merges in.
+
+       Deliberately absent: an <Environment> element that edits PATH. WiX 3.14 does not accept
+       PartPartialPath, the attribute that exists to stop the installer rewriting PATH from its
+       1024-character "system" copy, and a truncated machine PATH is a far worse outcome than a
+       user adding one directory themselves. The release notes carry that line instead. -->
   <Fragment>
     <DirectoryRef Id="INSTALLFOLDER">
-      <Component Id="EnvironmentPath" Guid="{F5F26896-3F59-49F2-B03B-D7150654C017}">
-        <!-- PartPartialPath is the supported way to extend PATH (WiX 3.6+). Without it the
-             installer would overwrite PATH with only its own directory. -->
-        <Environment Id="openscrtPath"
-                     Name="PATH"
-                     Value="[INSTALLFOLDER]bin"
-                     System="yes"
-                     Action="set"
-                     Part="both"
-                     PartPartialPath="yes"
-                     Permanent="no" />
-        <!-- An Environment element cannot be a component KeyPath, so the registry value
-             doubles as one; it is also what gives Add/Remove Programs an uninstall entry
-             and a working "Installed on" location. -->
+      <Component Id="UninstallRegistry" Guid="{F5F26896-3F59-49F2-B03B-D7150654C017}">
+        <!-- Doubles as the component KeyPath (an <Environment> element cannot be one), and it is
+             what gives Add/Remove Programs an uninstall entry and a working install location. -->
         <RegistryValue Root="HKLM"
                        Key="Software\openSCRT"
                        Name="InstallDir"
