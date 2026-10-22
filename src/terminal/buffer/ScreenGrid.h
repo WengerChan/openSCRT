@@ -79,6 +79,10 @@ class ScreenGrid {
     void eraseInDisplay(EraseInDisplay scope);
     void eraseCharacters(int count);
 
+    // Blanks `count` cells from the cursor and pulls the remainder of the row left, leaving
+    // blanks at the right margin (CSI P / DCH).
+    void deleteCharacters(int count);
+
     void scrollUp(int lines);
     void scrollDown(int lines);
 

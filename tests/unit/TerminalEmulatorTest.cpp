@@ -270,6 +270,15 @@ TEST_F(EmulatorTest, TabsAdvanceToEveryEight) {
     EXPECT_EQ(wide.rowText(0), "a       b       c");
 }
 
+TEST_F(EmulatorTest, DeleteCharactersPullsTheRowLeft) {
+    emulator.write(
+        "abcdef"
+        "\x1B[1;3H"
+        "\x1B[2P");
+    EXPECT_EQ(grid.rowText(0), "abef");
+    EXPECT_EQ(grid.cursorColumn(), 2) << "DCH must not move the cursor";
+}
+
 TEST_F(EmulatorTest, EraseCharactersLeavesTheCursorPut) {
     emulator.write("abcdef\x1B[1;3H\x1B[2X");
     EXPECT_EQ(grid.rowText(0), "ab  ef");

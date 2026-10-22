@@ -206,6 +206,12 @@ void TerminalEmulator::csiDispatch(const CsiSequence& sequence) {
         case 'T':
             applyScroll(sequence, final);
             return;
+        case 'X':  // ECH: blank n cells from the cursor, without moving it.
+            grid_->eraseCharacters(std::max(1, paramOr(sequence, 0, 1)));
+            return;
+        case 'P':  // DCH: delete n cells, pulling the rest of the row left.
+            grid_->deleteCharacters(std::max(1, paramOr(sequence, 0, 1)));
+            return;
         case 'm':
             applyGraphicRendition(sequence);
             return;

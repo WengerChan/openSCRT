@@ -329,6 +329,29 @@ void ScreenGrid::eraseCharacters(int count) {
     }
 }
 
+void ScreenGrid::deleteCharacters(int count) {
+    if (empty() || count <= 0) {
+        return;
+    }
+    clampCursor();
+    Cell* line = rowData(cursor_row_);
+    if (line == nullptr) {
+        return;
+    }
+    const int start = std::min(cursor_column_, cols_);
+    const int removable = std::min(count, cols_ - start);
+    const int tail = cols_ - start - removable;
+    if (tail > 0) {
+        std::copy(line + start + removable, line + start + removable + tail, line + start);
+    }
+    for (int col = cols_ - removable; col < cols_; ++col) {
+        line[col].setBlank();
+    }
+    for (int col = start; col < cols_; ++col) {
+        line[col].markDirty();
+    }
+}
+
 void ScreenGrid::scrollUp(int lines) {
     if (empty() || lines <= 0) {
         return;
