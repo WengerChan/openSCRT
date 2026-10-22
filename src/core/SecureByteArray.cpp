@@ -8,12 +8,12 @@
 namespace openscrt::core {
 namespace {
 
-// sodium_malloc_locked tolerates any size, but we keep a floor so a zero-length request
+// sodium_malloc tolerates any size, but we keep a floor so a zero-length request
 // still yields a distinct, wipeable allocation.
 constexpr std::size_t kMinAllocation = 1;
 
-// sodium_malloc_locked requires sodium_init() to have completed. The first SecureByteArray in
-// the process pays for the library's random-number subsystem; every later one reuses it.
+// sodium_mlock / sodium_free require sodium_init() to have completed. The first SecureByteArray
+// in the process pays for the library's random-number subsystem; every later one reuses it.
 void ensureSodiumInitialized() {
     static const int result = sodium_init();
     (void)result;  // >= 0 means success; a negative value leaves us on the degraded path.
@@ -54,15 +54,15 @@ void SecureByteArray::resize(std::size_t size) {
     }
     release();
 
-    data_ = static_cast<std::uint8_t*>(sodium_malloc_locked(wanted));
+    // sodium_malloc is the public allocator. sodium_malloc_locked() is not declared by the
+    // released sodium/version.h, so mlock is requested separately below.
+    data_ = static_cast<std::uint8_t*>(sodium_malloc(wanted));
     if (data_ == nullptr) {
         // sodium_malloc only aborts on absurd sizes; a NULL here means allocation failure.
         size_ = 0;
         locked_ = false;
         return;
     }
-    // sodium_malloc_locked leaves the first 64 bytes as an unmapped guard page, so a
-    // one-byte underflow on data() traps instead of corrupting the heap.
     if (sodium_mlock(data_, wanted) != 0) {
         // RLIMIT_MEMLOCK exhausted (typical in CI containers). Unlocked still means
         // no paging and explicit zeroing; report the degradation to the UI layer.
@@ -115,7 +115,7 @@ void SecureByteArray::release() noexcept {
     }
     sodium_memzero(data_, size_);
     if (locked_) {
-        sodium_unlock(data_, size_);
+        sodium_munlock(data_, size_);
     }
     sodium_free(data_);
     data_ = nullptr;
