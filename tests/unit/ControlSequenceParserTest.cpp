@@ -92,6 +92,12 @@ class ParserTest : public ::testing::Test {
         EXPECT_EQ(sink.events.size(), 1u) << "expected exactly one dispatched event";
         return sink.events.front();
     }
+
+    // For sequences that legitimately emit several events, one per character.
+    [[nodiscard]] const RecordedEvent& first() const {
+        EXPECT_FALSE(sink.events.empty()) << "expected at least one dispatched event";
+        return sink.events.front();
+    }
 };
 
 // ----------------------------------------------------------------------------------- text
@@ -328,8 +334,8 @@ TEST_F(ParserTest, DcsPayloadNeverReachesTheScreen) {
     // None of the DCS payload may appear.
     const std::string trailing = "visible";
     ASSERT_EQ(sink.count(), trailing.size());
-    EXPECT_EQ(only().kind, RecordedEvent::Kind::kPrint);
-    EXPECT_EQ(only().value, static_cast<std::uint32_t>('v'));
+    EXPECT_EQ(first().kind, RecordedEvent::Kind::kPrint);
+    EXPECT_EQ(first().value, static_cast<std::uint32_t>('v'));
 }
 
 // -------------------------------------------------------------------------------- aborts
