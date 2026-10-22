@@ -176,51 +176,10 @@ jobs:
           # (VCPKG_MANIFEST_NO_DEFAULT_FEATURES is not a thing; overriding the manifest
           # directory is the supported lever.)
           export VCPKG_MANIFEST_DIR="$RUNNER_TEMP/vcpkg-ci-manifest"
-          mkdir -p "$VCPKG_MANIFEST_DIR"
-          python - "$VCPKG_MANIFEST_DIR" <<'PY'
-          import json, os, sys
-
-          out = sys.argv[1]
-
-          # port -> why CI does not install it.
-          # A port belongs here only while nothing links it. The moment a phase starts
-          # consuming it, delete its entry here: vcpkg will build it, and
-          # CMAKE_PREFIX_PATH makes CMake find it. Skipping a port that IS linked fails fast
-          # and loudly at configure -- which is the point: a 3-minute "not found" beats a
-          # 75-minute build of something nobody wanted.
-          SKIP = {
-              "qtbase":        "Qt6 comes from install-qt-action (D2); a vcpkg qtbase build is hours",
-              "qtserialport":  "same Qt prebuilt package as qtbase",
-              "pybind11":      "pulls vcpkg's `python3`, a CPython source build worth +20 min (Phase 5)",
-              "libssh":        "not linked yet -- the SSH transport lands in Phase 1",
-              "openssl":       "not linked yet -- KDBX/crypto lands in Phase 2-3; heaviest MSVC build",
-              "nlohmann-json": "not linked yet -- session config persistence (src/config) lands in Phase 1",
-              "pugixml":       "not linked yet -- SecureCrtConfigImporter XML parsing lands in Phase 2",
-              "zlib":          "not linked yet -- transfer compression lands in Phase 3",
-          }
-
-          manifest = json.load(open("vcpkg.json", encoding="utf-8"))
-
-          # Typo guard: a SKIP entry that no longer exists in vcpkg.json is a stale rule, and
-          # silently ignoring it would hide the drift that actually breaks the build.
-          unknown = sorted(set(SKIP) - set(manifest["dependencies"]))
-          if unknown:
-              sys.exit("SKIP names ports absent from vcpkg.json: " + ", ".join(unknown))
-
-          manifest["dependencies"] = [d for d in manifest["dependencies"] if d not in SKIP]
-          if not manifest["dependencies"]:
-              sys.exit("every declared port is skipped -- the manifest would be empty")
-
-          os.makedirs(out, exist_ok=True)
-          with open(os.path.join(out, "vcpkg.json"), "w", encoding="utf-8") as fh:
-              json.dump(manifest, fh, indent=2)
-          # newline="\n" matters: on the Windows runner a text-mode write produces CRLF,
-          # and the stray \r then rides along inside "gtest\r:x64-windows" and makes vcpkg
-          # reject the package spec.
-          with open(os.path.join(out, "ports.txt"), "w", encoding="utf-8", newline="\n") as fh:
-              fh.write("\n".join(manifest["dependencies"]) + "\n")
-          print("vcpkg CI installs:", " ".join(manifest["dependencies"]))
-          PY
+          # The skip table lives in one place (.github/scripts/ci-vcpkg-manifest.py) and is
+          # shared with release.yml, so a port cannot be "un-skipped" in one workflow and stay
+          # skipped in the other. vcpkg.json remains the source of truth; this derives from it.
+          python .github/scripts/ci-vcpkg-manifest.py "$VCPKG_MANIFEST_DIR" --with-tests
 
           # Point CMake at the SAME reduced manifest, so vcpkg.cmake computes the installed-tree
           # prefix path from it. It never reads the repo-root vcpkg.json, which still lists

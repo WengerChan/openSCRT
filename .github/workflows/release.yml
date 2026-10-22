@@ -1,0 +1,344 @@
+name: Release
+
+# Products are built on tags only (decided 2026-10-22): every push to main still runs ci.yml
+# (three-platform build + tests + coverage), and a `v*` tag additionally produces the Windows
+# installer and publishes it as a GitHub Release.
+on:
+  push:
+    tags: ['v*']
+  # Manual re-run while iterating on the packaging steps. The publish job below still requires a
+  # tag ref, so a manual run never creates a release on its own.
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Same vcpkg layout as ci.yml: outside the tracked tree, `.cache/` is git-ignored.
+  VCPKG_ROOT_DIR: ${{ github.workspace }}/.cache/vcpkg
+  VCPKG_INSTALLED_DIR: ${{ github.workspace }}/.cache/vcpkg/vcpkg_installed
+  VCPKG_BINARY_CACHE: ${{ github.workspace }}/.cache/vcpkg/binary
+  VCPKG_TARGET_TRIPLET: x64-windows
+
+jobs:
+  package-windows:
+    name: package (windows-2022)
+    runs-on: windows-2022
+    # Packaging is a Release build plus windeployqt plus one MSI; the 45 min budget of the
+    # test job covers it with room to spare. If this fires, the dependency step is the suspect.
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          # CMakeLists.txt owns the version; the tag only names it. A tag that disagrees means
+          # the tree was bumped without a matching tag, so fail loudly instead of shipping a
+          # 0.1.0 installer from a tag called v0.2.0.
+          PROJECT_VERSION=$(sed -n 's/^[[:space:]]*VERSION[[:space:]]\{1,\}\([0-9.]\{1,\}\)[[:space:]]*$/\1/p' CMakeLists.txt | head -1)
+          if [ -z "$PROJECT_VERSION" ]; then
+            echo "::error::could not read VERSION from CMakeLists.txt"
+            exit 1
+          fi
+          echo "project version: $PROJECT_VERSION"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            if [ "$TAG_VERSION" != "$PROJECT_VERSION" ]; then
+              echo "::error::tag $GITHUB_REF_NAME does not match CMakeLists.txt VERSION $PROJECT_VERSION"
+              exit 1
+            fi
+          fi
+          echo "version=$PROJECT_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Configure vcpkg environment
+        shell: bash
+        run: |
+          # vcpkg refuses to start when VCPKG_DEFAULT_BINARY_CACHE names a directory that does
+          # not exist, and a cold runner has none of these.
+          mkdir -p "$VCPKG_BINARY_CACHE" "$VCPKG_INSTALLED_DIR" "$VCPKG_ROOT_DIR"
+          echo "VCPKG_ROOT=$VCPKG_ROOT_DIR" >> "$GITHUB_ENV"
+          echo "VCPKG_DEFAULT_BINARY_CACHE=$VCPKG_BINARY_CACHE" >> "$GITHUB_ENV"
+          echo "VCPKG_TARGET_TRIPLET=$VCPKG_TARGET_TRIPLET" >> "$GITHUB_ENV"
+          # The runner images already ship python3, cmake and ninja; without this vcpkg builds
+          # its own host copies (a full CPython source build, which then fails in autoreconf).
+          echo "VCPKG_FORCE_SYSTEM_BINARIES=1" >> "$GITHUB_ENV"
+
+      - name: Cache vcpkg installed tree and downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.VCPKG_INSTALLED_DIR }}
+            ${{ env.VCPKG_ROOT_DIR }}/downloads
+            ${{ env.VCPKG_ROOT_DIR }}/packages
+            ${{ env.VCPKG_BINARY_CACHE }}
+          key: vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ env.VCPKG_TARGET_TRIPLET }}-
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - uses: lukka/get-cmake@latest
+        with:
+          # Same pin as ci.yml, and for the same reason: CMake 4 does not cooperate with the
+          # pinned vcpkg toolchain's prefix-path handling.
+          cmakeVersion: '~3.31.0'
+          ninjaVersion: '1.12.1'
+
+      - name: Acquire vcpkg at the manifest baseline
+        shell: bash
+        run: |
+          BASELINE=$(python -c "import json;print(json.load(open('vcpkg.json'))['builtin-baseline'])")
+          git init -q "$VCPKG_ROOT_DIR"
+          git -C "$VCPKG_ROOT_DIR" remote add origin https://github.com/microsoft/vcpkg.git
+          git -C "$VCPKG_ROOT_DIR" fetch -q --depth 1 origin "$BASELINE"
+          git -C "$VCPKG_ROOT_DIR" checkout -q --force FETCH_HEAD
+          (cd "$VCPKG_ROOT_DIR" && ./bootstrap-vcpkg.sh -disableMetrics)
+          "$VCPKG_ROOT_DIR/vcpkg" version
+
+      - name: Install Qt 6.8 + qtserialport
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          modules: qtserialport
+          cache: true
+
+      - name: Install runtime dependencies (vcpkg, manifest mode)
+        shell: bash
+        run: |
+          # Same derived manifest as ci.yml, minus gtest: this job configures with
+          # OPENCRT_BUILD_TESTS=OFF, so a test dependency in the job that ships the installer is
+          # minutes spent for nothing.
+          export VCPKG_MANIFEST_DIR="$RUNNER_TEMP/vcpkg-release-manifest"
+          python .github/scripts/ci-vcpkg-manifest.py "$VCPKG_MANIFEST_DIR"
+          echo "VCPKG_MANIFEST_DIR=$VCPKG_MANIFEST_DIR" >> "$GITHUB_ENV"
+
+          # Classic mode is selected by the working directory: vcpkg treats "there is a
+          # vcpkg.json in CWD (or above)" as manifest mode and then rejects explicit package
+          # arguments. Run from a scratch dir with VCPKG_MANIFEST_DIR cleared.
+          CLASSIC_DIR="$RUNNER_TEMP/vcpkg-classic-mode"
+          mkdir -p "$CLASSIC_DIR"
+          unset VCPKG_MANIFEST_DIR
+          set -f
+          SPECS=""
+          while IFS= read -r port || [ -n "$port" ]; do
+            port="${port%$'\r'}"
+            [ -z "$port" ] && continue
+            SPECS="${SPECS} ${port}:${VCPKG_TARGET_TRIPLET}"
+          done < "$RUNNER_TEMP/vcpkg-release-manifest/ports.txt"
+          set +f
+          if [ -z "${SPECS// /}" ]; then
+            echo "::error::no ports left to install after applying the skip table"
+            exit 1
+          fi
+          ( cd "$CLASSIC_DIR" && "$VCPKG_ROOT_DIR/vcpkg" install ${SPECS} \
+              --x-install-root="$VCPKG_INSTALLED_DIR" )
+
+      - name: Configure (windows-ci, Release, no tests)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Qt6_DIR points at <qt>/lib/cmake/Qt6; its parent is the prefix CMake needs.
+          if [ -z "${Qt6_DIR:-}" ]; then
+            echo "::error::Qt6_DIR is empty -- install-qt-action did not run or changed layout"
+            exit 1
+          fi
+          cmake --preset windows-ci \
+            -DOPENCRT_BUILD_TESTS=OFF \
+            -DOPENCRT_WARNINGS_AS_ERRORS=ON \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT_DIR/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET="$VCPKG_TARGET_TRIPLET" \
+            -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" \
+            -DVCPKG_MANIFEST_DIR="$VCPKG_MANIFEST_DIR" \
+            -DVCPKG_MANIFEST_INSTALL=OFF \
+            -DCMAKE_PREFIX_PATH="$Qt6_DIR/..;$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET"
+
+      - name: Build (windows-ci)
+        shell: bash
+        run: cmake --build --preset windows-ci
+
+      - name: Smoke test the Release binary
+        shell: bash
+        run: out/build/windows-ci/bin/Release/openscrt.exe --version
+
+      - name: Stage the portable tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=${{ steps.version.outputs.version }}
+          STAGE_NAME="openscrt-$VERSION-windows-x64"
+          # Two path forms on purpose: cmake is not an MSYS program and cannot read /d/a/...,
+          # while find/sed/exec go through the MSYS runtime, which cannot read D:\a\...
+          STAGE_WIN="$GITHUB_WORKSPACE/out/pkg/$STAGE_NAME"
+          STAGE_POSIX="$(cygpath -u "$STAGE_WIN")"
+          echo "STAGE_NAME=$STAGE_NAME" >> "$GITHUB_ENV"
+          rm -rf "$STAGE_POSIX"
+          # `cmake --install` is the single place that decides what an install tree contains, so
+          # the ZIP and the MSI get byte-identical payloads.
+          cmake --install out/build/windows-ci --config Release --prefix "$STAGE_WIN"
+
+          # windeployqt copies the Qt runtime the exe imports plus the plugin categories Qt6
+          # expects next to it -- that is what makes the tree run on a machine with no Qt.
+          # --no-opengl-sw / --no-system-d3d-compiler drop ~80 MB of software-rasteriser DLLs.
+          WINDEPLOYQT=""
+          if command -v windeployqt.exe >/dev/null 2>&1; then
+            WINDEPLOYQT="$(command -v windeployqt.exe)"
+          else
+            # Qt6_DIR is <qt>/lib/cmake/Qt6 and windeployqt lives in <qt>/bin. normpath in
+            # Python because the separators in that variable belong to the Qt action, not to us.
+            WINDEPLOYQT=$(python -c "import os; p = os.path.normpath(os.path.join(os.environ.get('Qt6_DIR', ''), '..', '..', '..', 'bin', 'windeployqt.exe')); print(p if os.path.isfile(p) else '')" || true)
+          fi
+          if [ -z "$WINDEPLOYQT" ]; then
+            echo "::error::cannot locate windeployqt.exe (neither PATH nor Qt6_DIR worked)"
+            exit 1
+          fi
+          echo "windeployqt: $WINDEPLOYQT"
+          "$WINDEPLOYQT" --release --no-translations --no-opengl-sw --no-system-d3d-compiler \
+            "$STAGE_WIN/bin/openscrt.exe"
+          echo "staged files:"
+          find "$STAGE_POSIX" -type f | sed "s|$STAGE_POSIX/||"
+
+      - name: Verify the staged tree runs without Qt installed
+        shell: bash
+        run: |
+          set -euo pipefail
+          STAGE_WIN="$GITHUB_WORKSPACE/out/pkg/$STAGE_NAME"
+          STAGE_POSIX="$(cygpath -u "$STAGE_WIN")"
+          # The check that matters for a *portable* package: Windows resolves an exe's own
+          # directory first, so an exe next to its windeployqt payload must report its version
+          # with no Qt anywhere else on the machine.
+          "$STAGE_POSIX/bin/openscrt.exe" --version
+          if [ ! -f "$STAGE_POSIX/bin/Qt6Core.dll" ]; then
+            echo "::error::Qt6Core.dll missing from the staged tree -- windeployqt did not run"
+            exit 1
+          fi
+
+      - name: Build the portable ZIP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ steps.version.outputs.version }}'
+          $pkg = Join-Path $env:GITHUB_WORKSPACE 'out/pkg'
+          $zip = Join-Path $pkg "openSCRT-$version-windows-x64-portable.zip"
+          # -Path on the folder (not its contents) so the archive unpacks into one named
+          # directory instead of scattering openscrt.exe into the download folder.
+          Compress-Archive -Path (Join-Path $pkg $env:STAGE_NAME) -DestinationPath $zip -Force
+          "{0:N1} MB" -f ((Get-Item $zip).Length / 1MB)
+
+      - name: Build the MSI (WiX)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ steps.version.outputs.version }}'
+          $pkg = Join-Path $env:GITHUB_WORKSPACE 'out/pkg'
+          $stageName = "openscrt-$version-windows-x64"
+
+          Push-Location $pkg
+          try {
+            # The file list is harvested, not hand-written: windeployqt's output changes with
+            # the Qt version, and a stale <File> list produces an MSI whose payload cannot start.
+            # -srd drops the staging folder itself, so the tree lands directly in Program Files.
+            & heat dir $stageName -cg HarvestedPayload -dr INSTALLFOLDER -srd -suid -ag -out harvest.wxs
+            if ($LASTEXITCODE -ne 0) { throw "heat failed with $LASTEXITCODE" }
+
+            # WiX v3.14 ships preinstalled on the windows-2022 image (candle/light/heat).
+            & candle -nologo -arch x64 `
+              -ext WixUIExtension -ext WixUtilExtension `
+              -dProductVersion=$version `
+              -out product.wixobj `
+              (Join-Path $env:GITHUB_WORKSPACE 'packaging/windows/Product.wxs')
+            if ($LASTEXITCODE -ne 0) { throw "candle failed with $LASTEXITCODE" }
+
+            & light -nologo -ext WixUIExtension -ext WixUtilExtension `
+              product.wixobj harvest.wxs `
+              -out "openSCRT-$version-windows-x64.msi"
+            if ($LASTEXITCODE -ne 0) { throw "light failed with $LASTEXITCODE" }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Verify the MSI payload (administrative install)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # /a is an administrative image: msiexec unpacks the MSI's files without installing
+          # anything or needing admin, which proves the payload is complete. Running the exe out
+          # of that extraction is the end-to-end check that the installer ships a working binary.
+          $msi = (Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE 'out/pkg/*.msi')).FullName
+          "verifying: $msi"
+          $dest = Join-Path $env:RUNNER_TEMP 'msi-verify'
+          $proc = Start-Process msiexec `
+            -ArgumentList @('/a', "`"$msi`"", '/qn', "TARGETDIR=`"$dest`"") `
+            -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "msiexec /a failed with $($proc.ExitCode)" }
+
+          $exe = Join-Path $dest 'bin\openscrt.exe'
+          if (-not (Test-Path $exe)) { throw "openscrt.exe missing from the MSI payload" }
+          if (-not (Test-Path (Join-Path $dest 'bin\Qt6Core.dll'))) { throw "Qt runtime missing from the MSI payload" }
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) { throw "the installed binary exited with $LASTEXITCODE" }
+
+      - name: Checksums
+        shell: pwsh
+        run: |
+          $pkg = Join-Path $env:GITHUB_WORKSPACE 'out/pkg'
+          $files = Get-ChildItem -Path (Join-Path $pkg '*') -Include *.msi, *.zip -Recurse
+          $lines = foreach ($f in $files) {
+            "{0}  {1}" -f (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower(), $f.Name
+          }
+          $sums = Join-Path $pkg 'SHA256SUMS.txt'
+          $lines | Set-Content -Path $sums -Encoding ascii
+          Get-Content $sums
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openSCRT-windows-x64
+          path: |
+            out/pkg/*.msi
+            out/pkg/*.zip
+            out/pkg/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: publish release
+    needs: package-windows
+    # Manual runs (workflow_dispatch) build and upload artifacts but must not publish: only a tag
+    # push is allowed to create a public Release.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: openSCRT-windows-x64
+          path: dist
+
+      - name: Create the GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          body: |
+            Windows build of openSCRT.
+
+            | Artifact | Install |
+            | --- | --- |
+            | `openSCRT-<version>-windows-x64.msi` | Double-click. Installs per-machine to `%ProgramFiles%\openSCRT`, adds `bin` to `PATH`, and registers an uninstall entry in Add/Remove Programs. |
+            | `openSCRT-<version>-windows-x64-portable.zip` | Unzip anywhere and run `bin\openscrt.exe`. No installation, no admin rights. |
+
+            Both carry the Qt 6.8 runtime, so neither needs Qt installed.
+
+            Verify a download against `SHA256SUMS.txt`.

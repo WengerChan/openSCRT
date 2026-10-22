@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  openSCRT Windows installer.
+
+  Two things this file deliberately does NOT do:
+
+  1. It does not list files. The payload is harvested from the staged tree by heat
+     (.github/workflows/release.yml), because windeployqt's output changes with the Qt version --
+     a hand-maintained <File> list would silently drop Qt6Core.dll from the MSI and the installer
+     would install something that cannot start on a machine without Qt installed.
+  2. It does not hardcode a version. ProductVersion is passed in with -dProductVersion after the
+     tag has been checked against VERSION in CMakeLists.txt.
+
+  Only behaviour that cannot be harvested lives here: install scope, upgrade identity, and
+  putting %ProgramFiles%\openSCRT\bin on PATH so `openscrt --version` works from any shell.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+
+  <?define Manufacturer = "openSCRT" ?>
+  <?define UpgradeCode = "{6F4A1E52-9C1B-4C7A-9F2D-8B6C0D5E7A31}" ?>
+
+  <Product Id="*"
+           Name="openSCRT"
+           Language="1033"
+           Version="$(var.ProductVersion)"
+           Manufacturer="$(define.Manufacturer)"
+           UpgradeCode="$(define.UpgradeCode)">
+
+    <Package InstallerVersion="500"
+             Compressed="yes"
+             InstallScope="perMachine"
+             Description="openSCRT $(var.ProductVersion) -- SecureCRT-alike terminal emulator" />
+
+    <!-- UpgradeCode is the identity that ties v0.1.0 to v0.2.0. Without a stable one every
+         release installs side by side and the user ends up with two copies on PATH. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  Schedule="afterInstallInitialize"
+                  DowngradeErrorMessage="A newer version of openSCRT is already installed. Uninstall it before installing this build." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <UIRef Id="WixUI_InstallDir" />
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+
+    <Feature Id="Main" Title="openSCRT" Level="1" AllowAbsent="no">
+      <ComponentGroupRef Id="HarvestedPayload" />
+      <ComponentRef Id="EnvironmentPath" />
+    </Feature>
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="openSCRT" />
+      </Directory>
+    </Directory>
+
+    <Fragment>
+      <DirectoryRef Id="INSTALLFOLDER">
+        <Component Id="EnvironmentPath" Guid="{F5F26896-3F59-49F2-B03B-D7150654C017}">
+          <!-- PartPartialPath is the supported way to extend PATH (WiX 3.6+). Without it the
+               installer would overwrite PATH with only its own directory. -->
+          <Environment Id="openscrtPath"
+                       Name="PATH"
+                       Value="[INSTALLFOLDER]bin"
+                       System="yes"
+                       Action="set"
+                       Part="both"
+                       PartPartialPath="yes"
+                       Permanent="no" />
+          <!-- An Environment element cannot be a component KeyPath, so the registry value
+               doubles as one; it is also what gives Add/Remove Programs an uninstall entry
+               and a working "Installed on" location. -->
+          <RegistryValue Root="HKLM"
+                         Key="Software\openSCRT"
+                         Name="InstallDir"
+                         Type="string"
+                         Value="[INSTALLFOLDER]"
+                         KeyPath="yes" />
+        </Component>
+      </DirectoryRef>
+    </Fragment>
+
+  </Product>
+</Wix>
