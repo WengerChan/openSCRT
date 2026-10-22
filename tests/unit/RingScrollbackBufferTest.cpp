@@ -81,7 +81,8 @@ TEST(RingScrollbackBufferTest, RejectsOutOfRangeIndex) {
     buffer.push("only");
     EXPECT_TRUE(buffer.empty_at(1));
     EXPECT_FALSE(buffer.empty_at(0));
-    EXPECT_THROW(buffer.at(1), std::out_of_range);
+    // at() is [[nodiscard]] on purpose; discard it explicitly inside the throwing macro.
+    EXPECT_THROW(static_cast<void>(buffer.at(1)), std::out_of_range);
 }
 
 TEST(RingScrollbackBufferTest, PushFromRange) {

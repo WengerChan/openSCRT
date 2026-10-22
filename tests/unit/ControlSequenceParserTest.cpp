@@ -267,7 +267,11 @@ TEST_F(ParserTest, EscapeDispatchWithCharsetIntermediate) {
 }
 
 TEST_F(ParserTest, BareEscapeDispatch) {
-    feed("\x1B7");
+    // "\x1B" "7" rather than "\x1B7": C++ consumes as many hex digits as it can, so \x1B7 is
+    // the out-of-range escape 0x1B7, not ESC followed by '7'.
+    feed(
+        "\x1B"
+        "7");
     ASSERT_EQ(sink.count(), 1u);
     EXPECT_EQ(only().kind, RecordedEvent::Kind::kEscape);
     EXPECT_EQ(only().final, '7');

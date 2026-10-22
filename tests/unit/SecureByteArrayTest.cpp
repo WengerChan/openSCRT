@@ -39,7 +39,7 @@ TEST(SecureByteArrayTest, AssignFromCharPointer) {
     EXPECT_EQ(secret.size(), 6u);
 
     char out[8] = {};
-    secret.copyOut(out, sizeof(out));
+    EXPECT_EQ(secret.copyOut(out, sizeof(out)), 6u);
     EXPECT_EQ(std::string(out, 6), "s3cret");
 }
 

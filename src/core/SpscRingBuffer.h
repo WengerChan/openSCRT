@@ -19,6 +19,15 @@
 
 namespace openscrt::core {
 
+// Using migration between members is false sharing, and the producer writes tail_ while the
+// consumer writes head_; sharing a cache line would cap throughput at roughly half the
+// theoretical rate. On MSVC that deliberate padding is reported as C4324, so silence it here
+// rather than give up the alignment.
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4324)
+#endif
+
 // Monotonic (never-wrapping) 64-bit counters: a producer may safely run 16 EiB ahead of
 // its consumer before wraparound matters, so the modulo arithmetic stays branch-light and
 // the buffer size is not restricted to a power of two.
@@ -75,6 +84,10 @@ class SpscRingBuffer {
 
     std::size_t write(T value) noexcept { return write(&value, 1); }
 
+    // Single-element counterpart of tryRead, so a caller can offer one value without
+    // pre-checking free space.
+    [[nodiscard]] bool tryWrite(T value) noexcept { return tryWriteAll(&value, 1); }
+
     // Strict producer: all-or-nothing, so the transport never splits a control sequence
     // across a wrap boundary by accident.
     [[nodiscard]] bool tryWriteAll(const T* src, std::size_t count) noexcept {
@@ -119,6 +132,10 @@ class SpscRingBuffer {
 
 // Transport byte stream is unsigned 8-bit; using uint8_t keeps memcpy arithmetic simple.
 using ByteRingBuffer = SpscRingBuffer<std::uint8_t>;
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 }  // namespace openscrt::core
 
