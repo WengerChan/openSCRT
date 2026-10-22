@@ -16,7 +16,11 @@ permissions:
 env:
   # vcpkg lives outside the tracked source tree; `.cache/` and `out/` are git-ignored.
   VCPKG_ROOT_DIR: ${{ github.workspace }}/.cache/vcpkg
-  VCPKG_INSTALLED_DIR: ${{ github.workspace }}/out/vcpkg_installed
+  # Must be exactly $VCPKG_ROOT_DIR/vcpkg_installed: that is where vcpkg puts the tree in
+  # classic mode, and CMake is pointed here. Run #8 installed to <repo>/vcpkg_installed while
+  # CMake looked in out/vcpkg_installed, which would have failed at configure even with every
+  # dependency built.
+  VCPKG_INSTALLED_DIR: ${{ github.workspace }}/.cache/vcpkg/vcpkg_installed
   VCPKG_BINARY_CACHE: ${{ github.workspace }}/.cache/vcpkg/binary
 
 jobs:
@@ -175,10 +179,10 @@ jobs:
 
           # port -> why CI does not install it.
           # A port belongs here only while nothing links it. The moment a phase starts
-          # consuming it, delete its entry here: the dependency is then already in vcpkg.json,
-          # vcpkg builds it, and CMAKE_PREFIX_PATH makes CMake find it. Skipping a port that
-          # IS linked fails fast and loudly at configure -- which is the point: a 3-minute
-          # "not found" beats a 75-minute build of something nobody wanted.
+          # consuming it, delete its entry here: vcpkg will build it, and
+          # CMAKE_PREFIX_PATH makes CMake find it. Skipping a port that IS linked fails fast
+          # and loudly at configure -- which is the point: a 3-minute "not found" beats a
+          # 75-minute build of something nobody wanted.
           SKIP = {
               "qtbase":        "Qt6 comes from install-qt-action (D2); a vcpkg qtbase build is hours",
               "qtserialport":  "same Qt prebuilt package as qtbase",
@@ -205,16 +209,25 @@ jobs:
           os.makedirs(out, exist_ok=True)
           with open(os.path.join(out, "vcpkg.json"), "w", encoding="utf-8") as fh:
               json.dump(manifest, fh, indent=2)
-          print("vcpkg CI manifest installs:", " ".join(manifest["dependencies"]))
+          print("vcpkg CI installs:", " ".join(manifest["dependencies"]))
+          with open(os.path.join(out, "ports.txt"), "w", encoding="utf-8") as fh:
+              fh.write("\n".join(manifest["dependencies"]))
           PY
-          echo "VCPKG_MANIFEST_DIR=$VCPKG_MANIFEST_DIR" >> "$GITHUB_ENV"
-          # --x-install-root is not optional bookkeeping: without it vcpkg derives its own
-          # installed tree (observed at <repo>/vcpkg_installed) while CMake is told to look in
-          # out/vcpkg_installed, so configure cannot find a single header. Pin both sides to
-          # the same path.
-          "$VCPKG_ROOT_DIR/vcpkg" install \
-            --x-install-root="$VCPKG_INSTALLED_DIR" \
-            --triplet "$VCPKG_TARGET_TRIPLET"
+
+          # Install in CLASSIC mode with explicit port names, not manifest mode.
+          #
+          # Run #8 proved manifest mode was resolving the root vcpkg.json instead of the
+          # derived one: the install plan came back with all 51 packages (qtbase, libssh,
+          # openssl, pybind11...) even though the script printed "gtest libsodium". Classic
+          # mode reads no manifest at all, so the root file can never leak in again.
+          mapfile -t CI_PORTS < "$VCPKG_MANIFEST_DIR/ports.txt"
+          # Explicit specs mean classic mode, but clear the variable too so there is no path
+          # by which vcpkg can fall back to the root manifest.
+          unset VCPKG_MANIFEST_DIR
+          SPECS=()
+          for port in "${CI_PORTS[@]}"; do SPECS+=("${port}:${VCPKG_TARGET_TRIPLET}"); done
+          echo "vcpkg classic-mode install: ${SPECS[*]}"
+          "$VCPKG_ROOT_DIR/vcpkg" install "${SPECS[@]}"
 
       - name: Configure (${{ matrix.preset }})
         shell: bash
