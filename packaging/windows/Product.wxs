@@ -40,8 +40,10 @@
 
     <UIRef Id="WixUI_InstallDir" />
     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
-    <!-- Without this, Add/Remove Programs shows a product with a blank "Installed on". -->
-    <Property Id="ARPINSTALLLOCATION" Value="INSTALLFOLDER" />
+    <!-- Without this, Add/Remove Programs shows a product with a blank "Installed on". The value
+         needs brackets: without them MSI stores the literal text "INSTALLFOLDER" and the UI shows
+         exactly that. -->
+    <Property Id="ARPINSTALLLOCATION" Value="[INSTALLFOLDER]" />
 
     <Feature Id="Main" Title="openSCRT" Level="1">
       <ComponentGroupRef Id="HarvestedPayload" />

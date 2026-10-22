@@ -436,7 +436,9 @@ jobs:
           if ($props.DisplayVersion -notlike '0.1.0*') {
             throw "Add/Remove Programs reports version $($props.DisplayVersion), expected 0.1.0"
           }
-          if (-not $props.InstallLocation) { throw 'Add/Remove Programs has no install location' }
+          if ($props.InstallLocation -notlike "*openSCRT*") {
+            throw "Add/Remove Programs install location is '$($props.InstallLocation)', expected a path ending in openSCRT"
+          }
 
           Invoke-Msi @('/x', "`"$msi`"", '/qn', '/norestart', '/l*v', "`"$log`"")
           if (Test-Path $installDir) { throw "uninstall left $installDir behind" }
