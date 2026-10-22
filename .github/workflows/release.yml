@@ -203,11 +203,16 @@ jobs:
           echo "QT_ROOT_DIR=${QT_ROOT_DIR:-<unset>}"
 
           EXE="$STAGE_WIN/bin/openscrt.exe"
+          # MSYS rewrites any argument that looks like a POSIX path, so a bare `/dependents`
+          # arrives at dumpbin as "C:/Program Files/Git/dependents" and the command dies with a
+          # confusing exit code. MSYS2_ARG_CONV_EXCL switches that off for this one call.
+          dumpbin_deps() { MSYS2_ARG_CONV_EXCL='*' dumpbin /dependents "$1"; }
+
           # windeployqt refuses anything it does not recognise as a Qt binary and exits 1.
           # Phase 0 links Qt6::Core but calls nothing into it, so the linker records no Qt import
           # and there is genuinely nothing to deploy. Gate on the import table rather than on the
           # tool's opinion: when P1-T12 adds the Qt shell this branch starts firing by itself.
-          if dumpbin /dependents "$EXE" | grep -qiE '[A-Za-z0-9_-]*Qt6[A-Za-z0-9_-]*\.dll'; then
+          if dumpbin_deps "$EXE" | grep -qiE '[A-Za-z0-9_-]*Qt6[A-Za-z0-9_-]*\.dll'; then
             if [ -z "$WINDEPLOYQT" ]; then
               echo "::error::the binary imports Qt but windeployqt.exe was not found"
               exit 1
@@ -219,13 +224,23 @@ jobs:
           fi
 
           # The MSVC runtime is a real DLL import of this exe and is not guaranteed to exist on a
-          # user machine, so it is bundled explicitly -- windeployqt would normally do this.
+          # user machine, so it is bundled explicitly -- windeployqt would normally do this. The
+          # glob has to run on an MSYS path: VCToolsRedistDir arrives Windows-shaped and matches
+          # nothing under bash.
           CRT_DIR="${VCToolsRedistDir:-}"
-          if [ -n "$CRT_DIR" ] && compgen -G "$CRT_DIR/x64/Microsoft.VC*.CRT/*.dll" >/dev/null; then
-            cp -f "$CRT_DIR"/x64/Microsoft.VC*.CRT/*.dll "$STAGE_WIN/bin/"
-            echo "MSVC CRT bundled from $CRT_DIR"
+          if [ -n "$CRT_DIR" ]; then
+            CRT_POSIX="$(cygpath -u "$CRT_DIR")"
+            shopt -s nullglob
+            CRT_DLLS=("$CRT_POSIX"/x64/Microsoft.VC*.CRT/*.dll)
+            shopt -u nullglob
+            if [ ${#CRT_DLLS[@]} -gt 0 ]; then
+              cp -f "${CRT_DLLS[@]}" "$STAGE_POSIX/bin/"
+              echo "MSVC CRT bundled: ${CRT_DLLS[*]##*/}"
+            else
+              echo "::warning::no MSVC redistributable DLL under $CRT_POSIX/x64"
+            fi
           else
-            echo "::warning::no MSVC redistributable found under VCToolsRedistDir=$CRT_DIR"
+            echo "::warning::VCToolsRedistDir is unset -- the MSVC runtime will not be bundled"
           fi
 
           echo "staged files:"
@@ -245,11 +260,11 @@ jobs:
           #    import table instead of asserting on one expected DLL name means this still bites
           #    on the day Qt code lands: if windeployqt stops deploying, vcruntime140 or
           #    Qt6Core.dll stops resolving and the run fails here.
-          DEPS=$(dumpbin /dependents "$STAGE_WIN/bin/openscrt.exe" \
+          DEPS=$(MSYS2_ARG_CONV_EXCL='*' dumpbin /dependents "$STAGE_WIN/bin/openscrt.exe" \
                  | sed -n 's/^[[:space:]]*\([A-Za-z0-9_.-]*\.dll\)[[:space:]]*$/\1/p')
           if [ -z "$DEPS" ]; then
             echo "::error::could not read the dependency table out of dumpbin output"
-            dumpbin /dependents "$STAGE_WIN/bin/openscrt.exe"
+            MSYS2_ARG_CONV_EXCL='*' dumpbin /dependents "$STAGE_WIN/bin/openscrt.exe"
             exit 1
           fi
           missing=""
