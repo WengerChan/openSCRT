@@ -146,11 +146,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Qt6_DIR points at <qt>/lib/cmake/Qt6; its parent is the prefix CMake needs.
-          if [ -z "${Qt6_DIR:-}" ]; then
-            echo "::error::Qt6_DIR is empty -- install-qt-action did not run or changed layout"
+          # install-qt-action exports QT_ROOT_DIR; it does NOT export Qt6_DIR. ci.yml has always
+          # passed "$Qt6_DIR/.." to CMAKE_PREFIX_PATH, which expanded to an empty entry -- Qt was
+          # still found, but by a mechanism nobody had written down. The prefix is explicit here
+          # so packaging cannot inherit that ambiguity.
+          if [ -z "${QT_ROOT_DIR:-}" ]; then
+            echo "::error::QT_ROOT_DIR is empty -- install-qt-action did not run or changed layout"
             exit 1
           fi
+          echo "QT_ROOT_DIR=$QT_ROOT_DIR"
           cmake --preset windows-ci \
             -DOPENCRT_BUILD_TESTS=OFF \
             -DOPENCRT_WARNINGS_AS_ERRORS=ON \
@@ -159,7 +163,7 @@ jobs:
             -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" \
             -DVCPKG_MANIFEST_DIR="$VCPKG_MANIFEST_DIR" \
             -DVCPKG_MANIFEST_INSTALL=OFF \
-            -DCMAKE_PREFIX_PATH="$Qt6_DIR/..;$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET"
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR;$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET"
 
       - name: Build (windows-ci)
         shell: bash
@@ -192,9 +196,9 @@ jobs:
           if command -v windeployqt.exe >/dev/null 2>&1; then
             WINDEPLOYQT="$(command -v windeployqt.exe)"
           else
-            # Qt6_DIR is <qt>/lib/cmake/Qt6 and windeployqt lives in <qt>/bin. normpath in
+            # QT_ROOT_DIR is <qt> itself, so windeployqt is one level down in bin. normpath in
             # Python because the separators in that variable belong to the Qt action, not to us.
-            WINDEPLOYQT=$(python -c "import os; p = os.path.normpath(os.path.join(os.environ.get('Qt6_DIR', ''), '..', '..', '..', 'bin', 'windeployqt.exe')); print(p if os.path.isfile(p) else '')" || true)
+            WINDEPLOYQT=$(python -c "import os; p = os.path.normpath(os.path.join(os.environ.get('QT_ROOT_DIR', ''), 'bin', 'windeployqt.exe')); print(p if os.path.isfile(p) else '')" || true)
           fi
           if [ -z "$WINDEPLOYQT" ]; then
             echo "::error::cannot locate windeployqt.exe (neither PATH nor Qt6_DIR worked)"

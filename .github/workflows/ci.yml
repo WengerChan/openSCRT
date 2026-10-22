@@ -143,6 +143,9 @@ jobs:
           version: 6.8.3
           modules: qtserialport
           cache: true
+          # The action exports QT_ROOT_DIR / QT_PLUGIN_PATH / QML2_IMPORT_PATH. There is no
+          # Qt6_DIR in the environment -- the Configure step below feeds QT_ROOT_DIR straight
+          # into CMAKE_PREFIX_PATH, and the configure output prints the Qt6Config.cmake that won.
 
       - name: Install autotools (autotools-based vcpkg ports)
         shell: bash
@@ -230,7 +233,7 @@ jobs:
             -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" \
             -DVCPKG_MANIFEST_DIR="$VCPKG_MANIFEST_DIR" \
             -DVCPKG_MANIFEST_INSTALL=OFF \
-            -DCMAKE_PREFIX_PATH="$Qt6_DIR/..;$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET" \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR;$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET" \
             -DGTest_ROOT="$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET"
 
       - name: Build (${{ matrix.preset }})

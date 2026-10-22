@@ -99,6 +99,10 @@ endif()
 message(STATUS "openSCRT ${PROJECT_VERSION}")
 message(STATUS "  build type      : ${CMAKE_BUILD_TYPE}")
 message(STATUS "  warnings-as-err : ${OPENCRT_WARNINGS_AS_ERRORS}")
+# Printed because it is the only honest record of *which* Qt won. install-qt-action exports
+# QT_ROOT_DIR (not Qt6_DIR), and CI feeds that into CMAKE_PREFIX_PATH; a silent change in the
+# discovery mechanism would otherwise show up as an unexplained Qt version bump.
+message(STATUS "  Qt6 config      : ${Qt6_DIR}")
 message(STATUS "  Qt widgets      : ${OPENCRT_QT_WIDGETS_AVAILABLE}")
 message(STATUS "  Qt serialport   : ${OPENCRT_QT_SERIALPORT_AVAILABLE}")
 message(STATUS "  tests           : ${OPENCRT_BUILD_TESTS}")
