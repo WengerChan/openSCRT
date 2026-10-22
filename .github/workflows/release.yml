@@ -324,6 +324,7 @@ jobs:
           $version = '${{ steps.version.outputs.version }}'
           $pkg = Join-Path $env:GITHUB_WORKSPACE 'out/pkg'
           $stageName = "openscrt-$version-windows-x64"
+          $stagePath = Join-Path $pkg $stageName
           $productWxs = Join-Path $env:GITHUB_WORKSPACE 'packaging/windows/Product.wxs'
 
           Push-Location $pkg
@@ -331,8 +332,10 @@ jobs:
             # The file list is harvested, not hand-written: windeployqt's output changes with
             # the Qt version, and a stale <File> list produces an MSI whose payload cannot start.
             # -srd drops the staging folder itself, so the tree lands directly in Program Files.
+            # -var var.SourceDir makes the Source paths absolute at candle time; without it heat
+            # emits the literal relative prefix "SourceDir\..." and light reports LGHT0103.
             & heat @('dir', $stageName, '-cg', 'HarvestedPayload', '-dr', 'INSTALLFOLDER',
-                     '-srd', '-suid', '-ag', '-out', 'harvest.wxs')
+                     '-srd', '-suid', '-ag', '-var', 'var.SourceDir', '-out', 'harvest.wxs')
             if ($LASTEXITCODE -ne 0) { throw "heat failed with $LASTEXITCODE" }
 
             # Every argument goes through an array with explicit quoting. PowerShell's handling of
@@ -345,7 +348,7 @@ jobs:
 
             # light only accepts compiled .wixobj input; handing it harvest.wxs fails with
             # LGHT0048 ("must use 'wixOutput' as the document element name").
-            & candle @('-nologo', '-arch', 'x64', '-out', 'harvest.wixobj', 'harvest.wxs')
+            & candle @('-nologo', '-arch', 'x64', "-dSourceDir=$stagePath", '-out', 'harvest.wixobj', 'harvest.wxs')
             if ($LASTEXITCODE -ne 0) { throw "candle (harvest) failed with $LASTEXITCODE" }
 
             & light @('-nologo', '-ext', 'WixUIExtension', '-ext', 'WixUtilExtension',
