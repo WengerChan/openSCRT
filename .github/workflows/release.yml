@@ -200,30 +200,75 @@ jobs:
             # Python because the separators in that variable belong to the Qt action, not to us.
             WINDEPLOYQT=$(python -c "import os; p = os.path.normpath(os.path.join(os.environ.get('QT_ROOT_DIR', ''), 'bin', 'windeployqt.exe')); print(p if os.path.isfile(p) else '')" || true)
           fi
-          if [ -z "$WINDEPLOYQT" ]; then
-            echo "::error::cannot locate windeployqt.exe (neither PATH nor Qt6_DIR worked)"
-            exit 1
+          echo "QT_ROOT_DIR=${QT_ROOT_DIR:-<unset>}"
+
+          EXE="$STAGE_WIN/bin/openscrt.exe"
+          # windeployqt refuses anything it does not recognise as a Qt binary and exits 1.
+          # Phase 0 links Qt6::Core but calls nothing into it, so the linker records no Qt import
+          # and there is genuinely nothing to deploy. Gate on the import table rather than on the
+          # tool's opinion: when P1-T12 adds the Qt shell this branch starts firing by itself.
+          if dumpbin /dependents "$EXE" | grep -qiE '[A-Za-z0-9_-]*Qt6[A-Za-z0-9_-]*\.dll'; then
+            if [ -z "$WINDEPLOYQT" ]; then
+              echo "::error::the binary imports Qt but windeployqt.exe was not found"
+              exit 1
+            fi
+            echo "windeployqt: $WINDEPLOYQT"
+            "$WINDEPLOYQT" --release --no-translations --no-opengl-sw --no-system-d3d-compiler "$EXE"
+          else
+            echo "::notice::the binary imports no Qt library yet (Phase 0 links Qt6::Core but never calls into it); skipping windeployqt"
           fi
-          echo "windeployqt: $WINDEPLOYQT"
-          "$WINDEPLOYQT" --release --no-translations --no-opengl-sw --no-system-d3d-compiler \
-            "$STAGE_WIN/bin/openscrt.exe"
+
+          # The MSVC runtime is a real DLL import of this exe and is not guaranteed to exist on a
+          # user machine, so it is bundled explicitly -- windeployqt would normally do this.
+          CRT_DIR="${VCToolsRedistDir:-}"
+          if [ -n "$CRT_DIR" ] && compgen -G "$CRT_DIR/x64/Microsoft.VC*.CRT/*.dll" >/dev/null; then
+            cp -f "$CRT_DIR"/x64/Microsoft.VC*.CRT/*.dll "$STAGE_WIN/bin/"
+            echo "MSVC CRT bundled from $CRT_DIR"
+          else
+            echo "::warning::no MSVC redistributable found under VCToolsRedistDir=$CRT_DIR"
+          fi
+
           echo "staged files:"
           find "$STAGE_POSIX" -type f | sed "s|$STAGE_POSIX/||"
 
-      - name: Verify the staged tree runs without Qt installed
+      - name: Verify the staged tree is self-contained
         shell: bash
         run: |
           set -euo pipefail
           STAGE_WIN="$GITHUB_WORKSPACE/out/pkg/$STAGE_NAME"
           STAGE_POSIX="$(cygpath -u "$STAGE_WIN")"
-          # The check that matters for a *portable* package: Windows resolves an exe's own
-          # directory first, so an exe next to its windeployqt payload must report its version
-          # with no Qt anywhere else on the machine.
+          # 1. It runs. Windows resolves an exe's own directory before anything else, so this is
+          #    already evidence that the payload next to it is sufficient.
           "$STAGE_POSIX/bin/openscrt.exe" --version
-          if [ ! -f "$STAGE_POSIX/bin/Qt6Core.dll" ]; then
-            echo "::error::Qt6Core.dll missing from the staged tree -- windeployqt did not run"
+
+          # 2. Every DLL the exe imports is either bundled or part of Windows. Checking the
+          #    import table instead of asserting on one expected DLL name means this still bites
+          #    on the day Qt code lands: if windeployqt stops deploying, vcruntime140 or
+          #    Qt6Core.dll stops resolving and the run fails here.
+          DEPS=$(dumpbin /dependents "$STAGE_WIN/bin/openscrt.exe" \
+                 | sed -n 's/^[[:space:]]*\([A-Za-z0-9_.-]*\.dll\)[[:space:]]*$/\1/p')
+          if [ -z "$DEPS" ]; then
+            echo "::error::could not read the dependency table out of dumpbin output"
+            dumpbin /dependents "$STAGE_WIN/bin/openscrt.exe"
             exit 1
           fi
+          missing=""
+          count=0
+          for dll in $DEPS; do
+            count=$((count + 1))
+            if [ -f "$STAGE_POSIX/bin/$dll" ]; then
+              echo "  bundled  $dll"
+            elif [ -f "$SYSTEMROOT/System32/$dll" ]; then
+              echo "  system   $dll"
+            else
+              missing="$missing $dll"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::imports neither bundled nor provided by Windows:$missing"
+            exit 1
+          fi
+          echo "verified $count imports: bundled or from System32"
 
       - name: Build the portable ZIP
         shell: pwsh
@@ -284,9 +329,19 @@ jobs:
             -Wait -PassThru
           if ($proc.ExitCode -ne 0) { throw "msiexec /a failed with $($proc.ExitCode)" }
 
+          # Every staged file must be present at the same relative path: harvest is what decides
+          # the MSI's file list, and this is what proves it did not quietly drop one.
+          $stageRoot = (Join-Path $env:GITHUB_WORKSPACE "out/pkg/$env:STAGE_NAME")
+          $missing = @(
+            foreach ($f in Get-ChildItem $stageRoot -Recurse -File) {
+              $rel = $f.FullName.Substring($stageRoot.Length).TrimStart('\')
+              if (-not (Test-Path (Join-Path $dest $rel))) { $rel }
+            }
+          )
+          if ($missing.Count -gt 0) { throw "MSI payload is missing: $($missing -join ', ')" }
+          "payload complete: $((Get-ChildItem $dest -Recurse -File).Count) files"
+
           $exe = Join-Path $dest 'bin\openscrt.exe'
-          if (-not (Test-Path $exe)) { throw "openscrt.exe missing from the MSI payload" }
-          if (-not (Test-Path (Join-Path $dest 'bin\Qt6Core.dll'))) { throw "Qt runtime missing from the MSI payload" }
           & $exe --version
           if ($LASTEXITCODE -ne 0) { throw "the installed binary exited with $LASTEXITCODE" }
 

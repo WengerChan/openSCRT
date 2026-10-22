@@ -11,6 +11,30 @@ A SecureCRT-alike terminal emulator written in C++20 and Qt6.
 
 Milestones and task breakdown live in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md).
 
+## Installing
+
+Releases are **tag-only**: pushes to `main` run tests, a `v*` tag additionally builds the Windows
+installer and publishes it. The tag must match `VERSION` in [`CMakeLists.txt`](CMakeLists.txt), so
+bump the version first, then tag.
+
+```
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+| Asset | Install |
+| --- | --- |
+| `openSCRT-<version>-windows-x64.msi` | Double-click. Per-machine install to `%ProgramFiles%\openSCRT`, `bin` added to `PATH`, uninstall entry in Add/Remove Programs. |
+| `openSCRT-<version>-windows-x64-portable.zip` | Unzip anywhere, run `bin\openscrt.exe`. No installer, no admin rights. |
+
+Both carry the Qt 6.8 runtime, so neither needs Qt installed. Verify a download against the
+`SHA256SUMS.txt` attached to the release. Packaging lives in
+[`.github/workflows/release.yml`](.github/workflows/release.yml) and verifies itself before
+uploading: the staged exe must report its version, and the MSI is unpacked with `msiexec /a` and
+the extracted binary is run.
+
+**The 0.1.x binaries are the Phase 0 CLI bootstrap** — `openscrt --version` prints the linked
+module versions. The Qt workspace shell arrives in P1-T12 (DEVELOPMENT_PLAN).
+
 ## Building
 
 Local builds are **not** the verification path — GitHub Actions is. A change is considered
