@@ -51,9 +51,9 @@ TEST(FrameCoalescerTest, ABurstCollapsesIntoASingleFrame) {
     }
     EXPECT_TRUE(coalescer.shouldRepaint(at(0)));
     const auto stats = coalescer.stats();
-    EXPECT_EQ(stats.signals, 10000u);
-    EXPECT_EQ(stats.frames, 1u);
-    EXPECT_EQ(stats.coalesced, 9999u);
+    EXPECT_EQ(stats.output_events, 10000u);
+    EXPECT_EQ(stats.repaint_frames, 1u);
+    EXPECT_EQ(stats.coalesced_events, 9999u);
 }
 
 TEST(FrameCoalescerTest, ContinuousOutputIsCappedAtTheRefreshRate) {

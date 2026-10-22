@@ -98,7 +98,7 @@ TEST_F(RendererTest, AtlasRejectsInvalidScalars) {
 
 TEST_F(RendererTest, ResetDiscardsEverythingRasterised) {
     GlyphAtlas atlas{QFont(QStringLiteral("monospace"))};
-    atlas.ensureGlyph('a', GlyphStyle::kRegular);
+    static_cast<void>(atlas.ensureGlyph('a', GlyphStyle::kRegular));
     atlas.reset(QFont(QStringLiteral("monospace"), 20));
     EXPECT_EQ(atlas.glyphCount(), 0);
     EXPECT_TRUE(atlas.glyphRect({'a', GlyphStyle::kRegular}).isNull());

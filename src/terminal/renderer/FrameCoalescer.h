@@ -70,16 +70,21 @@ class FrameCoalescer {
 
     [[nodiscard]] std::chrono::milliseconds interval() const noexcept { return interval_; }
 
+    // Deliberately not named `signals` / `frames`: Qt defines those as macros
+    // (`#define signals public`, `#define slots`), and this header is included from
+    // translation units that have already pulled in Qt headers. Inside openscrt_terminal
+    // the names compile fine; the collision only appears at the layer boundary, which is
+    // exactly where nobody looks.
     struct Stats {
-        std::uint64_t signals{0};    // times output arrived
-        std::uint64_t frames{0};     // times a repaint happened
-        std::uint64_t coalesced{0};  // signals absorbed into an already-pending frame
+        std::uint64_t output_events{0};     // times output arrived
+        std::uint64_t repaint_frames{0};    // times a repaint happened
+        std::uint64_t coalesced_events{0};  // events folded into an already-pending frame
     };
 
     [[nodiscard]] Stats stats() const noexcept {
-        const std::uint64_t signals = signals_.load(std::memory_order_relaxed);
-        const std::uint64_t frames = frames_.load(std::memory_order_relaxed);
-        return Stats{signals, frames, signals > frames ? signals - frames : 0};
+        const std::uint64_t output = signals_.load(std::memory_order_relaxed);
+        const std::uint64_t repaint = frames_.load(std::memory_order_relaxed);
+        return Stats{output, repaint, output > repaint ? output - repaint : 0};
     }
 
  private:
