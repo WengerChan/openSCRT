@@ -150,6 +150,14 @@ TransportResult LocalPtyChannel::connectAsync() {
         ::close(master_fd);
         setsid();
         ioctl(slave_fd, TIOCSCTTY, 0);
+        // The whole point of the PTY: without these the child's stdout stays connected to
+        // whatever it inherited, and command output never travels back through the master.
+        dup2(slave_fd, STDIN_FILENO);
+        dup2(slave_fd, STDOUT_FILENO);
+        dup2(slave_fd, STDERR_FILENO);
+        if (slave_fd > STDERR_FILENO) {
+            ::close(slave_fd);
+        }
         if (!options_.working_directory.empty() && chdir(options_.working_directory.c_str()) != 0) {
             _exit(127);
         }
@@ -288,10 +296,13 @@ std::size_t LocalPtyChannel::readAvailable(std::uint8_t* destination, std::size_
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     while (ring_.empty()) {
         if (state_.load() != TransportState::kConnected) {
-            return 0;
+            // Disconnected *and* drained: there is nothing more coming. Checking the ring
+            // before the state is what keeps the final output of a short-lived command from
+            // being dropped -- a `sh -c "echo hi; exit"` disconnects within milliseconds.
+            break;
         }
         if (readable_.wait_until(lock, deadline) == std::cv_status::timeout) {
-            return 0;
+            break;
         }
     }
     lock.unlock();
