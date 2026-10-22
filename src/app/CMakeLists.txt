@@ -7,6 +7,12 @@ target_link_libraries(openscrt PRIVATE openscrt_core openscrt_terminal openscrt_
                                 openscrt_transfer openscrt_credential openscrt_scripting
                                 openscrt_config openscrt_ui)
 
+# MessageBoxA, for the one case a console build cannot cover by itself: launched by double-click,
+# where the console window would flash and close before the user could read it.
+if(WIN32)
+    target_link_libraries(openscrt PRIVATE user32)
+endif()
+
 # Install layout. `cmake --install <build> --config Release --prefix <staging>` is the single
 # place that decides what lands in an install tree; the release workflow stages with it and then
 # runs windeployqt over the result, so the portable ZIP and the MSI contain byte-identical files.

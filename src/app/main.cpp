@@ -2,6 +2,10 @@
 #include <cstring>
 #include <string>
 
+#if defined(_WIN32)
+#    include <windows.h>
+#endif
+
 #include "config/ModuleInfo.h"
 #include "core/BuildInfo.h"
 #include "core/ModuleInfo.h"
@@ -44,6 +48,37 @@ void printVersion() {
     probe.wipe();
 }
 
+#if defined(_WIN32)
+
+// Explorer gives a double-clicked console program a brand-new console that contains nothing but
+// that process, which is how "launched by double-click" is recognised: GetConsoleProcessList
+// reports 1. Launched from a terminal it is always at least 2, because the shell is attached too.
+// Reported as exactly 1 and not "<= 1" on purpose: with no console at all -- a service or a CI
+// agent -- the count is 0, and this must stay a no-op there rather than block on a message box.
+// Without any of this the 0.1.x build prints two lines and exits, so a double-click shows a
+// console window for a few milliseconds and the packaged application looks like it does nothing.
+bool launchedByDoubleClick() {
+    return ::GetConsoleProcessList(nullptr, 0) == 1;
+}
+
+void explainInADialog() {
+    ::MessageBoxA(
+        nullptr,
+        "openSCRT 0.1.0 is a command-line program.\n"
+        "\n"
+        "This release has no window yet - it is the Phase 0 core, and the Qt workspace shell "
+        "arrives in P1-T12. Double-clicking printed a console line that closed immediately, which "
+        "is why nothing appeared to happen.\n"
+        "\n"
+        "Open PowerShell or cmd and run:\n"
+        "    openscrt --version\n"
+        "\n"
+        "Installed at: C:\\Program Files\\openSCRT\\bin\\openscrt.exe",
+        "openSCRT", MB_OK | MB_ICONINFORMATION);
+}
+
+#endif  // _WIN32
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -60,5 +95,12 @@ int main(int argc, char** argv) {
                 openscrt::core::kProjectVersion);
     std::printf(
         "The Qt workspace shell arrives in P1-T12; run with --version for build details.\n");
+
+#if defined(_WIN32)
+    if (launchedByDoubleClick()) {
+        explainInADialog();
+    }
+#endif
+
     return 0;
 }

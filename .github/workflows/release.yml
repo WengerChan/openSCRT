@@ -173,6 +173,21 @@ jobs:
         shell: bash
         run: out/build/windows-ci/bin/Release/openscrt.exe --version
 
+      # Running with no arguments is the double-click path a user hits first, and on Windows it
+      # may show a message box. Guarded twice: the code only opens a box when a console exists and
+      # contains nothing else, and this waits with a timeout so a regression fails in a minute
+      # instead of hanging the job until the 45-minute limit.
+      - name: Smoke test the no-argument launch
+        shell: pwsh
+        run: |
+          $exe = Join-Path $env:GITHUB_WORKSPACE 'out/build/windows-ci/bin/Release/openscrt.exe'
+          $p = Start-Process $exe -NoNewWindow -PassThru
+          if (-not $p.WaitForExit(60000)) {
+            $p.Kill()
+            throw "openscrt.exe with no arguments did not exit within 60s"
+          }
+          "no-argument launch exited with $($p.ExitCode)"
+
       - name: Stage the portable tree
         shell: bash
         run: |
