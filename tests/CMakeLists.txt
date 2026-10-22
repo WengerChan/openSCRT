@@ -44,6 +44,15 @@ openscrt_add_test(unit_ring_scrollback_buffer
     SOURCES unit/RingScrollbackBufferTest.cpp
     LIBS openscrt_terminal)
 
+# The renderer needs a QGuiApplication; the offscreen platform plugin makes that work in CI
+# without a display server.
+openscrt_add_test(unit_terminal_renderer
+    LABEL unit
+    SOURCES unit/TerminalRendererTest.cpp
+    LIBS openscrt_ui)
+set_tests_properties(unit_terminal_renderer PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 openscrt_add_test(unit_local_pty_channel
     LABEL unit
     SOURCES unit/LocalPtyChannelTest.cpp
