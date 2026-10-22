@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "openscrt",
-  "version-string": "0.1.0",
+  "version-string": "0.1.1",
   "description": "SecureCRT-alike terminal emulator built on C++20 and Qt6",
   "builtin-baseline": "b1b19307e2d2ec1eefbdb7ea069de7d4bcd31f01",
   "dependencies": [
