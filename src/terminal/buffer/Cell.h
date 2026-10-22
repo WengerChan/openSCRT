@@ -49,6 +49,15 @@ struct alignas(16) Cell {
     [[nodiscard]] bool isBlank() const noexcept { return codepoint == 0; }
     [[nodiscard]] bool isWideLead() const noexcept { return (attrs & cellattr::kWideLead) != 0; }
     [[nodiscard]] bool isWideTrail() const noexcept { return (attrs & cellattr::kWideTrail) != 0; }
+    [[nodiscard]] bool hasAttribute(std::uint32_t bit) const noexcept { return (attrs & bit) != 0; }
+    void setAttribute(std::uint32_t bit, bool on) noexcept {
+        if (on) {
+            attrs |= bit;
+        } else {
+            attrs &= ~bit;
+        }
+    }
+
     [[nodiscard]] bool isDirty() const noexcept { return (attrs & cellattr::kDirty) != 0; }
     void markDirty() noexcept { attrs |= cellattr::kDirty; }
     void clearDirty() noexcept { attrs &= ~cellattr::kDirty; }

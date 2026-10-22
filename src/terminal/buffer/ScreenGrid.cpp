@@ -347,6 +347,15 @@ void ScreenGrid::scrollUp(int lines) {
         }
         return;
     }
+    // Rows leaving the top carry real content into scrollback before they are overwritten.
+    // Only when the region starts at row 0: with a scroll region below it, the line moved
+    // inside the region and is still part of the screen.
+    if (scrolled_off_ && scroll_top_ == 0) {
+        for (int row = 0; row < lines; ++row) {
+            const std::string text = rowText(row);
+            scrolled_off_(std::string_view(text));
+        }
+    }
     for (int row = scroll_top_; row <= scroll_bottom_ - lines; ++row) {
         std::copy(rowData(row + lines), rowData(row + lines) + cols_, rowData(row));
         markRowDirty(row);
@@ -500,8 +509,15 @@ std::size_t ScreenGrid::flushScrolledOffTo(RingScrollbackBuffer& scrollback) {
     if (isAlternateScreen()) {
         return 0;  // The alternate buffer never contributes to scrollback.
     }
-    (void)scrollback;
-    return 0;  // Wired up in P1-T3 together with the parser's line-completion callback.
+    std::size_t moved = 0;
+    ScrolledOffHandler previous = scrolled_off_;
+    scrolled_off_ = [&scrollback, &moved](std::string_view line) {
+        scrollback.push(std::string(line));
+        ++moved;
+    };
+    scrollUp(1);
+    scrolled_off_ = std::move(previous);
+    return moved;
 }
 
 }  // namespace openscrt::terminal

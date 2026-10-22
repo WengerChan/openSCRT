@@ -5,7 +5,8 @@ add_library(openscrt_terminal STATIC
     ModuleInfo.cpp
     buffer/RingScrollbackBuffer.cpp
     buffer/ScreenGrid.cpp
-    emulator/ControlSequenceParser.cpp)
+    emulator/ControlSequenceParser.cpp
+    emulator/TerminalEmulator.cpp)
 
 target_include_directories(openscrt_terminal PUBLIC ${PROJECT_SOURCE_DIR}/src)
 

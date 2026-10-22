@@ -10,7 +10,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "terminal/buffer/Cell.h"
@@ -103,6 +105,12 @@ class ScreenGrid {
 
     // Moves lines that scrolled off the top into scrollback. Returns how many were moved.
     std::size_t flushScrolledOffTo(RingScrollbackBuffer& scrollback);
+
+    // Invoked with the text of each row that leaves the top of the screen, before it is
+    // overwritten. Only fires when the scroll region starts at row 0, which is the only case
+    // where the line genuinely left the session's visible history.
+    using ScrolledOffHandler = std::function<void(std::string_view)>;
+    void setScrolledOffHandler(ScrolledOffHandler handler) { scrolled_off_ = std::move(handler); }
 
  private:
     void clampCursor() noexcept;

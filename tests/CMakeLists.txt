@@ -44,6 +44,11 @@ openscrt_add_test(unit_ring_scrollback_buffer
     SOURCES unit/RingScrollbackBufferTest.cpp
     LIBS openscrt_terminal)
 
+openscrt_add_test(unit_terminal_emulator
+    LABEL unit
+    SOURCES unit/TerminalEmulatorTest.cpp
+    LIBS openscrt_terminal)
+
 openscrt_add_test(unit_control_sequence_parser
     LABEL unit
     SOURCES unit/ControlSequenceParserTest.cpp
