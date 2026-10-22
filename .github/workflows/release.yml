@@ -434,6 +434,6 @@ jobs:
             | `openSCRT-<version>-windows-x64.msi` | Double-click. Installs per-machine to `%ProgramFiles%\openSCRT` with an uninstall entry in Add/Remove Programs. The installer does not touch `PATH`; add `%ProgramFiles%\openSCRT\bin` yourself if you want the command on it. |
             | `openSCRT-<version>-windows-x64-portable.zip` | Unzip anywhere and run `bin\openscrt.exe`. No installation, no admin rights. |
 
-            Both carry the Qt 6.8 runtime, so neither needs Qt installed.
+            Both bundle every DLL the binary imports -- `libsodium`, the UCRT forwarders, and, once the Qt shell lands, the Qt runtime -- so neither needs Qt installed.
 
             Verify a download against `SHA256SUMS.txt`.
