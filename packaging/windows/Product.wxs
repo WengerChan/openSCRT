@@ -5,14 +5,14 @@
   Two things this file deliberately does NOT do:
 
   1. It does not list files. The payload is harvested from the staged tree by heat
-     (.github/workflows/release.yml), because windeployqt's output changes with the Qt version --
+     (.github/workflows/release.yml), because windeployqt's output changes with the Qt version:
      a hand-maintained <File> list would silently drop Qt6Core.dll from the MSI and the installer
      would install something that cannot start on a machine without Qt installed.
   2. It does not hardcode a version. ProductVersion is passed in with -dProductVersion after the
      tag has been checked against VERSION in CMakeLists.txt.
 
   Only behaviour that cannot be harvested lives here: install scope, upgrade identity, and
-  putting %ProgramFiles%\openSCRT\bin on PATH so `openscrt --version` works from any shell.
+  putting %ProgramFiles%\openSCRT\bin on PATH so the openscrt command works from any shell.
 -->
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
 
