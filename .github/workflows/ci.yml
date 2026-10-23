@@ -171,6 +171,18 @@ jobs:
           sudo apt-get install -y -qq tmux
           tmux -V
 
+      - name: Install the real terminal programs (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        # The corpus in tests/fixtures is written by hand. These three are the programs the
+        # acceptance criterion names, and their output is captured live and compared against
+        # tmux, so the comparison covers bytes nobody wrote by hand.
+        run: |
+          sudo apt-get install -y -qq vim htop less
+          vim --version | head -1
+          htop --version | head -1
+          less --version | head -1
+
       - name: Install dependencies (vcpkg, manifest mode)
         shell: bash
         run: |

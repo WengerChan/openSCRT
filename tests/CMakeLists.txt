@@ -121,7 +121,8 @@ openscrt_add_test(unit_control_sequence_parser
 add_executable(unit_vt_baseline unit/VtBaselineTest.cpp support/VtReference.cpp)
 target_include_directories(unit_vt_baseline PRIVATE ${PROJECT_SOURCE_DIR}/src
                                                     ${PROJECT_SOURCE_DIR}/tests)
-target_link_libraries(unit_vt_baseline PRIVATE GTest::gtest openscrt_terminal openscrt_warnings)
+target_link_libraries(unit_vt_baseline PRIVATE GTest::gtest openscrt_terminal openscrt_protocols
+                                                 openscrt_warnings)
 target_compile_definitions(unit_vt_baseline PRIVATE
     OPENCRT_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 add_test(NAME unit_vt_baseline COMMAND unit_vt_baseline)

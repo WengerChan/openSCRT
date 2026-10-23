@@ -19,6 +19,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -27,6 +28,7 @@
 #include <string>
 #include <vector>
 
+#include "protocols/local/LocalPtyChannel.h"
 #include "support/VtReference.h"
 #include "terminal/buffer/ScreenGrid.h"
 #include "terminal/emulator/ScreenSnapshot.h"
@@ -158,6 +160,59 @@ std::string renderWithOurEmulator(const std::vector<std::uint8_t>& bytes) {
     return snapshotScreen(grid);
 }
 
+// Captures what a real program draws.
+//
+// The corpus in tests/fixtures is written by hand, which makes it readable but also makes
+// it only as good as the author's imagination of what a terminal emits. Running the real
+// programs and capturing their bytes answers a different question: does the emulator
+// render what vim, htop and less actually draw the way tmux renders it?
+//
+// The capture stops when the program goes quiet, so the last sequence in it is complete.
+// A capture cut in the middle of an escape sequence would be recovered differently by the
+// two implementations, and that difference would be an artefact of the cut.
+std::vector<std::uint8_t> captureProgram(const std::string& command,
+                                         std::chrono::milliseconds budget) {
+    openscrt::protocols::local::LocalPtyChannel::Options options;
+    options.shell = "/bin/sh";
+    options.arguments = {"-c", command};
+    options.initial_size = openscrt::protocols::WindowSize{kRows, kCols};
+    options.ring_capacity = 256 * 1024;
+
+    openscrt::protocols::local::LocalPtyChannel channel{options};
+    if (!channel.connectAsync().ok) {
+        return {};
+    }
+
+    std::vector<std::uint8_t> captured;
+    std::uint8_t buffer[4096];
+    const auto deadline = std::chrono::steady_clock::now() + budget;
+    while (std::chrono::steady_clock::now() < deadline) {
+        const std::size_t read =
+            channel.readAvailable(buffer, sizeof(buffer), std::chrono::milliseconds(200));
+        if (read == 0) {
+            if (!captured.empty()) {
+                break;  // the program went quiet: its last sequence is complete
+            }
+            continue;  // nothing yet: keep waiting for it to start
+        }
+        captured.insert(captured.end(), buffer, buffer + read);
+    }
+    channel.disconnect();
+    return captured;
+}
+
+// The programs the acceptance criterion names, with the terminal type they need to emit
+// escape sequences at all.
+std::vector<std::string> realProgramCommands() {
+    return {
+        "TERM=xterm-256color vim -u NONE -i NONE",
+        // htop redraws on a timer. Ten seconds between redraws means the capture stops
+        // after the first screen instead of catching one in the middle of a redraw.
+        "TERM=xterm-256color htop -d 100",
+        "TERM=xterm-256color less /etc/hostname",
+    };
+}
+
 // Prints the first differing lines, so a human sees what moved instead of a bare
 // "not equal".
 void reportDifference(const std::string& expected, const std::string& actual) {
@@ -272,6 +327,42 @@ TEST(VtBaselineTest, EveryFixtureMatchesItsBaseline) {
             reportDifference(expected, ours);
         }
     }
+}
+
+TEST(VtBaselineTest, RealProgramOutputRendersTheWayTmuxRendersIt) {
+    if (!openscrt::test::tmuxAvailable()) {
+        GTEST_SKIP() << "tmux is not installed";
+    }
+
+    int compared = 0;
+    for (const std::string& command : realProgramCommands()) {
+        const std::vector<std::uint8_t> captured =
+            captureProgram(command, std::chrono::milliseconds(4000));
+        // A program that is not installed here prints a shell error message, and that
+        // message contains no escape sequences. That is the signal to skip it.
+        const bool drewSomething = std::any_of(captured.begin(), captured.end(),
+                                               [](std::uint8_t byte) { return byte == 0x1B; });
+        if (!drewSomething) {
+            continue;
+        }
+
+        const std::string ours = renderWithOurEmulator(captured);
+        const std::string theirs = openscrt::test::renderWithTmux(captured, kRows, kCols);
+        if (theirs.empty()) {
+            continue;
+        }
+        ++compared;
+        if (ours != theirs) {
+            ADD_FAILURE() << "the capture of '" << command << "' renders differently";
+            reportDifference(theirs, ours);
+        }
+    }
+
+#if defined(__linux__)
+    // The Linux runner installs the programs, so a capture that produced nothing there
+    // means the comparison quietly stopped testing anything.
+    EXPECT_GT(compared, 0) << "no real program produced any output";
+#endif
 }
 
 }  // namespace
