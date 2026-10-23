@@ -147,20 +147,19 @@ bool SessionTree::resolve(const std::string& id, Resolved& out) const {
         return false;
     }
 
-    out.host = default_session_.host.value_or("");
-    out.port = default_session_.port.value_or(22);
-    out.user = default_session_.user.value_or("");
-    out.protocol = default_session_.protocol.value_or(Protocol::kSsh2);
-    out.private_key_path = default_session_.private_key_path.value_or("");
-
-    // Walk from the session up to the root. The NEAREST value has to win, so each field is
-    // filled only once: writing unconditionally lets the most distant ancestor overwrite it,
-    // because the walk ends at the root.
-    bool have_host = !out.host.empty();
-    bool have_user = !out.user.empty();
-    bool have_key = !out.private_key_path.empty();
-    bool have_port = false;  // 0 is not a valid port, so "unset" has to be tracked separately.
+    // Collect from the nearest ancestor outwards, then fall back to the Default Session
+    // template for whatever is still unset.
+    //
+    // The template must NOT be pre-loaded into `out`: doing so would mark every field as
+    // already filled and the walk would skip them all. Equally, writing each value
+    // unconditionally would let the most distant ancestor overwrite the nearest one, because
+    // the walk ends at the root. Hence: start empty, fill once, then apply the template.
+    Resolved collected;
+    bool have_host = false;
+    bool have_port = false;
+    bool have_user = false;
     bool have_protocol = false;
+    bool have_key = false;
 
     std::unordered_set<std::string> seen;
     const SessionProfile* node = start;
@@ -169,26 +168,43 @@ bool SessionTree::resolve(const std::string& id, Resolved& out) const {
             return false;  // Cycle; should be impossible, but never trust a loaded file.
         }
         if (!have_host && node->host) {
-            out.host = *node->host;
+            collected.host = *node->host;
             have_host = true;
         }
         if (!have_port && node->port) {
-            out.port = *node->port;
+            collected.port = *node->port;
             have_port = true;
         }
         if (!have_user && node->user) {
-            out.user = *node->user;
+            collected.user = *node->user;
             have_user = true;
         }
         if (!have_protocol && node->protocol) {
-            out.protocol = *node->protocol;
+            collected.protocol = *node->protocol;
             have_protocol = true;
         }
         if (!have_key && node->private_key_path) {
-            out.private_key_path = *node->private_key_path;
+            collected.private_key_path = *node->private_key_path;
             have_key = true;
         }
         node = node->parent_id.empty() ? nullptr : find(node->parent_id);
+    }
+
+    out = collected;
+    if (!have_host) {
+        out.host = default_session_.host.value_or("");
+    }
+    if (!have_port) {
+        out.port = default_session_.port.value_or(22);
+    }
+    if (!have_user) {
+        out.user = default_session_.user.value_or("");
+    }
+    if (!have_protocol) {
+        out.protocol = default_session_.protocol.value_or(Protocol::kSsh2);
+    }
+    if (!have_key) {
+        out.private_key_path = default_session_.private_key_path.value_or("");
     }
     return true;
 }
