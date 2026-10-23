@@ -43,7 +43,7 @@ class TerminalCanvasWidget : public QWidget {
     void setTheme(const Theme& theme);
 
     // Feeds transport bytes. Never repaints directly; it only signals the coalescer.
-    void feed(const std::uint8_t* data, std::size_t size);
+    void feed(const std::uint8_t* bytes, std::size_t size);
     void feed(std::string_view text);
 
     // Resizes the terminal to fit the widget, preserving the current column count when
@@ -96,10 +96,12 @@ class TerminalCanvasWidget : public QWidget {
     [[nodiscard]] int rowsForHeight() const;
     [[nodiscard]] int columnsForWidth() const;
 
+    // Declaration order matches the constructor's member-initialiser list: grid_ and
+    // scrollback_ first because the emulator and the renderer both hold pointers to them.
     std::unique_ptr<terminal::ScreenGrid> grid_;
+    std::unique_ptr<terminal::RingScrollbackBuffer> scrollback_;
     std::unique_ptr<terminal::TerminalEmulator> emulator_;
     std::unique_ptr<TerminalRenderer> renderer_;
-    std::unique_ptr<terminal::RingScrollbackBuffer> scrollback_;
     terminal::FrameCoalescer coalescer_{terminal::kDefaultRefreshHz};
 
     class QTimer* frame_timer_{nullptr};

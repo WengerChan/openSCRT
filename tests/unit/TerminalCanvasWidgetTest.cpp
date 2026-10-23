@@ -5,10 +5,12 @@
 
 #include <gtest/gtest.h>
 
+#include <QCoreApplication>
 #include <QGuiApplication>
 #include <QtGlobal>
 #include <chrono>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "ui/workspace/TerminalCanvasWidget.h"
@@ -155,7 +157,7 @@ TEST_F(CanvasWidgetTest, KeyPressesReachTheInputSink) {
     });
 
     QKeyEvent press(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier, QStringLiteral("a"));
-    widget_->keyPressEvent(&press);
+    QCoreApplication::sendEvent(widget_.get(), &press);
     ASSERT_EQ(received.size(), 1u);
     EXPECT_EQ(received[0], 'a');
 }
@@ -166,7 +168,7 @@ TEST_F(CanvasWidgetTest, CtrlCIsReportedAsAnInterrupt) {
                      [&interrupted] { interrupted = true; });
 
     QKeyEvent press(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier, QStringLiteral("c"));
-    widget_->keyPressEvent(&press);
+    QCoreApplication::sendEvent(widget_.get(), &press);
     EXPECT_TRUE(interrupted);
 }
 

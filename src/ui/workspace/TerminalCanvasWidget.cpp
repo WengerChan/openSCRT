@@ -48,11 +48,11 @@ void TerminalCanvasWidget::setTheme(const Theme& theme) {
     coalescer_.invalidate();
 }
 
-void TerminalCanvasWidget::feed(const std::uint8_t* data, std::size_t size) {
-    if (data == nullptr || size == 0) {
+void TerminalCanvasWidget::feed(const std::uint8_t* bytes, std::size_t size) {
+    if (bytes == nullptr || size == 0) {
         return;
     }
-    emulator_->write(data, size);
+    emulator_->write(bytes, size);
     coalescer_.signal();
 }
 
@@ -175,6 +175,7 @@ void TerminalCanvasWidget::keyPressEvent(QKeyEvent* event) {
 }
 
 void TerminalCanvasWidget::paintEvent(QPaintEvent* event) {
+    static_cast<void>(event);
     QPainter painter(this);
     painter.drawImage(0, 0, renderer_->backbuffer());
 }
