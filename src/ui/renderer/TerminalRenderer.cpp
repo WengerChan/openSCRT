@@ -86,10 +86,22 @@ void TerminalRenderer::paintCell(QPainter& painter, int row, int column) {
         foreground = foreground.lighter(130);
     }
 
+    // Blit from the tinted atlas. Shaping the text every frame cost far more than the blit,
+    // which is what capped the dirty-rectangle benefit at ~1.3x (P1-A3b). Falls back to
+    // direct drawing only when the tint cache or the atlas is full.
+    const std::uint32_t rgba = (static_cast<std::uint32_t>(foreground.red()) << 24) |
+                               (static_cast<std::uint32_t>(foreground.green()) << 16) |
+                               (static_cast<std::uint32_t>(foreground.blue()) << 8) |
+                               static_cast<std::uint32_t>(foreground.alpha());
+    const QRect glyph = atlas_.ensureTintedGlyph(value.codepoint, styleFor(value), rgba);
+    if (!glyph.isNull()) {
+        painter.drawImage(atlas_.atlasImage(), glyph, target);
+        return;
+    }
     painter.setPen(foreground);
     const char32_t scalar = static_cast<char32_t>(value.codepoint);
-    const QString text = QString::fromUcs4(&scalar, 1);
-    painter.drawText(QPointF(target.x(), target.y() + atlas_.metrics().baseline), text);
+    painter.drawText(QPointF(target.x(), target.y() + atlas_.metrics().baseline),
+                     QString::fromUcs4(&scalar, 1));
 }
 
 void TerminalRenderer::paintBand(int first_row, int last_row) {

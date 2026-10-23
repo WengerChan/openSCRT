@@ -13,6 +13,9 @@ namespace {
 // deliberately left empty: `reserveRow` treats a full atlas as "stop rasterising", and the
 // renderer then draws new glyphs directly, which is slower but never wrong.
 constexpr int kPadding = 1;
+// Beyond this many distinct (glyph, colour) pairs the cache stops earning its memory and the
+// renderer falls back to direct drawing. A screen realistically uses a few dozen colours.
+constexpr std::size_t kMaxTintedGlyphs = 8192;
 constexpr int kAtlasWidth = 1024;
 constexpr int kMaxRowsBeforeGivingUp = 4096;
 
@@ -30,6 +33,7 @@ GlyphAtlas::~GlyphAtlas() = default;
 
 void GlyphAtlas::reset(const QFont& font) {
     cache_.clear();
+    tinted_.clear();
     used_slots_ = 0;
     next_row_ = 0;
     next_column_ = 0;
@@ -83,40 +87,92 @@ QRect GlyphAtlas::ensureGlyph(std::uint32_t codepoint, GlyphStyle style) {
     if (found != cache_.end()) {
         return found->second;
     }
-    if (codepoint == 0 || codepoint > 0x10FFFF) {
+    const QImage glyph = rasteriseGlyph(codepoint, style);
+    if (glyph.isNull()) {
+        return QRect();
+    }
+    const QRect target = nextFreeSlot();
+    if (target.isNull()) {
+        return QRect();  // Atlas full: caller falls back to direct drawing.
+    }
+    {
+        QPainter painter(&atlas_);
+        painter.drawImage(target.topLeft(), glyph);
+    }
+    cache_.emplace(key, target);
+    return target;
+}
+
+QRect GlyphAtlas::ensureTintedGlyph(std::uint32_t codepoint, GlyphStyle style, std::uint32_t rgba) {
+    const TintedGlyphKey key{codepoint, style, rgba};
+    const auto found = tinted_.find(key);
+    if (found != tinted_.end()) {
+        return found->second;
+    }
+    if (tinted_.size() >= kMaxTintedGlyphs) {
         return QRect();
     }
 
-    if (next_column_ >= columns_) {
-        next_column_ = 0;
-        if (reserveRow() < 0) {
-            return QRect();  // Atlas full: caller falls back to direct drawing.
+    // Render the outline, then recolour it by copying alpha into every colour channel. Doing
+    // this once per (glyph, colour) is what turns per-frame text shaping into a blit.
+    const QImage outline(rasteriseGlyph(codepoint, style));
+    if (outline.isNull()) {
+        return QRect();
+    }
+    const int red = static_cast<int>((rgba >> 24) & 0xFF);
+    const int green = static_cast<int>((rgba >> 16) & 0xFF);
+    const int blue = static_cast<int>((rgba >> 8) & 0xFF);
+    const int alpha = static_cast<int>(rgba & 0xFF);
+
+    for (int y = 0; y < outline.height(); ++y) {
+        auto* line = reinterpret_cast<QRgb*>(outline.scanLine(y));
+        for (int x = 0; x < outline.width(); ++x) {
+            const int coverage = qAlpha(line[x]);
+            line[x] = qRgba(red, green, blue, coverage * alpha / 255);
         }
     }
 
-    const int column = next_column_++;
-    const int x = column * (metrics_.cell_width + kPadding);
-    const int y = next_row_ * metrics_.cell_height;
-    const QRect target(x, y, metrics_.cell_width, metrics_.cell_height);
+    const QRect target = nextFreeSlot();
+    if (target.isNull()) {
+        return QRect();
+    }
+    {
+        QPainter painter(&atlas_);
+        painter.drawImage(target.topLeft(), outline);
+    }
+    tinted_.emplace(key, target);
+    return target;
+}
 
-    // Rasterise into a scratch image first so a failure cannot leave a half-drawn cell in the
-    // atlas that later blits would treat as valid.
+QRect GlyphAtlas::nextFreeSlot() {
+    if (next_column_ >= columns_) {
+        next_column_ = 0;
+        if (reserveRow() < 0) {
+            return QRect();
+        }
+    }
+    const int column = next_column_++;
+    return QRect(column * (metrics_.cell_width + kPadding), next_row_ * metrics_.cell_height,
+                 metrics_.cell_width, metrics_.cell_height);
+}
+
+QImage GlyphAtlas::rasteriseGlyph(std::uint32_t codepoint, GlyphStyle style) {
+    if (codepoint == 0 || codepoint > 0x10FFFF) {
+        return QImage();
+    }
+    QFont font;
+    font.setFixedPitch(true);
+    font.setBold(style == GlyphStyle::kBold || style == GlyphStyle::kBoldItalic);
+    font.setItalic(style == GlyphStyle::kItalic || style == GlyphStyle::kBoldItalic);
+
     QImage glyph(metrics_.cell_width, metrics_.cell_height, QImage::Format_ARGB32_Premultiplied);
     glyph.fill(Qt::transparent);
-    {
-        QPainter painter(&glyph);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.setPen(Qt::white);
-        // The uint overload of fromUcs4 is deprecated in Qt 6.8; the char32_t one is not.
-        const char32_t scalar = static_cast<char32_t>(codepoint);
-        const QString text = QString::fromUcs4(&scalar, 1);
-        painter.drawText(QPointF(0, metrics_.baseline), text);
-    }
-    QPainter painter(&atlas_);
-    painter.drawImage(target.topLeft(), glyph);
-
-    cache_.emplace(key, target);
-    return target;
+    QPainter painter(&glyph);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(Qt::white);
+    const char32_t scalar = static_cast<char32_t>(codepoint);
+    painter.drawText(QPointF(0, metrics_.baseline), QString::fromUcs4(&scalar, 1));
+    return glyph;
 }
 
 }  // namespace openscrt::ui

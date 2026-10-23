@@ -122,8 +122,11 @@ TEST_F(RenderBudgetTest, IncrementalRepaintIsMuchCheaperThanFull) {
     std::fprintf(stderr, "[perf] 200 repaints: partial %.2f ms vs full %.2f ms (%.1fx)\n", partial,
                  full, partial > 0 ? full / partial : 0.0);
 
-    // The dirty-rectangle design only earns its keep if this ratio is real.
+    // The dirty-rectangle design only earns its keep if this ratio is real. It was 1.3x
+    // while the renderer shaped text per cell; with tinted-atlas blits it should be far
+    // higher, and a regression back to drawText would show up here first.
     EXPECT_LT(partial, full) << "dirty-row tracking is not saving any work";
+    EXPECT_LT(partial * 3, full) << "incremental repaint must be at least 3x cheaper";
     EXPECT_LT(partial / 200.0, 16.0) << "an incremental repaint must fit inside one frame";
 }
 

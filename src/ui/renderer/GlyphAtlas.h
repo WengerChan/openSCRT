@@ -13,6 +13,7 @@
 #include <QRect>
 #include <cstdint>
 #include <memory>
+#include <unordered_map>
 
 #include "terminal/buffer/Cell.h"
 
@@ -37,9 +38,31 @@ struct GlyphKey {
 };
 
 struct GlyphKeyHash {
-    std::size_t operator()(const GlyphKey& key) const noexcept {
+    std::size_t operator()(const GlyphKey& key) noexcept {
         return (static_cast<std::size_t>(key.codepoint) * 131u) ^
                (static_cast<std::size_t>(key.style) * 2654435761u);
+    }
+};
+
+// The atlas stores white outlines; a screen needs them in the cell's own colour. Tinting a
+// white glyph is a per-pixel alpha copy, so doing it per cell per frame costs as much as the
+// drawText it replaces. Instead the tinted result is cached: a screen uses a handful of
+// distinct colours, so steady-state painting is a blit.
+struct TintedGlyphKey {
+    std::uint32_t codepoint{0};
+    GlyphStyle style{GlyphStyle::kRegular};
+    std::uint32_t rgba{0};
+
+    friend bool operator==(const TintedGlyphKey& a, const TintedGlyphKey& b) noexcept {
+        return a.codepoint == b.codepoint && a.style == b.style && a.rgba == b.rgba;
+    }
+};
+
+struct TintedGlyphKeyHash {
+    std::size_t operator()(const TintedGlyphKey& key) noexcept {
+        std::size_t hash = (static_cast<std::size_t>(key.codepoint) * 131u) ^
+                           (static_cast<std::size_t>(key.style) * 2654435761u);
+        return hash ^ (static_cast<std::size_t>(key.rgba) * 40503u);
     }
 };
 
@@ -71,6 +94,13 @@ class GlyphAtlas {
     // Ensures the glyph is rasterised, then returns its rectangle.
     [[nodiscard]] QRect ensureGlyph(std::uint32_t codepoint, GlyphStyle style);
 
+    // Rasterised in `rgba` and cached. Returns a null rect when the tint cache is full, in
+    // which case the caller falls back to drawing the text directly.
+    [[nodiscard]] QRect ensureTintedGlyph(std::uint32_t codepoint, GlyphStyle style,
+                                          std::uint32_t rgba);
+
+    [[nodiscard]] std::size_t tintedCount() const noexcept { return tinted_.size(); }
+
     [[nodiscard]] const QImage& atlasImage() const noexcept { return atlas_; }
     [[nodiscard]] int glyphCount() const noexcept { return static_cast<int>(cache_.size()); }
     // Atlas slots consumed, including the free rows kept back for glyphs that arrive later.
@@ -78,10 +108,13 @@ class GlyphAtlas {
 
  private:
     int reserveRow();
+    [[nodiscard]] QRect nextFreeSlot();
+    [[nodiscard]] QImage rasteriseGlyph(std::uint32_t codepoint, GlyphStyle style);
 
     QImage atlas_;
     Metrics metrics_{};
     std::unordered_map<GlyphKey, QRect, GlyphKeyHash> cache_;
+    std::unordered_map<TintedGlyphKey, QRect, TintedGlyphKeyHash> tinted_;
     int columns_{0};
     int used_slots_{0};
     int next_row_{0};
