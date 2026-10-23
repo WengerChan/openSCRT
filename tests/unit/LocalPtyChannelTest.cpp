@@ -159,9 +159,11 @@ TEST(LocalPtyChannelTest, NonInteractiveModeReturnsCleanOutput) {
 }
 
 #if defined(_WIN32)
-// Temporary diagnostic (2026-10-24): the disconnect path hung in two of the last four CI
-// runs, always right after this scenario. Repeating it turns a race that shows up once in
-// four runs into one that shows up in one run out of one.
+// Regression guard: the shutdown path used to deadlock inside ClosePseudoConsole whenever
+// the child had already exited. It showed up in two of four CI runs, which is the worst
+// possible frequency -- a flaky failure that looks like an unrelated timeout. Repeating
+// the scenario turns a race that appears once in four runs into one that appears in one
+// run out of one.
 TEST(LocalPtyChannelTest, RepeatedNonInteractiveRunsDoNotHang) {
     for (int attempt = 0; attempt < 20; ++attempt) {
         LocalPtyChannel::Options options;

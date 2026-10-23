@@ -491,42 +491,42 @@ TransportResult LocalPtyChannel::disconnect() {
         return TransportResult{true, {}};
     }
 #if defined(_WIN32)
-    // The order of these three steps is load-bearing. The reader thread parks in a
-    // synchronous PeekNamedPipe -- the documentation says so explicitly: on a synchronous
-    // handle in a multi-threaded application it blocks like any other I/O call -- and the
-    // only thing that releases it is closing the handle underneath it. Closing first and
-    // joining afterwards is what keeps the join from waiting for ever; joining first and
-    // closing afterwards deadlocks, because the reader never sees stopping_ while it is
-    // parked in the peek.
+    // The order of these steps is load-bearing, and the documentation says why:
+    //
+    //   "The act of closing the pseudoconsole session may emit a final frame update to
+    //    hOutput which should be drained from the communications channel buffer."
+    //
+    // The console host writes that last frame while it shuts down, and ClosePseudoConsole
+    // waits for that write to go through. A reader that has already stopped turns the
+    // shutdown into a deadlock -- which is exactly what this path did: the test binary
+    // hung inside ClosePseudoConsole, with the reader gone and nobody left to drain the
+    // pipe. So the console is closed while the reader is still running, and only then is
+    // the reader stopped; by then the console host is gone, the output pipe is at end of
+    // file, and the reader leaves on its own.
     if (platform_->input_write != INVALID_HANDLE_VALUE) {
         CloseHandle(platform_->input_write);
         platform_->input_write = INVALID_HANDLE_VALUE;
     }
+    if (platform_->pseudo_console != nullptr) {
+        conPty().close(platform_->pseudo_console);
+        platform_->pseudo_console = nullptr;
+    }
+    stopReader();
     if (platform_->output_read != INVALID_HANDLE_VALUE) {
         CloseHandle(platform_->output_read);
         platform_->output_read = INVALID_HANDLE_VALUE;
+    }
+    if (platform_->process.hProcess != nullptr) {
+        WaitForSingleObject(platform_->process.hProcess, 2000);
+        CloseHandle(platform_->process.hProcess);
+        platform_->process.hProcess = nullptr;
     }
 #else
     if (platform_->master >= 0) {
         ::close(platform_->master);
         platform_->master = -1;
     }
-#endif
     stopReader();
-#if defined(_WIN32)
-    std::fprintf(stderr, "[probe] closing the pseudo console\n");
-    if (platform_->pseudo_console != nullptr) {
-        conPty().close(platform_->pseudo_console);
-        platform_->pseudo_console = nullptr;
-    }
-    if (platform_->process.hProcess != nullptr) {
-        std::fprintf(stderr, "[probe] waiting for the child\n");
-        WaitForSingleObject(platform_->process.hProcess, 2000);
-        std::fprintf(stderr, "[probe] child wait done\n");
-        CloseHandle(platform_->process.hProcess);
-        platform_->process.hProcess = nullptr;
-    }
-#else
     if (platform_->child > 0) {
         int status = 0;
         waitpid(platform_->child, &status, 0);
