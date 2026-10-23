@@ -611,25 +611,71 @@ jobs:
           VERSION=${{ steps.version.outputs.version }}
           STAGE_NAME="openscrt-$VERSION-macos-arm64"
           STAGE="$GITHUB_WORKSPACE/out/pkg/$STAGE_NAME"
+          APP="$STAGE/openscrt.app"
           rm -rf "$STAGE"
-          mkdir -p "$STAGE"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/PlugIns/platforms"
           cmake --install out/build/macos-ci --config Release --prefix "$STAGE"
+          mv "$STAGE/bin/openscrt" "$APP/Contents/MacOS/openscrt"
+          rmdir "$STAGE/bin"
 
-          # macdeployqt copies the Qt frameworks into the bundle and rewrites the load paths.
-          # -codesign=- means "do not sign": the runner has no signing identity, and an
-          # unsigned bundle is what a manual verification wants anyway.
-          MACDEPLOYQT="$QT_ROOT_DIR/bin/macdeployqt"
-          if [ ! -x "$MACDEPLOYQT" ]; then
-            echo "::error::macdeployqt not found at $MACDEPLOYQT"
-            exit 1
-          fi
-          "$MACDEPLOYQT" "$STAGE/bin/openscrt" -appbundle -codesign=- -verbose=1
-          if [ ! -d "$STAGE/bin/openscrt.app" ]; then
-            echo "::error::macdeployqt did not produce openscrt.app"
-            exit 1
-          fi
+          # The frameworks the binary needs travel with it, and only those: the closure is
+          # worked out from the link lines, so a Qt module the app does not use does not
+          # end up in the package.
+          collect() {
+            local binary="$1" framework
+            for framework in $(otool -L "$binary" | grep -o '@rpath/[^ ]*\.framework' \
+                               | sed 's|@rpath/||; s|/.*||' | sort -u); do
+              if [ -d "$APP/Contents/Frameworks/$framework" ]; then
+                continue
+              fi
+              cp -R "$QT_ROOT_DIR/lib/$framework" "$APP/Contents/Frameworks/"
+              local inner
+              inner=$(ls "$APP/Contents/Frameworks/$framework/Versions/"*/"$framework" 2>/dev/null | head -1 || true)
+              if [ -n "$inner" ]; then
+                collect "$inner"
+              fi
+            done
+          }
+          collect "$APP/Contents/MacOS/openscrt"
+          echo "bundled frameworks:"
+          ls "$APP/Contents/Frameworks"
 
-          tar -C "$STAGE/bin" -czf "$GITHUB_WORKSPACE/out/pkg/openSCRT-$VERSION-macos-arm64.tar.gz" openscrt.app
+          # The build machine's Qt directory is baked into the load path; the bundle has to
+          # work on a machine that has no Qt at all, so the path inside the bundle is added
+          # and the build machine's path is dropped.
+          install_name_tool -delete_rpath "$QT_ROOT_DIR/lib" \
+            "$APP/Contents/MacOS/openscrt" 2>/dev/null || true
+          install_name_tool -add_rpath "@executable_path/../Frameworks" \
+            "$APP/Contents/MacOS/openscrt"
+
+          # The platform plugin is loaded at run time, so it is in no link line and has to
+          # be copied by hand. Qt looks for it in Contents/PlugIns.
+          cp "$QT_ROOT_DIR"/plugins/platforms/*.dylib "$APP/Contents/PlugIns/platforms/"
+
+          cat > "$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>openSCRT</string>
+            <key>CFBundleDisplayName</key><string>openSCRT</string>
+            <key>CFBundleExecutable</key><string>openscrt</string>
+            <key>CFBundleIdentifier</key><string>org.openscrt.terminal</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>VERSION_PLACEHOLDER</string>
+            <key>CFBundleVersion</key><string>VERSION_PLACEHOLDER</string>
+            <key>LSMinimumSystemVersion</key><string>12.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          sed -i '' "s/VERSION_PLACEHOLDER/$VERSION/g" "$APP/Contents/Info.plist"
+
+          # The bundle has to run on a machine with no Qt installed: the staged copy is
+          # started here, with the plugins it ships, before it is packaged.
+          QT_QPA_PLATFORM=offscreen "$APP/Contents/MacOS/openscrt" --self-test
+
+          tar -C "$STAGE" -czf "$GITHUB_WORKSPACE/out/pkg/openSCRT-$VERSION-macos-arm64.tar.gz" openscrt.app
           cd "$GITHUB_WORKSPACE/out/pkg"
           shasum -a 256 "openSCRT-$VERSION-macos-arm64.tar.gz" > SHA256SUMS-macos.txt
           cat SHA256SUMS-macos.txt
