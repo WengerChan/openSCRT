@@ -181,9 +181,9 @@ TEST_F(SessionTreeFixture, InheritingEverythingBelowAlsoReachesGrandchildren) {
 
 TEST_F(SessionTreeFixture, EditingTheDefaultTemplateMovesEverythingThatDidNotOverride) {
     ASSERT_TRUE(tree_->add(profile("alpha")));
-    auto explicit = profile("beta");
-    explicit.host = std::string("pinned.example");
-    ASSERT_TRUE(tree_->add(std::move(explicit)));
+    auto pinned = profile("beta");
+    pinned.host = std::string("pinned.example");
+    ASSERT_TRUE(tree_->add(std::move(pinned)));
 
     SessionProfile updated;
     updated.name = "Default Session";
