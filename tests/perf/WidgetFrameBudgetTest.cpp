@@ -109,9 +109,12 @@ TEST_F(WidgetFrameBudgetTest, AFullScreenOfOutputStillFitsInAFrame) {
     }
 
     const double p95 = percentile(0.95);
-    std::printf("[perf] widget frame (full screen): p95 %.2f ms, worst %.2f ms\n", p95,
-                frame_times_.back());
+    const int painted = widget_->repaintedRowCount();
+    std::printf("[perf] widget frame (full screen): p95 %.2f ms, worst %.2f ms, %d rows\n", p95,
+                frame_times_.back(), painted);
     EXPECT_LE(p95, 16.7) << "a full-screen repaint misses the 60 FPS frame budget";
+    // A frame time measured over frames that painted nothing would mean nothing.
+    EXPECT_GT(painted, 0) << "the widget painted nothing at all";
 }
 
 }  // namespace
