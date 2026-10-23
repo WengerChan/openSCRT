@@ -303,9 +303,12 @@ bool Ssh2Channel::resizeWindow(const WindowSize& size) {
 }
 
 std::string Ssh2Channel::remoteAddress() const {
-    return options_.user.empty()
-               ? options_.host
-               : options_.user + "@" + options_.host + ":" + std::to_string(options_.port);
+    // The port is always included: one host can serve several SSH ports, and dropping it
+    // only in the no-user case made the two forms inconsistent.
+    if (options_.user.empty()) {
+        return options_.host + ":" + std::to_string(options_.port);
+    }
+    return options_.user + "@" + options_.host + ":" + std::to_string(options_.port);
 }
 
 std::size_t Ssh2Channel::readAvailable(std::uint8_t* destination, std::size_t max,

@@ -41,7 +41,7 @@ TEST(Ssh2ChannelTest, RemoteAddressIncludesUserAndPort) {
     EXPECT_EQ(channel.remoteAddress(), "nobody@127.0.0.1:1");
 }
 
-TEST(Ssh2ChannelTest, RemoteAddressOmitsAnEmptyUser) {
+TEST(Ssh2ChannelTest, RemoteAddressOmitsAnEmptyUserButKeepsThePort) {
     SshConnectionOptions options = unreachableHost();
     options.user.clear();
     Ssh2Channel channel{options};
