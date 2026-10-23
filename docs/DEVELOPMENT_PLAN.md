@@ -171,18 +171,18 @@
 | P1-T4 VT 状态机 | ✅ | `ControlSequenceParser`（CSI/OSC/ESC/UTF-8/子参数）+ `TerminalEmulator` 接缝；补齐 ECH/DCH |
 | P1-T5 256 色 / TrueColor | ✅ | xterm 调色板；SGR 全量；分号与冒号两种扩展色写法 |
 | P1-T6 字形图集 + 脏矩形 | 🟡 | **脏行合并逻辑已完成**（`DamageTracker`，留在无 Qt 的 terminal 层）；字形图集与渲染器未做 |
-| P1-T7 终端画布控件 | ❌ | 未开始 |
+| P1-T7 终端画布控件 | ✅ | `TerminalCanvasWidget`：`feed()` 只置合并标志，只有定时器能出帧；键位编码为纯函数；offscreen 无头测试 |
 | P1-T8 帧合并调度 | ✅ | 60/120Hz；突发合并为 1 帧、持续输出受刷新率上限约束、空闲不出帧 |
-| P1-T9 传输接口冻结 | ✅ | `ITransportChannel`；**Windows 的 ConPTY 留待补齐**（见 P1-A1） |
-| P1-T10 本地 Shell | 🟡 | POSIX（`forkpty`）完整；**Windows ConPTY 为显式失败** |
-| P1-T11 SSH2 通道 | ❌ | 未开始（需同步从 `ci.yml` SKIP 表删除 `libssh`） |
-| P1-T12 主窗口与工作区 | ❌ | 未开始 |
+| P1-T9 传输接口冻结 | ✅ | `ITransportChannel` |
+| P1-T10 本地 Shell | ✅ | POSIX `forkpty` 与 Windows ConPTY 均已实现（ConPTY 仅由 Windows leg 编译验证，运行时待人工） |
+| P1-T11 SSH2 通道 | ✅ | libssh 0.11 真实 API；公钥→密码→keyboard-interactive；**D4 契约已在同 PR 从 SKIP 表删除 `libssh`** |
+| P1-T12 主窗口与工作区 | 🟡 | **会话继承树 + Default Session 模板已完成**（纯逻辑、无 Qt 依赖）；配置持久化与窗口装配未开始 |
 
 **验收取证**
 
 | # | 标准 | 证据 | 结论 |
 | :--- | :--- | :--- | :--- |
-| P1-A1 | 三平台编译 + 连接主流 Linux 服务器 | 四个 job 全绿，流水线 **1 min 45 s** | 🟡 **编译满足；真机 SSH 未做，Windows ConPTY 显式失败** |
+| P1-A1 | 三平台编译 + 连接主流 Linux 服务器 | 四个 job 全绿，流水线 **9 min 31 s**（含 libssh + openssl 源码构建） | 🟡 **编译满足；ConPTY 已实现且 Windows leg 编译通过；真机 SSH / 真机本地 Shell 均待人工** |
 | P1-A2 | vim/htop/tmux 排版与色彩正确 | VT 状态机与 SGR 有针对性测试（含真彩两种写法、备用屏、滚动区域） | 🟡 **仿真层满足；vttest 截图基线比对未做** |
 | P1-A3 | `seq 1 1000000` 帧率 ≥60 FPS | 渲染器 + 字形图集已实现；perf 层实测（run #39886377367）：解析 **5.18 μs/行、193,000 行/s**；全屏重绘 **2.32 ms**（≈431 FPS 等效）；600 ms 饱和输出产出 **38 帧** | 🟡 **机器可判定的一半满足**：全屏重绘 2.32 ms 远低于 16 ms 帧预算，刷新率上限生效。**人工一半未做**：Widget 端到端 FPS 需真实显示环境 |
 | P1-A3b | （补充）脏矩形收益 | 增量/全屏重绘比 **1.3× → 7.6×**（1.14 ms vs 8.65 ms，run #39889831557） | ✅ **达成**。两步：①渲染器改用图集 blit（全屏重绘 2.32 → 1.34 ms）；②`ScreenGrid` 改用**每行一位**的脏位图，`collect()` 从读 1920 个格子变成读 24 个位 |
@@ -218,6 +218,15 @@
 
 **1.3× 这个数字不理想，如实记录**：`GlyphAtlas` 建好了但渲染器仍在用 `drawText` 而不是图集 blit，逐格绘制的成本没有降下来；脏行跟踪省下的只有行背景填充。在字形更密或列更宽的场景下这个比例会更好，但当前证据说明**下一步的优化点明确**：把 `paintCell` 改成 `drawImage(atlas, glyphRect, target)`。
 
+**P1-A3 实测（run #39916950710，Linux）**
+
+```
+[perf] parse: 20000 lines in 222.4 ms (11.119 us/line, 89935 lines/s)
+[perf] repaint: 24 rows in 1.66 ms (602.9 FPS equivalent for one frame)
+[perf] 200 repaints: partial 1.14 ms vs full 8.75 ms (7.7x)
+[perf] 600 ms of saturated output produced 38 frames (63.3 FPS)
+```
+
 **覆盖到的真实缺陷（均由测试逼出，非读代码可得）**
 
 | 缺陷 | 后果 |
@@ -231,8 +240,20 @@
 | `toUtf8` 塌陷空单元格 | 搜索 / 复制 / 日志的列对齐错位 |
 | `collectAll` 只标记第 0 行 | 曝光 / 缩放只重画一行 |
 | 帧调度用纪元当"从未绘制"哨兵 | 刷新率上限静默失效，空闲终端永不空闲 |
+| `paintBand` 与 `paintCell` 各建一个 QPainter | 同一 QImage 第二次 `begin()` 失败，**字形一个都画不出来** |
+| `put()` 误将光标钳入滚动区域 | 全屏 TUI 写到区域外的行被静默搬走 |
+| 脏区检测逐格扫描 1920 个格子 | 固定 O(rows×cols) 成本，把增量/全屏比钉死在 1.3×（改行位图后 7.6×）|
+| 子进程未把 PTY 从端接到自己的 stdio | PTY 完全失效，输出绕过通道 |
+| `readAvailable` 断开时不排空 | 短命命令（`sh -c "echo hi; exit"`）输出丢失 |
+| `VMIN=0` | 交互式 shell 读到伪 EOF 后秒退 |
+| `ICRNL` 被关闭 | shell 永远等不到换行，命令静默滞留输入缓冲 |
+| `resolve()` 让最远祖先获胜 | 三层继承链上每层都覆盖，会话自己的值被祖先冲掉 |
+| 删除节点时只压缩未缩容 | 被删节点仍占槽位，父节点永远删不掉 |
+| 字段名撞上 Qt 的 `signals` 宏 | 无 Qt 的头文件被跨层 include 时整个结构体解析失败 |
 
-**结论：Phase 1 尚未达成阶段出口。** 阻塞项为 P1-A3（渲染器缺失）与 P1-A7（人工真机验证），P1-A1/P1-A2/P1-A4/P1-A5 为部分满足。P1-T11 / P1-T12 未开始，ConPTY 未实现。下一阶段入口条件不满足。
+**覆盖率（run #39916950710）**：lines **71.8%**（1293/1800）、functions 87.9%（196/223）、branches 58.0%（695/1199）。13 个单测目标 + 2 个性能基准全绿。
+
+**结论：Phase 1 尚未达成阶段出口。** T1–T11 与 ConPTY 已完成，T12 剩窗口装配与配置持久化。验收项：P1-A6 / P1-A8 / P1-A3b / P1-A3c 满足；P1-A3 的机器判定部分满足（1.66 ms 远低于 16 ms，比值 7.7×），端到端 FPS 待人工；P1-A1 / P1-A2 / P1-A4 / P1-A5 部分满足；**P1-A7 三端真机验证未做，是阶段出口的硬阻塞**。
 
 ---
 
