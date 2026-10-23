@@ -38,6 +38,17 @@ openSCRT — C++20 + Qt 6 的 SecureCRT 对标终端。读代码前先读
 - **脚本化改文件后，必须 grep 确认改动真的落盘**。`str.replace` 在锚点文本漂移时
   **静默不替换、不报错**，本仓库已经因此踩坑 3 次（成员变量漏加、函数调用漏改、
   位图初始化漏写），每次都白白多付一轮 CI 往返。改动提交前用 `grep` 验证结果。
+- **整文件重写后，核对"声明 vs 定义"**。整体重写一个 `.cpp` 时最容易漏掉几个成员函数，
+  症状是链接期 `undefined reference`，而不是编译错误——CI 才发现，代价一轮往返。
+  提交前用一次声明/定义差集自查。
+- **用第三方库之前，先读它的头文件**。凭记忆写的 API 调用几乎必错：libssh 0.11 的
+  `ssh_pki_import_privkey_file` 是出参形式、`ssh_userauth_keyboard_interactive`
+  已删除、`SSH_STATUS_*` 枚举根本不存在。**下载依赖对应的发布包，核对每个用到的符号
+  的真实声明**，不要照着旧版本的记忆写。
+- **绕过包的元数据，就要自己接它的传递依赖**。用 `find_library` 代替
+  `find_package` 会丢掉 config 里的 `find_dependency`：libssh 是静态库，OpenSSL
+  必须由使用方自己链接。优先用 `find_package`，回退路径要显式补齐依赖，并且**先搜
+  vcpkg 安装树**，避免链到 ABI 不一致的系统库。
 - **工具链用闭区间或精确版本**（`~3.31.0`、锁 commit、锁 clang-format 版本）。开放式下限
   会让工具链升级变成静默的破坏性变更。
 - **preset 字段必须与声明的 `version` 严格对应**，改 schema 就要改 version。
