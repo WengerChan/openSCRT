@@ -22,7 +22,7 @@ SessionProfile profile(std::string id, std::string parent = {}) {
     return value;
 }
 
-class SessionTreeTest : public ::testing::Test {
+class SessionTreeFixture : public ::testing::Test {
  protected:
     void SetUp() override {
         SessionProfile fallback;
@@ -37,13 +37,13 @@ class SessionTreeTest : public ::testing::Test {
     std::unique_ptr<SessionTree> tree_;
 };
 
-TEST(SessionTreeTest, UnknownIdDoesNotResolve) {
+TEST_F(SessionTreeFixture, UnknownIdDoesNotResolve) {
     SessionTree tree;
     SessionTree::Resolved resolved;
     EXPECT_FALSE(tree.resolve("nope", resolved));
 }
 
-TEST(SessionTreeTest, ABareSessionInheritsTheDefaultTemplate) {
+TEST_F(SessionTreeFixture, ABareSessionInheritsTheDefaultTemplate) {
     ASSERT_TRUE(tree_->add(profile("alpha")));
     SessionTree::Resolved resolved;
     ASSERT_TRUE(tree_->resolve("alpha", resolved));
@@ -53,7 +53,7 @@ TEST(SessionTreeTest, ABareSessionInheritsTheDefaultTemplate) {
     EXPECT_EQ(resolved.protocol, Protocol::kSsh2);
 }
 
-TEST(SessionTreeTest, ACloserAncestorWinsOverTheTemplate) {
+TEST_F(SessionTreeFixture, ACloserAncestorWinsOverTheTemplate) {
     auto group = profile("group");
     group.host = std::string("group.example");
     ASSERT_TRUE(tree_->add(std::move(group)));
@@ -69,7 +69,7 @@ TEST(SessionTreeTest, ACloserAncestorWinsOverTheTemplate) {
     EXPECT_EQ(resolved.user, "guest") << "still from the template";
 }
 
-TEST(SessionTreeTest, TheNearestOverrideWinsAcrossThreeLevels) {
+TEST_F(SessionTreeFixture, TheNearestOverrideWinsAcrossThreeLevels) {
     auto top = profile("top");
     top.host = std::string("top.example");
     ASSERT_TRUE(tree_->add(std::move(top)));
@@ -87,7 +87,7 @@ TEST(SessionTreeTest, TheNearestOverrideWinsAcrossThreeLevels) {
     EXPECT_EQ(resolved.host, "bottom.example");
 }
 
-TEST(SessionTreeTest, AnIntermediateValueDoesNotEraseAMoreDistantOne) {
+TEST_F(SessionTreeFixture, AnIntermediateValueDoesNotEraseAMoreDistantOne) {
     auto top = profile("top");
     top.host = std::string("top.example");
     ASSERT_TRUE(tree_->add(std::move(top)));
@@ -105,7 +105,7 @@ TEST(SessionTreeTest, AnIntermediateValueDoesNotEraseAMoreDistantOne) {
     EXPECT_EQ(resolved.user, "ops");
 }
 
-TEST(SessionTreeTest, RejectsEmptyAndDuplicateIds) {
+TEST_F(SessionTreeFixture, RejectsEmptyAndDuplicateIds) {
     std::string error;
     EXPECT_FALSE(tree_->add(profile(""), &error));
     ASSERT_TRUE(tree_->add(profile("dup")));
@@ -113,13 +113,13 @@ TEST(SessionTreeTest, RejectsEmptyAndDuplicateIds) {
     EXPECT_EQ(error, "duplicate session id: dup");
 }
 
-TEST(SessionTreeTest, RejectsAnUnknownParent) {
+TEST_F(SessionTreeFixture, RejectsAnUnknownParent) {
     std::string error;
     EXPECT_FALSE(tree_->add(profile("child", "ghost"), &error));
     EXPECT_EQ(error, "unknown parent: ghost");
 }
 
-TEST(SessionTreeTest, RejectsAParentThatWouldFormACycle) {
+TEST_F(SessionTreeFixture, RejectsAParentThatWouldFormACycle) {
     ASSERT_TRUE(tree_->add(profile("a")));
     ASSERT_TRUE(tree_->add(profile("b", "a")));
     // Re-parenting "a" under its own descendant would close the loop.
@@ -128,7 +128,7 @@ TEST(SessionTreeTest, RejectsAParentThatWouldFormACycle) {
     EXPECT_FALSE(tree_->add(cyclic, &error));
 }
 
-TEST(SessionTreeTest, RefusesToRemoveAParentWithChildren) {
+TEST_F(SessionTreeFixture, RefusesToRemoveAParentWithChildren) {
     ASSERT_TRUE(tree_->add(profile("parent")));
     ASSERT_TRUE(tree_->add(profile("child", "parent")));
     EXPECT_FALSE(tree_->remove("parent")) << "orphaning children would silently change them";
@@ -136,7 +136,7 @@ TEST(SessionTreeTest, RefusesToRemoveAParentWithChildren) {
     EXPECT_TRUE(tree_->remove("parent"));
 }
 
-TEST(SessionTreeTest, ChildrenAreListedInInsertionOrder) {
+TEST_F(SessionTreeFixture, ChildrenAreListedInInsertionOrder) {
     ASSERT_TRUE(tree_->add(profile("parent")));
     ASSERT_TRUE(tree_->add(profile("one", "parent")));
     ASSERT_TRUE(tree_->add(profile("two", "parent")));
@@ -147,7 +147,7 @@ TEST(SessionTreeTest, ChildrenAreListedInInsertionOrder) {
     EXPECT_EQ(children[1]->id, "two");
 }
 
-TEST(SessionTreeTest, InheritingEverythingBelowResetsOverrides) {
+TEST_F(SessionTreeFixture, InheritingEverythingBelowResetsOverrides) {
     ASSERT_TRUE(tree_->add(profile("group")));
     auto child = profile("child", "group");
     child.host = std::string("child.example");
@@ -168,7 +168,7 @@ TEST(SessionTreeTest, InheritingEverythingBelowResetsOverrides) {
     EXPECT_EQ(resolved.port, 2222);
 }
 
-TEST(SessionTreeTest, InheritingEverythingBelowAlsoReachesGrandchildren) {
+TEST_F(SessionTreeFixture, InheritingEverythingBelowAlsoReachesGrandchildren) {
     ASSERT_TRUE(tree_->add(profile("top")));
     ASSERT_TRUE(tree_->add(profile("mid", "top")));
     auto leaf = profile("leaf", "mid");
@@ -179,7 +179,7 @@ TEST(SessionTreeTest, InheritingEverythingBelowAlsoReachesGrandchildren) {
     EXPECT_TRUE(tree_->find("leaf")->inheritsEverything());
 }
 
-TEST(SessionTreeTest, EditingTheDefaultTemplateMovesEverythingThatDidNotOverride) {
+TEST_F(SessionTreeFixture, EditingTheDefaultTemplateMovesEverythingThatDidNotOverride) {
     ASSERT_TRUE(tree_->add(profile("alpha")));
     auto explicit = profile("beta");
     explicit.host = std::string("pinned.example");
