@@ -155,6 +155,7 @@
 | D3 | **新增 Phase 0** | 路线图把"三端编译通过"放在 Phase 1 验收，但未建 CI，导致五阶段验收全靠人工 | 拆出 Phase 0 固化门禁 |
 | D4 | **CI 只安装被链接的依赖** | `vcpkg.json` 声明的 10 个 port 里，当前 CMake 树只引用 `libsodium`（`src/core`、`src/credential`）与 `gtest`（`tests/`）；`libssh` / `openssl` / `nlohmann-json` / `pugixml` / `zlib` / `pybind11` / `qtbase` / `qtserialport` 零引用。`ci.yml` 不再安装它们——实测 windows-2022 的 `vcpkg install` 从 **74.6 min**（占该 job 75.6 min 的 98.7%，全部耗在 openssl + libssh 的 MSVC 源码编译上）降到约 3–6 min，P0-A6 的 45 min 冷启动门禁重新可达 | `vcpkg.json` 仍是唯一事实来源；`ci.yml` 从中派生出 CI 清单。**契约**：某阶段开始链接某个 port 时，必须同时删掉它在 `ci.yml` `SKIP` 表里的条目；若漏删，表现为 configure 阶段几分钟内明确报 "not found"，而不是像之前那样默默编译 75 分钟没人用的库 |
 | D5 | **P1-A2 的基线由 tmux 生成，而不是 vttest 用例集** | 判据原文要求"对 `vttest` 用例集逐项比对基线截图"。但 vttest 现行发行版（2025-12-05，invisible-mirror.net 归档）**只随源码分发 C 源**，`script/*.itms` 用例脚本已不在 tarball 内；能取到的两个镜像（`pH200/vttest`、`ThomasDickey/vttest-snapshots`）同样不含脚本 | 改用 **tmux 作独立参考实现**：它对同一批转义序列的实现是独立的，基线因此是"关于序列"的证据，而不是"关于我们自己"的证据——用我们自己的输出当基线只会把 bug 一起固化。用例集自研（`tests/fixtures/vt`，8 例，覆盖光标寻址、擦除与编辑、三种颜色写法、滚动区域、备用屏、宽字符、制表位）。**代价**：用例集不是 vttest 的原始用例，真实 vim/htop/less 的输出流也未抓包比对，两者都登记为遗留 |
+| D6 | **字形图集与渲染器落在 `src/ui/renderer/`，而非路线图写的 `src/terminal/renderer/`** | 路线图把 `GlyphAtlas.h` / `DirtyRectRenderer.h` 放在 terminal 层，但"纹理图集"本质是**栅格化产物**：它需要 `QImage` / `QPainter` / `QFont`，放进无 Qt 的 terminal 层会直接破坏该层的无头可测性——而 P1-A3 的帧预算正是在无头 CI 里测的 | terminal 层只留**脏行判定**（`src/terminal/renderer/DamageTracker`，纯逻辑、可单测），栅格化与绘制放 `src/ui/renderer/`（`GlyphAtlas` + `TerminalRenderer`）。`TerminalRenderer` 本身不含 Widget，因此 P1-A3 的重绘预算仍能在 offscreen 平台下无头测量 |
 
 ### 4.5 风险
 - **CJK 双宽字符与光标对齐错位**：在 P1-T2 就把双宽位写进 `Cell` 位域，不允许后期加字段（会破坏 16 字节布局）。
@@ -172,7 +173,7 @@
 | P1-T3 环形回滚缓冲 | ✅ | 分页按需分配；行离开顶部时上报，且仅当滚动区域从第 0 行起 |
 | P1-T4 VT 状态机 | ✅ | `ControlSequenceParser`（CSI/OSC/ESC/UTF-8/子参数）+ `TerminalEmulator` 接缝；补齐 ECH/DCH |
 | P1-T5 256 色 / TrueColor | ✅ | xterm 调色板；SGR 全量；分号与冒号两种扩展色写法 |
-| P1-T6 字形图集 + 脏矩形 | 🟡 | **脏行合并逻辑已完成**（`DamageTracker`，留在无 Qt 的 terminal 层）；字形图集与渲染器未做 |
+| P1-T6 字形图集 + 脏矩形 | ✅ | **完整落地**：`src/ui/renderer/GlyphAtlas`（ASCII + CJK 预渲染纹理图集，四种字形样式分开占位，未收录的字形回退到直接绘制）+ `src/ui/renderer/TerminalRenderer`（按 `DamageTracker` 的脏行band绘制）+ 无 Qt 的 `src/terminal/renderer/DamageTracker`。效果有实测：全屏重绘 2.32 → 1.34 ms，增量/全屏比 1.3× → 7.6×（见 P1-A3b） |
 | P1-T7 终端画布控件 | ✅ | `TerminalCanvasWidget`：`feed()` 只置合并标志，只有定时器能出帧；键位编码为纯函数；offscreen 无头测试 |
 | P1-T8 帧合并调度 | ✅ | 60/120Hz；突发合并为 1 帧、持续输出受刷新率上限约束、空闲不出帧 |
 | P1-T9 传输接口冻结 | ✅ | `ITransportChannel` |
@@ -185,7 +186,7 @@
 | # | 标准 | 证据 | 结论 |
 | :--- | :--- | :--- | :--- |
 | P1-A1 | 三平台编译 + 连接主流 Linux 服务器 | run #39933913420 **四个 job 全绿**（format + Windows / Linux / macOS）；Windows leg 用 MSVC `/W4 /WX` 编译通过（含 ConPTY），unit 层全绿；CI 内起真实 sshd（2222 端口 + ed25519 客户端密钥 + `UsePAM yes`），`unit_ssh2_channel` 的 `ConnectsToARealServerAndRunsACommand` **用公钥真实登录并执行远端命令**，本 run 5.99 s 通过；`unit_local_pty_channel`（forkpty）0.82 s 通过 | 🟡 **CI 侧 SSH 端到端已满足**（真实 sshd + 公钥 + 命令回显校验）；**真机 SSH / 真机本地 Shell / Windows ConPTY 运行时仍待人工** |
-| P1-A2 | vim/htop/tmux 排版与色彩正确 | **基线由 tmux（独立 VT 实现）生成**：8 个用例（`tests/fixtures/vt`）→ tmux 渲染 → 规范化屏幕快照（文本 + 属性游程）存为 `tests/baselines/vt`；`unit_vt_baseline` 逐例比对，差异按行打印"哪一格动了"；CI 另有一步用**当前** tmux 重新生成并 `diff`，防止基线与参考实现脱节。run #39958310148：Linux / Windows / macOS 三个 leg 的 `unit_vt_baseline` **8/8 逐格一致**，漂移检查也通过（基线仍等于今天的 tmux 所产）。**更进一步：真机抓包差分**——vim / htop / less 跑在 80×24 的 pty 里，抓它们真实吐出的字节，同一份字节分别喂给 tmux 与我们的状态机比对屏幕；run #39968512770 三个程序**全部逐格一致** | 🟡 **比对机制已达成，且基线不是我们自己的输出**——这正是它能当证据的原因（见 D5）。**真机抓包差分已经抓到并修掉一个产品 bug**：擦除时丢掉了当前背景色，htop 的行底色在屏幕上直接消失（单测覆盖不到）。**仍未覆盖**：vttest 原版用例集（现行发行版已不再随源码分发 `.itms`）、截图级比对（渲染器与字形图集未做） |
+| P1-A2 | vim/htop/tmux 排版与色彩正确 | **基线由 tmux（独立 VT 实现）生成**：8 个用例（`tests/fixtures/vt`）→ tmux 渲染 → 规范化屏幕快照（文本 + 属性游程）存为 `tests/baselines/vt`；`unit_vt_baseline` 逐例比对，差异按行打印"哪一格动了"；CI 另有一步用**当前** tmux 重新生成并 `diff`，防止基线与参考实现脱节。run #39958310148：Linux / Windows / macOS 三个 leg 的 `unit_vt_baseline` **8/8 逐格一致**，漂移检查也通过（基线仍等于今天的 tmux 所产）。**更进一步：真机抓包差分**——vim / htop / less 跑在 80×24 的 pty 里，抓它们真实吐出的字节，同一份字节分别喂给 tmux 与我们的状态机比对屏幕；run #39968512770 三个程序**全部逐格一致** | 🟡 **比对机制已达成，且基线不是我们自己的输出**——这正是它能当证据的原因（见 D5）。**真机抓包差分已经抓到并修掉一个产品 bug**：擦除时丢掉了当前背景色，htop 的行底色在屏幕上直接消失（单测覆盖不到）。**仍未覆盖**：vttest 原版用例集（现行发行版已不再随源码分发 `.itms`）、**像素级**比对（渲染器与字形图集已就绪，但比对用的是平台无关的屏幕快照而不是像素哈希——三个 CI 平台的字体渲染不同，像素哈希不可能跨平台稳定） |
 | P1-A3 | `seq 1 1000000` 帧率 ≥60 FPS | 渲染器 + 字形图集已实现；perf 层实测（run #39968512770，**按判据本身的规模**）：解析 **1,000,000 行 / 9,043 ms（9.043 μs/行、110,581 行/s、1,847 行/帧）**；全屏重绘 **1.31 ms**（≈766 FPS 等效）；600 ms 饱和输出产出 **38 帧**；增量/全屏重绘比 **6.9×**；**流式输出期间进程内存只增长 4.0 MB** | 🟡 **机器可判定的部分已满足**：判据写的 100 万行工作集与"内存增长 ≤256MB"两项都已在 CI 里按原规模实测，16.7 ms 的帧内可消化 1,847 行输出，离 60 FPS 有数量级余量。**人工部分仍未做**：Widget 端到端 FPS 需要真实显示环境 |
 | P1-A3b | （补充）脏矩形收益 | 增量/全屏重绘比 **1.3× → 6.9×**（run #39968512770：0.90 ms vs 6.17 ms；此前 7.2× / 7.6× / 7.7× / 8.9×，五次一致） | ✅ **达成**。两步：①渲染器改用图集 blit（全屏重绘 2.32 → 1.34 ms）；②`ScreenGrid` 改用**每行一位**的脏位图，`collect()` 从读 1920 个格子变成读 24 个位 |
 | P1-A3c | （补充）测量方法 | 绝对耗时在多次运行间漂移（解析 5.18 → 7.52 → 11.05 → 10.01 → 10.59 → **9.04** μs/行），但**未修改**的 `scrollback push` 同步漂移（0.242 → 0.379 → 0.523 → 0.430 → 0.335 → **0.341** μs/行） | ⚠️ **共享 runner 负载造成的漂移，不是代码退化**。**比值**在同一次运行内测两侧，对负载不敏感，因此用它做判据；**绝对值**只用于同一 run 内的前后对比 |
@@ -317,7 +318,7 @@
 | R4 | ~~P1-A4：并发读写的量级不足~~ | — | **已关闭**：run #39961633389 起并发用例传输 10,000,000 字节（1000 万次写 + 1000 万次读），TSan 下零报告 |
 | R5 | ~~P1-A5：128,000 行工作集未实测~~ | — | **已关闭**：run #39961633389 起 perf 层按 140,000 行工作集实测（越过容量上限，淘汰路径同时跑到），p99 0.572 µs、内存增长 16.1 MB |
 | R6 | Windows ConPTY 运行时未验证（仅 Windows leg 编译通过） | 人工 | 否——但这是 Windows 端唯一的真实风险点，与 R1 合并处理 |
-| R7 | P1-T6：字形图集与脏矩形渲染器未做（脏行合并逻辑已留在无 Qt 的 terminal 层） | 实现 | 否——已在 §4.2 标 🟡，按路线图归入后续阶段 |
+| R7 | ~~P1-T6：字形图集与脏矩形渲染器未做~~ | — | **已关闭**：图集与渲染器都在 `src/ui/renderer/`（见 D6），并有 `unit_terminal_renderer` 覆盖（ASCII/CJK 栅格化、缓存、样式分离、脏行只画一行、相邻行合并） |
 | R8 | **判据按缩水规模测过，就不算测过** | 方法论 | 否——但这是本阶段最容易被忽略的一类缺口：P1-A3/A4/A5 三条判据都长期跑在缩水的规模上（2 万行 / 200 万字节 / 2,000 行工作集），归档里却如实记成"未实测"。本轮全部改回判据原文的规模，耗时远低于预期（100 万行 10.6 s），**缩水的理由当初站不住** |
 
 **P1-A7 人工验收清单（待执行）**
