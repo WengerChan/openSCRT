@@ -24,7 +24,7 @@ QString templateKey(const char* field) {
 }
 
 void writeProfile(QSettings& settings, const SessionProfile& profile, bool is_template) {
-    const auto put = [&settings, is_template](const char* field, const QString& value) {
+    const auto put = [&settings, &profile, is_template](const char* field, const QString& value) {
         if (is_template) {
             settings.setValue(templateKey(field), value);
         } else {
@@ -43,7 +43,7 @@ void writeProfile(QSettings& settings, const SessionProfile& profile, bool is_te
         put("host", QString::fromStdString(*profile.host));
     }
     if (profile.port) {
-        put("port", *profile.port);
+        put("port", QString::number(*profile.port));
     }
     if (profile.user) {
         put("user", QString::fromStdString(*profile.user));
@@ -90,7 +90,15 @@ SessionTree ConfigManager::loadTree(const std::string& ini_path) {
 
     // Ids are discovered from the group list, then added parents-first: add() rejects an
     // unknown parent, and a file may list a child before its parent.
-    QStringList ids = settings.childGroups(QString::fromUtf8(kSessionsGroup));
+    //
+    // Qt 6 dropped the prefix-taking overload of childGroups(), so the group is entered
+    // first: inside "sessions", childGroups() reports the session ids. childKeys() would
+    // not work -- it reports the *leaf* keys of the current group, and every key of this
+    // file lives one level deeper.
+    QStringList ids;
+    settings.beginGroup(QString::fromUtf8(kSessionsGroup));
+    ids = settings.childGroups();
+    settings.endGroup();
     ids.sort();
 
     struct Pending {

@@ -107,18 +107,21 @@ void MainWindow::buildDocks() {
 }
 
 void MainWindow::buildMenus() {
+    // Qt 6.4 deprecated the old addAction(text, receiver, slot, shortcut) order in favour of
+    // addAction(text, shortcut, receiver, slot). The old one still compiles, but it carries
+    // a [[deprecated]] attribute, and this project builds with -Werror.
     QMenu* file_menu = menuBar()->addMenu(tr("File"));
-    file_menu->addAction(tr("New Session (Quick Connect)..."), this, &MainWindow::openQuickConnect,
-                         QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N));
+    file_menu->addAction(tr("New Session (Quick Connect)..."),
+                         QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N), this,
+                         &MainWindow::openQuickConnect);
     file_menu->addAction(tr("Connect Selected Session"), this, &MainWindow::connectSelectedSession);
     file_menu->addSeparator();
-    file_menu->addAction(tr("Close Tab"), this, &MainWindow::closeCurrentTab,
-                         QKeySequence(Qt::CTRL | Qt::Key_W));
-    file_menu->addAction(
-        tr("Save Sessions"), this, [this]() { saveSessions(); },
-        QKeySequence(Qt::CTRL | Qt::Key_S));
+    file_menu->addAction(tr("Close Tab"), QKeySequence(Qt::CTRL | Qt::Key_W), this,
+                         &MainWindow::closeCurrentTab);
+    file_menu->addAction(tr("Save Sessions"), QKeySequence(Qt::CTRL | Qt::Key_S), this,
+                         [this]() { saveSessions(); });
     file_menu->addSeparator();
-    file_menu->addAction(tr("Exit"), this, &QWidget::close, QKeySequence(Qt::CTRL | Qt::Key_Q));
+    file_menu->addAction(tr("Exit"), QKeySequence(Qt::CTRL | Qt::Key_Q), this, &QWidget::close);
 
     QMenu* edit_menu = menuBar()->addMenu(tr("Edit"));
     addPlaceholder(edit_menu, tr("Copy / Paste / Clear Screen"), tr("the clipboard phase"));
@@ -143,24 +146,19 @@ void MainWindow::buildMenus() {
     addPlaceholder(tools_menu, tr("Button Bar / Command Window"), tr("the workspace phase"));
 
     QMenu* window_menu = menuBar()->addMenu(tr("Window"));
-    window_menu->addAction(
-        tr("Next Tab"), this,
-        [this]() {
-            const int index = workspace_->currentIndex() + 1;
-            if (index < workspace_->count()) {
-                workspace_->setCurrentIndex(index);
-            }
-        },
-        QKeySequence(Qt::CTRL | Qt::Key_Tab));
-    window_menu->addAction(
-        tr("Previous Tab"), this,
-        [this]() {
-            const int index = workspace_->currentIndex() - 1;
-            if (index >= 0) {
-                workspace_->setCurrentIndex(index);
-            }
-        },
-        QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Tab));
+    window_menu->addAction(tr("Next Tab"), QKeySequence(Qt::CTRL | Qt::Key_Tab), this, [this]() {
+        const int index = workspace_->currentIndex() + 1;
+        if (index < workspace_->count()) {
+            workspace_->setCurrentIndex(index);
+        }
+    });
+    window_menu->addAction(tr("Previous Tab"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Tab),
+                           this, [this]() {
+                               const int index = workspace_->currentIndex() - 1;
+                               if (index >= 0) {
+                                   workspace_->setCurrentIndex(index);
+                               }
+                           });
     window_menu->addSeparator();
     window_menu->addAction(tr("Close All Tabs"), this, [this]() { workspace_->closeAll(); });
 

@@ -176,7 +176,7 @@
 | P1-T9 传输接口冻结 | ✅ | `ITransportChannel` |
 | P1-T10 本地 Shell | ✅ | POSIX `forkpty` 与 Windows ConPTY 均已实现（ConPTY 仅由 Windows leg 编译验证，运行时待人工） |
 | P1-T11 SSH2 通道 | ✅ | libssh 0.11 真实 API；公钥→密码→keyboard-interactive；**D4 契约已在同 PR 从 SKIP 表删除 `libssh`** |
-| P1-T12 主窗口与工作区 | 🟡 | **会话继承树 + Default Session 模板已完成**（纯逻辑、无 Qt 依赖）；配置持久化与窗口装配未开始 |
+| P1-T12 主窗口与工作区 | ✅ | **完整落地**：会话继承树 + Default Session 模板（纯逻辑、无 Qt 依赖）+ `ConfigManager`（QSettings INI，**只写被覆盖字段**）+ `MainWindow`（经典菜单栏 File/Edit/View/Options/Transfer/Script/Tools/Window/Help；`Session Manager` 与 `Active Sessions` 两个 dock；状态栏）+ `WorkspaceTabs` 多标签工作区 + `QuickConnectDialog`；`--self-test` 在 offscreen 平台自检窗口装配，CI 可判定 |
 
 **验收取证**
 
@@ -250,6 +250,12 @@
 | `resolve()` 让最远祖先获胜 | 三层继承链上每层都覆盖，会话自己的值被祖先冲掉 |
 | 删除节点时只压缩未缩容 | 被删节点仍占槽位，父节点永远删不掉 |
 | 字段名撞上 Qt 的 `signals` 宏 | 无 Qt 的头文件被跨层 include 时整个结构体解析失败 |
+| `saveTree()` 清空整个 INI | 同一文件里的窗口几何信息被一并抹掉，"树与几何互不干扰"的承诺不成立 |
+| 用 `resolve("")` 取模板 | 模板不是树里的会话，按 id 查找必然失败 → 改为主动读 `defaultSession()` |
+| 传输回调在自身互斥锁**之外**调用 | 析构时"清空回调"挡不住在途回调，读线程可能往已析构的 session 投递 |
+| `TerminalSession` 同时被 `unique_ptr` 与 QObject parent 拥有 | 双重释放，退出时随机崩溃 |
+| `Ssh2Channel::connectAsync()` 在调用线程同步握手 | UI 线程最长阻塞 15 s（SSH 超时），窗口无响应 → 改到工作线程 |
+| `QSettings::childGroups("sessions")` 返回的是**直接子组名** | 若按全路径解析会把 `sessions/a/b` 误当成一个会话 id |
 
 **覆盖率（run #39916950710）**：lines **71.8%**（1293/1800）、functions 87.9%（196/223）、branches 58.0%（695/1199）。13 个单测目标 + 2 个性能基准全绿。
 

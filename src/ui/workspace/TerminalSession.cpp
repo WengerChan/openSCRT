@@ -97,6 +97,18 @@ bool TerminalSession::connectSession(std::string& error) {
         return false;
     }
 
+    // The guard and the completion flag belong to a connection attempt, not to the
+    // session: a session that was closed and is opened again needs fresh ones, or every
+    // callback would be rejected and the next close would join a worker that already
+    // finished.
+    {
+        std::lock_guard lock(guard_->mutex);
+        if (!guard_->alive) {
+            guard_ = std::make_shared<CallbackGuard>();
+            connect_state_ = std::make_shared<ConnectState>();
+        }
+    }
+
     std::shared_ptr<protocols::ITransportChannel> channel = makeChannel(profile_, error);
     if (!channel) {
         return false;
@@ -146,24 +158,25 @@ void TerminalSession::sendInput(const std::vector<std::uint8_t>& bytes) {
 }
 
 void TerminalSession::close() {
+    // The canvas outlives the session for a moment -- the tab widget deletes it on the next
+    // event loop turn. Its input sink points at this session, so it goes first, and it goes
+    // first even when there was never a channel to close.
+    if (canvas_ != nullptr) {
+        canvas_->setInputSink(nullptr);
+    }
     if (!channel_) {
         return;
     }
 
     // Clearing the callbacks stops new ones from starting, and the guard makes the ones
-    // already on their way wait for the session to finish tearing down.
+    // already on their way wait for the session to finish tearing down. The wait cannot
+    // hang: a transport callback only copies bytes and posts an event.
     channel_->setDataCallback(nullptr);
     channel_->setStateCallback(nullptr);
     {
         std::unique_lock lock(guard_->mutex);
         guard_->alive = false;
         guard_->idle.wait(lock, [this] { return guard_->in_flight == 0; });
-    }
-
-    // The canvas outlives the session for a moment -- the tab widget deletes it on the next
-    // event loop turn. Its input sink points at this session, so it goes first.
-    if (canvas_ != nullptr) {
-        canvas_->setInputSink(nullptr);
     }
 
     bool worker_done = true;

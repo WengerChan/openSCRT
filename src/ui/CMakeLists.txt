@@ -27,7 +27,10 @@ target_include_directories(openscrt_ui PUBLIC ${PROJECT_SOURCE_DIR}/src)
 # The workspace layer is the composition root: it is the only place that knows both the
 # session tree (openscrt_config) and the transport channels (openscrt_protocols). Both of
 # those sit below it in the dependency graph and know nothing about the UI.
+#
+# Qt is PUBLIC because the public headers of this library include Qt headers themselves
+# (<QMainWindow>, <QTabWidget>, ...). A consumer that includes them needs the Qt include
+# directories, and a static library's PRIVATE link does not propagate them.
 target_link_libraries(openscrt_ui
-    PUBLIC openscrt_warnings
-    PRIVATE openscrt_core openscrt_terminal openscrt_config openscrt_protocols
-            Qt6::Core Qt6::Gui Qt6::Widgets)
+    PUBLIC openscrt_warnings Qt6::Core Qt6::Gui Qt6::Widgets
+    PRIVATE openscrt_core openscrt_terminal openscrt_config openscrt_protocols)

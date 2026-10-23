@@ -82,7 +82,7 @@ TEST_F(ConfigManagerTest, AFieldThatWasNeverOverriddenStaysInherited) {
     ASSERT_TRUE(original.add(profile("alpha")));
     ASSERT_TRUE(ConfigManager::saveTree(original, path_));
 
-    const SessionTree loaded = ConfigManager::loadTree(path_);
+    SessionTree loaded = ConfigManager::loadTree(path_);
     const SessionProfile* alpha = loaded.find("alpha");
     ASSERT_NE(alpha, nullptr);
     EXPECT_TRUE(alpha->inheritsEverything()) << "saving resolved values would have flattened it";
@@ -143,15 +143,41 @@ TEST_F(ConfigManagerTest, ParentsAndChildrenLoadRegardlessOfFileOrder) {
 }
 
 TEST_F(ConfigManagerTest, AnEntryWithAMissingParentIsDroppedRatherThanBroken) {
-    SessionTree original;
-    auto orphan = profile("orphan", "does-not-exist");
-    orphan.host = std::string("orphan.example");
-    ASSERT_TRUE(ConfigManager::saveTree(original, path_));
+    // Written by hand: the tree refuses to hold a profile whose parent does not exist, so
+    // this shape can only come from a file that was edited by hand or written by another
+    // tool. Saving the tree could never produce it, which is why the file is built here.
+    {
+        QSettings settings(QString::fromStdString(path_), QSettings::IniFormat);
+        settings.setValue(QStringLiteral("sessions/orphan/name"), QStringLiteral("orphan"));
+        settings.setValue(QStringLiteral("sessions/orphan/parent"),
+                          QStringLiteral("does-not-exist"));
+        settings.setValue(QStringLiteral("sessions/orphan/host"), QStringLiteral("orphan.example"));
+        settings.sync();
+    }
 
     const SessionTree loaded = ConfigManager::loadTree(path_);
-    EXPECT_EQ(loaded.size(), 0u);
+    EXPECT_EQ(loaded.size(), 0u) << "an entry with a dangling parent must not be loaded";
     SessionTree::Resolved resolved;
     EXPECT_FALSE(loaded.resolve("orphan", resolved));
+}
+
+TEST_F(ConfigManagerTest, ASessionThatWasRemovedDoesNotComeBack) {
+    // saveTree() replaces the group it owns, so a session that is gone from the tree must
+    // not linger in the file: the next load would resurrect it.
+    SessionTree original;
+    ASSERT_TRUE(original.add(profile("kept")));
+    ASSERT_TRUE(original.add(profile("dropped")));
+    ASSERT_TRUE(ConfigManager::saveTree(original, path_));
+    ASSERT_EQ(ConfigManager::loadTree(path_).size(), 2u);
+
+    SessionTree reduced;
+    ASSERT_TRUE(reduced.add(profile("kept")));
+    ASSERT_TRUE(ConfigManager::saveTree(reduced, path_));
+
+    const SessionTree loaded = ConfigManager::loadTree(path_);
+    EXPECT_EQ(loaded.size(), 1u);
+    EXPECT_NE(loaded.find("kept"), nullptr);
+    EXPECT_EQ(loaded.find("dropped"), nullptr);
 }
 
 TEST_F(ConfigManagerTest, WindowGeometryIsSeparateFromTheTree) {

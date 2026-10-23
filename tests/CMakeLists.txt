@@ -68,7 +68,7 @@ openscrt_add_test(unit_session_profile
 openscrt_add_test(unit_config_manager
     LABEL unit
     SOURCES unit/ConfigManagerTest.cpp
-    LIBS openscrt_config)
+    LIBS openscrt_config Qt6::Core)
 
 # The window shell needs a QApplication; the offscreen platform plugin makes that work in CI
 # without a display server.
