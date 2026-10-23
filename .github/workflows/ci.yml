@@ -350,6 +350,7 @@ jobs:
         with:
           name: coverage-linux
           path: out/coverage
+          if-no-files-found: error
 
       # P1-A4: the SPSC ring buffer under ThreadSanitizer.
       #
@@ -376,7 +377,6 @@ jobs:
           # Only the sanitizer target: the rest of the tree was already built above.
           cmake --build --preset linux-tsan --target unit_spsc_ring_buffer_tsan
           ctest --test-dir out/build/linux-tsan -L tsan --output-on-failure --timeout 900
-          if-no-files-found: error
 
   format:
     name: format (ubuntu-24.04)
