@@ -65,6 +65,12 @@ class SpscRingBuffer {
     // Producer side. Copies as much as fits and returns the number of elements accepted;
     // a short write is normal back-pressure, not an error.
     std::size_t write(const T* src, std::size_t count) noexcept {
+        // A null source is refused instead of being handed to memcpy. A zero-length copy
+        // from a null pointer is undefined behaviour, and the fortified libc rejects it
+        // outright -- so the check belongs here rather than in every caller.
+        if (src == nullptr || count == 0) {
+            return 0;
+        }
         const auto tail = tail_.load(std::memory_order_relaxed);
         const auto head = head_.load(std::memory_order_acquire);
         const std::size_t to_copy =
@@ -99,6 +105,10 @@ class SpscRingBuffer {
 
     // Consumer side. Copies at most `max_count` elements and returns how many were read.
     std::size_t read(T* dst, std::size_t max_count) noexcept {
+        // Same reasoning as write(): a null destination never reaches memcpy.
+        if (dst == nullptr || max_count == 0) {
+            return 0;
+        }
         const auto head = head_.load(std::memory_order_relaxed);
         const auto tail = tail_.load(std::memory_order_acquire);
         const std::size_t to_copy = std::min(max_count, static_cast<std::size_t>(tail - head));
