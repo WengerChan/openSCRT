@@ -134,3 +134,24 @@ set_tests_properties(app_gui_self_test PROPERTIES
     LABELS "unit"
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     TIMEOUT 120)
+
+# P1-A4: the SPSC ring buffer under ThreadSanitizer.
+#
+# The sanitizer has to instrument the code under test, and the ring buffer is header-only,
+# so the concurrency test gets its own target instead of a global flag: instrumenting the
+# whole tree would slow every other test down without telling us anything the ring
+# buffer's own accesses do not. GoogleTest stays uninstrumented on purpose -- it does not
+# touch the ring, and an uninstrumented library linked into an instrumented one is exactly
+# the configuration that produces false positives.
+option(OPENCRT_ENABLE_TSAN "Build the SPSC concurrency test with ThreadSanitizer" OFF)
+if(OPENCRT_ENABLE_TSAN AND NOT MSVC)
+    add_executable(unit_spsc_ring_buffer_tsan unit/SpscRingBufferTest.cpp)
+    target_include_directories(unit_spsc_ring_buffer_tsan PRIVATE ${PROJECT_SOURCE_DIR}/src
+                                                        ${PROJECT_SOURCE_DIR}/tests)
+    target_link_libraries(unit_spsc_ring_buffer_tsan PRIVATE openscrt_test_support)
+    target_compile_options(unit_spsc_ring_buffer_tsan PRIVATE -fsanitize=thread -g -O1
+                                                           -fno-profile-arcs -fno-test-coverage)
+    target_link_options(unit_spsc_ring_buffer_tsan PRIVATE -fsanitize=thread)
+    add_test(NAME unit_spsc_ring_buffer_tsan COMMAND unit_spsc_ring_buffer_tsan)
+    set_tests_properties(unit_spsc_ring_buffer_tsan PROPERTIES LABELS "unit" TIMEOUT 900)
+endif()

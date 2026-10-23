@@ -228,6 +228,7 @@ jobs:
         run: |
           cmake --preset ${{ matrix.preset }} \
             -DOPENCRT_ENABLE_COVERAGE=${{ runner.os == 'Linux' && 'ON' || 'OFF' }} \
+            -DOPENCRT_ENABLE_TSAN=${{ runner.os == 'Linux' && 'ON' || 'OFF' }} \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT_DIR/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET="$VCPKG_TARGET_TRIPLET" \
             -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" \

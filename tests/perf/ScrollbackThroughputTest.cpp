@@ -7,10 +7,12 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 #include "terminal/buffer/RingScrollbackBuffer.h"
 
@@ -79,6 +81,50 @@ TEST(PerfScrollbackTest, RandomLookupStaysConstantTime) {
     // Budget: 1 us per lookup. An O(n) scan or a full copy would blow this by orders of
     // magnitude, which is the regression this gate exists to catch.
     EXPECT_LT(static_cast<double>(micros) / static_cast<double>(sample_count), 1.0);
+}
+
+TEST(PerfScrollbackTest, LookupLatencyP99StaysUnderOneMillisecond) {
+    // P1-A5 asks for the p99 of a single retrieval, not the average of a batch: an
+    // occasional slow lookup is what a user feels as a stutter when scrolling back.
+    RingScrollbackBuffer buffer;
+    const std::size_t iterations = perfIterations();
+    std::string payload(80, 'x');
+
+    for (std::size_t i = 0; i < iterations; ++i) {
+        buffer.push(payload);
+    }
+    ASSERT_GT(buffer.size(), 0u);
+
+    const std::size_t sample_count = 2000;
+    std::vector<std::chrono::nanoseconds> samples;
+    samples.reserve(sample_count);
+    for (std::size_t i = 0; i < sample_count; ++i) {
+        const std::size_t index = (i * 2654435761u) % buffer.size();
+        const auto start = std::chrono::steady_clock::now();
+        const std::string line = buffer.at(index);
+        const auto elapsed = std::chrono::steady_clock::now() - start;
+        samples.push_back(elapsed);
+        ASSERT_EQ(line.size(), 80u);
+    }
+
+    std::sort(samples.begin(), samples.end());
+    const auto percentile = [&samples](double fraction) {
+        const std::size_t rank =
+            static_cast<std::size_t>(static_cast<double>(samples.size()) * fraction);
+        return samples[std::min(rank, samples.size() - 1)];
+    };
+    const auto p99 = percentile(0.99);
+    const auto worst = samples.back();
+    const double p99_us =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(p99).count() / 1000.0;
+    const double worst_us =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(worst).count() / 1000.0;
+
+    std::printf("[perf] scrollback lookup p99: %.3f us (worst %.3f us, %zu samples)\n", p99_us,
+                worst_us, sample_count);
+    // The budget is 1 ms, four orders of magnitude above the real cost. The point is to
+    // catch an accidental O(n) scan or a copy of the whole window, not to certify a number.
+    EXPECT_LT(p99_us, 1000.0) << "the p99 retrieval latency blew the 1 ms budget";
 }
 
 }  // namespace

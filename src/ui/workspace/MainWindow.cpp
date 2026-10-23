@@ -175,6 +175,13 @@ void MainWindow::buildStatusBar() {
     statusBar()->addPermanentWidget(status_label_);
 }
 
+void MainWindow::setStatus(const QString& text) {
+    if (status_label_ == nullptr) {
+        return;
+    }
+    status_label_->setText(text);
+}
+
 void MainWindow::setConfigPath(const std::string& path) {
     config_path_ = path;
 }
