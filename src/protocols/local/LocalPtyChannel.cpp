@@ -171,8 +171,19 @@ TransportResult LocalPtyChannel::connectAsync() {
     InitializeProcThreadAttributeList(nullptr, 1, 0, &attribute_size);
     std::vector<BYTE> attribute_buffer(attribute_size);
     auto* attributes = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attribute_buffer.data());
+    // The list has to be initialised before it can be filled in. Asking for the size is
+    // not the same thing as initialising it, and an uninitialised list makes
+    // UpdateProcThreadAttribute fail -- which is exactly what it did here, so the local
+    // shell channel never started on Windows at all.
+    if (!InitializeProcThreadAttributeList(attributes, 1, 0, &attribute_size)) {
+        ClosePseudoConsole(platform_->pseudo_console);
+        platform_->pseudo_console = nullptr;
+        setState(TransportState::kFailed, "InitializeProcThreadAttributeList failed");
+        return TransportResult{false, "InitializeProcThreadAttributeList failed"};
+    }
     if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
                                    platform_->pseudo_console, sizeof(HPCON), nullptr, nullptr)) {
+        DeleteProcThreadAttributeList(attributes);
         ClosePseudoConsole(platform_->pseudo_console);
         platform_->pseudo_console = nullptr;
         setState(TransportState::kFailed, "UpdateProcThreadAttribute failed");
