@@ -463,14 +463,22 @@ void LocalPtyChannel::send(const std::uint8_t* data, std::size_t size) {
         return;
     }
 #if defined(_WIN32)
-    static_cast<void>(size);  // no native transport until ConPTY lands
-#endif
-#if defined(_WIN32)
     if (platform_->input_write == INVALID_HANDLE_VALUE) {
         return;
     }
+    // The ConPTY reads its input as a UTF-16 stream of key presses, not as bytes.
+    // Writing UTF-8 straight into it hands the shell mojibake.
+    const int characters = MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const char*>(data),
+                                               static_cast<int>(size), nullptr, 0);
+    if (characters <= 0) {
+        return;
+    }
+    std::wstring wide(static_cast<std::size_t>(characters), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const char*>(data), static_cast<int>(size),
+                        wide.data(), characters);
     DWORD written = 0;
-    WriteFile(platform_->input_write, data, static_cast<DWORD>(size), &written, nullptr);
+    WriteFile(platform_->input_write, wide.data(),
+              static_cast<DWORD>(wide.size() * sizeof(wchar_t)), &written, nullptr);
 #else
     if (platform_->master < 0) {
         return;
