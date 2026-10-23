@@ -162,7 +162,7 @@
 - **若后续引入 libvterm**：定制点必须收敛到**唯一适配层** `VtermStateMachine`，禁止在业务代码里直接调 libvterm API。**当前决策是不引入**（见 D1），因此这条风险暂不激活；一旦改判，它会立即重新生效。
 - **自研 VT 状态机的排版偏差**：不引上游就把"是否与主流终端一致"的责任收回自己身上。缓解手段是 P1-A2 的**独立参考基线比对**——基线由 tmux 生成并入库、差异即红，让偏差在 CI 里暴露，而不是在用户屏幕上暴露。用例集覆盖的是典型 TUI 序列，不是 vttest 的原始用例，也不是真机抓包，这两项都登记为遗留。
 
-### 4.6 任务完成度与验收取证（run #39968512770 / commit `e3d0753`；SSH 与基线证据见 run #39958310148）
+### 4.6 任务完成度与验收取证（run #39974690399 / commit `9a57b05`；基线差分证据见 run #39968512770）
 
 **任务完成度**
 
@@ -178,7 +178,7 @@
 | P1-T8 帧合并调度 | ✅ | 60/120Hz；突发合并为 1 帧、持续输出受刷新率上限约束、空闲不出帧 |
 | P1-T9 传输接口冻结 | ✅ | `ITransportChannel` |
 | P1-T10 本地 Shell | ✅ | POSIX `forkpty` 与 Windows ConPTY 均已实现（ConPTY 仅由 Windows leg 编译验证，运行时待人工） |
-| P1-T11 SSH2 通道 | 🟡 | libssh 0.11 真实 API；公钥→密码→keyboard-interactive；**D4 契约已在同 PR 从 SKIP 表删除 `libssh`**；密钥类型由 libssh 覆盖 RSA / ECDSA / Ed25519。**缺口：路线图要求的"VanDyke 私钥格式"未实现**——libssh 只认 OpenSSH / PEM，而 SecureCRT 自己的密钥正是 ssh.com（`BEGIN SSH2 ENCRYPTED PRIVATE KEY`）格式，用户从 SecureCRT 迁过来的密钥会读不了 |
+| P1-T11 SSH2 通道 | ✅ | libssh 0.11 真实 API；公钥→密码→keyboard-interactive；**D4 契约已在同 PR 从 SKIP 表删除 `libssh`**；密钥类型由 libssh 覆盖 RSA / ECDSA / Ed25519；**VanDyke（ssh.com）私钥格式已实现**（`src/protocols/ssh/SshComKey`：3DES-CBC 解密 + MD5 派生密钥 + 转成 OpenSSH 容器交给 libssh）。用**真实密钥**验证：SSH.NET 测试数据里同一把 RSA 私钥的明文与 3DES 加密两版，解析后逐字段相等；期望公钥由**独立的 Python 实现**导出；CI 的 sshd 被授予该公钥，**加密私钥端到端登录成功** |
 | P1-T12 主窗口与工作区 | ✅ | **完整落地**：会话继承树 + Default Session 模板（纯逻辑、无 Qt 依赖）+ `ConfigManager`（QSettings INI，**只写被覆盖字段**）+ `MainWindow`（经典菜单栏 File/Edit/View/Options/Transfer/Script/Tools/Window/Help；`Session Manager` 与 `Active Sessions` 两个 dock；状态栏）+ `WorkspaceTabs` 多标签工作区 + `QuickConnectDialog`；`--self-test` 在 offscreen 平台自检窗口装配，CI 可判定 |
 
 **验收取证**
@@ -306,7 +306,7 @@
 
 **覆盖率（run #39933913420）**：lines **75.8%**（1371/1808）、functions 91.5%（204/223）、branches 62.1%（754/1215）。**16 个单测/自检目标 + 2 个性能基准 + 1 个 TSan 目标全绿。**
 
-**结论：Phase 1 尚未达成阶段出口。** T1–T12 全部完成（含配置持久化与工作区外壳）。验收项：P1-A4 / P1-A5 / P1-A6 / P1-A8 / P1-A3b / P1-A3c **满足**；P1-A3 的机器判定部分**满足**（100 万行工作集、内存增长 4.0 MB、1,847 行/帧），端到端 Widget FPS 待人工；P1-A1 的 CI 侧 SSH 端到端**满足**（真实 sshd + 公钥 + 远端命令执行）；P1-A2 的基线比对**满足**（基线由 tmux 独立参考实现产生，三平台 8/8 逐格一致；**vim / htop / less 的真机抓包差分也全部逐格一致**，并因此抓到并修掉一个"擦除丢背景色"的产品 bug），但用例集非 vttest 原版、且无截图级比对；P1-A7 三端真机验证未做，是阶段出口的硬阻塞——Phase 2 的代码可以并行开工，但阶段出口不得签收。
+**结论：Phase 1 尚未达成阶段出口。** T1–T12 全部完成（含配置持久化与工作区外壳）。验收项：P1-A4 / P1-A5 / P1-A6 / P1-A8 / P1-A3b / P1-A3c **满足**；P1-A3 的机器判定部分**满足**（100 万行工作集、内存增长 4.0 MB、1,847 行/帧），端到端 Widget FPS 待人工；P1-A1 的 CI 侧 SSH 端到端**满足**（真实 sshd + 公钥 + 远端命令执行；OpenSSH 与 ssh.com 两种私钥格式都能登录）；P1-A2 的基线比对**满足**（基线由 tmux 独立参考实现产生，三平台 8/8 逐格一致；**vim / htop / less 的真机抓包差分也全部逐格一致**，并因此抓到并修掉一个"擦除丢背景色"的产品 bug），但用例集非 vttest 原版、且无截图级比对；P1-A7 三端真机验证未做，是阶段出口的硬阻塞——Phase 2 的代码可以并行开工，但阶段出口不得签收。
 
 **遗留问题登记（Phase 1）**
 
@@ -319,7 +319,7 @@
 | R5 | ~~P1-A5：128,000 行工作集未实测~~ | — | **已关闭**：run #39961633389 起 perf 层按 140,000 行工作集实测（越过容量上限，淘汰路径同时跑到），p99 0.572 µs、内存增长 16.1 MB |
 | R6 | Windows ConPTY 运行时未验证（仅 Windows leg 编译通过） | 人工 | 否——但这是 Windows 端唯一的真实风险点，与 R1 合并处理 |
 | R7 | ~~P1-T6：字形图集与脏矩形渲染器未做~~ | — | **已关闭**：图集与渲染器都在 `src/ui/renderer/`（见 D6），并有 `unit_terminal_renderer` 覆盖（ASCII/CJK 栅格化、缓存、样式分离、脏行只画一行、相邻行合并） |
-| R9 | P1-T11：VanDyke（ssh.com）私钥格式未实现 | 实现 | 否——**但这是路线图点名的交付物**，且直接影响从 SecureCRT 迁移的用户：他们的密钥默认就是 ssh.com 格式。OpenSSH / PEM 由 libssh 覆盖 ✅ |
+| R9 | ~~P1-T11：VanDyke（ssh.com）私钥格式未实现~~ | — | **已关闭**：run #39974690399 起，`unit_sshcom_key` 7 个用例全绿，含用加密 ssh.com 私钥对 CI 真 sshd 的端到端登录 |
 | R8 | **判据按缩水规模测过，就不算测过** | 方法论 | 否——但这是本阶段最容易被忽略的一类缺口：P1-A3/A4/A5 三条判据都长期跑在缩水的规模上（2 万行 / 200 万字节 / 2,000 行工作集），归档里却如实记成"未实测"。本轮全部改回判据原文的规模，耗时远低于预期（100 万行 10.6 s），**缩水的理由当初站不住** |
 
 **P1-A7 人工验收清单（待执行）**
