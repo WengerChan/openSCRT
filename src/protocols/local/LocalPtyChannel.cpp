@@ -2,6 +2,7 @@
 
 #include <cerrno>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <memory>
 #include <thread>
@@ -405,17 +406,24 @@ void LocalPtyChannel::startReader() {
             // stopReader() would then never return.
             DWORD available = 0;
             if (!PeekNamedPipe(platform_->output_read, nullptr, 0, nullptr, &available, nullptr)) {
+                std::fprintf(stderr, "[probe] peek failed err=%lu\n",
+                             static_cast<unsigned long>(GetLastError()));
                 break;  // The pipe is gone: the console is closed.
             }
             if (available == 0) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
                 continue;
             }
+            std::fprintf(stderr, "[probe] peeking, %lu bytes available\n",
+                         static_cast<unsigned long>(available));
             DWORD read = 0;
             if (!ReadFile(platform_->output_read, buffer, sizeof(buffer), &read, nullptr) ||
                 read == 0) {
+                std::fprintf(stderr, "[probe] read failed err=%lu\n",
+                             static_cast<unsigned long>(GetLastError()));
                 break;
             }
+            std::fprintf(stderr, "[probe] read %lu bytes\n", static_cast<unsigned long>(read));
             size = static_cast<std::size_t>(read);
 #else
             pollfd descriptor{platform_->master, POLLIN, 0};
@@ -457,6 +465,7 @@ void LocalPtyChannel::startReader() {
             readable_.notify_all();
         }
 
+        std::fprintf(stderr, "[probe] reader thread exiting\n");
         // Announce the end before the parser's next read, so it drains what is buffered
         // instead of seeing a closed channel with bytes still pending.
         state_.store(TransportState::kDisconnected);
@@ -471,7 +480,9 @@ void LocalPtyChannel::stopReader() noexcept {
     }
     readable_.notify_all();
     if (reader_.joinable()) {
+        std::fprintf(stderr, "[probe] joining the reader thread\n");
         reader_.join();
+        std::fprintf(stderr, "[probe] reader thread joined\n");
     }
 }
 
@@ -503,12 +514,15 @@ TransportResult LocalPtyChannel::disconnect() {
 #endif
     stopReader();
 #if defined(_WIN32)
+    std::fprintf(stderr, "[probe] closing the pseudo console\n");
     if (platform_->pseudo_console != nullptr) {
         conPty().close(platform_->pseudo_console);
         platform_->pseudo_console = nullptr;
     }
     if (platform_->process.hProcess != nullptr) {
+        std::fprintf(stderr, "[probe] waiting for the child\n");
         WaitForSingleObject(platform_->process.hProcess, 2000);
+        std::fprintf(stderr, "[probe] child wait done\n");
         CloseHandle(platform_->process.hProcess);
         platform_->process.hProcess = nullptr;
     }

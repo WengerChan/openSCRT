@@ -158,6 +158,25 @@ TEST(LocalPtyChannelTest, NonInteractiveModeReturnsCleanOutput) {
 #endif
 }
 
+#if defined(_WIN32)
+// Temporary diagnostic (2026-10-24): the disconnect path hung in two of the last four CI
+// runs, always right after this scenario. Repeating it turns a race that shows up once in
+// four runs into one that shows up in one run out of one.
+TEST(LocalPtyChannelTest, RepeatedNonInteractiveRunsDoNotHang) {
+    for (int attempt = 0; attempt < 20; ++attempt) {
+        LocalPtyChannel::Options options;
+        options.shell = "cmd.exe";
+        options.arguments = {"/c", "echo openscrt-exact"};
+        LocalPtyChannel channel{options};
+
+        ASSERT_TRUE(channel.connectAsync().ok);
+        const std::string output =
+            readUntil(channel, "openscrt-exact", std::chrono::milliseconds(5000));
+        EXPECT_NE(output.find("openscrt-exact"), std::string::npos) << "attempt " << attempt;
+    }
+}
+#endif
+
 TEST(LocalPtyChannelTest, DataCallbackSeesTheSameBytesAsTheRing) {
     LocalPtyChannel channel{shellOptions()};
     std::string via_callback;

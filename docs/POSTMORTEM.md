@@ -328,6 +328,28 @@ POSIX 分支没有这个问题，因为 `poll()` 有 200 ms 超时——读线�
 `stopping_`，所以那边两种顺序都不会挂。**同一个"等待"，两种实现，一个有超时一个没有，
 语义就不一样。**
 
+### 8.5 发布流水线的两个新坑
+
+**一、发布页只拿到一个平台的资产。** `publish` 写成 `needs: package-windows`，于是它一
+等 Windows 结束就开始跑，`download-artifact` 执行的时候 macOS 与 Linux 还在打包 → 资产
+没上传 → **v0.1.2 的发布页上只有 Windows 的两个文件**。修法是三件事一起改：
+`needs: [package-windows, package-macos, package-linux]` 让它等齐，
+`if: always() && startsWith(github.ref, 'refs/tags/v')` 让某个平台失败时不至于把整个
+发布拖垮（已经打出来的资产照发），下载步骤用 `pattern: openSCRT-*` + `merge-multiple`
+把三个平台的产物收进同一个目录。
+
+**二、vcpkg 的 triplet 是架构决策，不是平台决策。** macOS 的打包任务按"macOS 就是 x64"
+写了 `x64-osx`，而 **macos-14 的 runner 是 Apple Silicon**。vcpkg 老老实实把 `libssh`
+编成了 x86_64，链接器最后一步拒绝把 x86_64 的 `.a` 链进 arm64 的目标：
+
+```
+ld: warning: ignoring file '.../x64-osx/lib/libssh.a': found architecture 'x86_64',
+    required architecture 'arm64'
+```
+
+**平台名不蕴含架构**，尤其在 CI 的 runner 镜像上——直觉会骗人，链接器不会。
+改用 `arm64-osx` 之后，包在 Apple Silicon 上原生运行，不用 Rosetta 2。
+
 ---
 
 ## 落到 CI 上的自动化防线
