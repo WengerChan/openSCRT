@@ -65,6 +65,20 @@ openscrt_add_test(unit_session_profile
     SOURCES unit/SessionProfileTest.cpp
     LIBS openscrt_config)
 
+openscrt_add_test(unit_config_manager
+    LABEL unit
+    SOURCES unit/ConfigManagerTest.cpp
+    LIBS openscrt_config)
+
+# The window shell needs a QApplication; the offscreen platform plugin makes that work in CI
+# without a display server.
+openscrt_add_test(unit_main_window
+    LABEL unit
+    SOURCES unit/MainWindowTest.cpp
+    LIBS openscrt_ui openscrt_config Qt6::Gui Qt6::Widgets)
+set_tests_properties(unit_main_window PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 openscrt_add_test(unit_ssh2_channel
     LABEL unit
     SOURCES unit/Ssh2ChannelTest.cpp
@@ -111,3 +125,12 @@ openscrt_add_test(perf_scrollback_throughput
     LABEL perf
     SOURCES perf/ScrollbackThroughputTest.cpp
     LIBS openscrt_terminal)
+
+# The GUI shell smoke test. It runs the real executable with --self-test, which builds the
+# window, shows it and checks the docks and the menu bar, all on the offscreen platform.
+# Without this the only thing CI proves about the shell is that it compiles.
+add_test(NAME app_gui_self_test COMMAND openscrt --self-test)
+set_tests_properties(app_gui_self_test PROPERTIES
+    LABELS "unit"
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 120)

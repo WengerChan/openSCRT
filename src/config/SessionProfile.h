@@ -78,6 +78,11 @@ class SessionTree {
     // terminates at the Default Session, which is fully populated.
     [[nodiscard]] bool resolve(const std::string& id, Resolved& out) const;
 
+    // The effective settings of `id`, flattened into a profile. A transport needs plain
+    // values, not a chain to walk, and the caller should not have to resolve the tree twice.
+    // Returns an empty profile when the id is unknown.
+    [[nodiscard]] SessionProfile effectiveProfile(const std::string& id) const;
+
     // Clears every explicitly overridden field in `id` and its descendants, so they all follow
     // the Default Session template again. Fields the sessions set on purpose are the caller's
     // to restore.

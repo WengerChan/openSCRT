@@ -15,10 +15,19 @@ add_library(openscrt_ui STATIC
     ModuleInfo.cpp
     renderer/GlyphAtlas.cpp
     renderer/TerminalRenderer.cpp
-    workspace/TerminalCanvasWidget.cpp)
+    workspace/MainWindow.cpp
+    workspace/QuickConnectDialog.cpp
+    workspace/SessionManagerWidget.cpp
+    workspace/TerminalCanvasWidget.cpp
+    workspace/TerminalSession.cpp
+    workspace/WorkspaceTabs.cpp)
 
 target_include_directories(openscrt_ui PUBLIC ${PROJECT_SOURCE_DIR}/src)
 
+# The workspace layer is the composition root: it is the only place that knows both the
+# session tree (openscrt_config) and the transport channels (openscrt_protocols). Both of
+# those sit below it in the dependency graph and know nothing about the UI.
 target_link_libraries(openscrt_ui
     PUBLIC openscrt_warnings
-    PRIVATE openscrt_core openscrt_terminal Qt6::Core Qt6::Gui Qt6::Widgets)
+    PRIVATE openscrt_core openscrt_terminal openscrt_config openscrt_protocols
+            Qt6::Core Qt6::Gui Qt6::Widgets)

@@ -209,6 +209,24 @@ bool SessionTree::resolve(const std::string& id, Resolved& out) const {
     return true;
 }
 
+SessionProfile SessionTree::effectiveProfile(const std::string& id) const {
+    Resolved resolved;
+    if (!resolve(id, resolved)) {
+        return SessionProfile{};
+    }
+    const SessionProfile* source = find(id);
+    SessionProfile profile;
+    profile.id = id;
+    profile.name = (source != nullptr && !source->name.empty()) ? source->name : id;
+    profile.parent_id = (source != nullptr) ? source->parent_id : std::string{};
+    profile.host = resolved.host;
+    profile.port = resolved.port;
+    profile.user = resolved.user;
+    profile.protocol = resolved.protocol;
+    profile.private_key_path = resolved.private_key_path;
+    return profile;
+}
+
 void SessionTree::inheritEverythingBelow(const std::string& id) {
     for (SessionProfile& profile : profiles_) {
         if (profile.id == id) {

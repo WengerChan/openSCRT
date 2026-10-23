@@ -1,0 +1,232 @@
+#include "ui/workspace/TerminalSession.h"
+
+#include <QMetaObject>
+#include <chrono>
+#include <utility>
+
+#include "protocols/local/LocalPtyChannel.h"
+#include "protocols/ssh/Ssh2Channel.h"
+#include "ui/workspace/TerminalCanvasWidget.h"
+
+namespace openscrt::ui {
+namespace {
+
+// How long the destructor waits for a connect handshake that is still running. Past that the
+// worker is detached: it owns a reference to the channel, so it can finish on its own
+// without the session pulling the channel out from under it.
+constexpr auto kConnectDrainTimeout = std::chrono::milliseconds(500);
+
+// Builds the channel for the profile's protocol. Returns null and fills `error` for the
+// protocols that have no implementation yet: Telnet and Serial arrive with their own
+// phases, and a dialog that silently does nothing is worse than one that says so.
+std::shared_ptr<protocols::ITransportChannel> makeChannel(const config::SessionProfile& profile,
+                                                          std::string& error) {
+    const config::Protocol protocol = profile.protocol.value_or(config::Protocol::kSsh2);
+    switch (protocol) {
+        case config::Protocol::kLocalShell:
+            return std::make_shared<protocols::local::LocalPtyChannel>();
+        case config::Protocol::kSsh2: {
+            protocols::ssh::SshConnectionOptions options;
+            options.host = profile.host.value_or("");
+            options.port = profile.port.value_or(22);
+            options.user = profile.user.value_or("");
+            options.private_key_path = profile.private_key_path.value_or("");
+            return std::make_shared<protocols::ssh::Ssh2Channel>(options);
+        }
+        case config::Protocol::kTelnet:
+            error = "Telnet is not implemented yet (it arrives with the Telnet phase)";
+            return nullptr;
+        case config::Protocol::kSerial:
+            error = "Serial ports are not implemented yet (they arrive with the serial phase)";
+            return nullptr;
+    }
+    error = "unknown protocol";
+    return nullptr;
+}
+
+}  // namespace
+
+TerminalSession::TerminalSession(config::SessionProfile profile, TerminalCanvasWidget* canvas,
+                                 QObject* parent)
+    : QObject(parent),
+      profile_(std::move(profile)),
+      canvas_(canvas),
+      guard_(std::make_shared<CallbackGuard>()),
+      connect_state_(std::make_shared<ConnectState>()) {
+    if (canvas_ != nullptr) {
+        canvas_->setInputSink([this](const std::vector<std::uint8_t>& bytes) { sendInput(bytes); });
+        // Ctrl+C is a session action, not text: the widget reports it instead of encoding
+        // it, because a terminal sends the interrupt byte to the far end.
+        connect(canvas_, &TerminalCanvasWidget::interruptRequested, this,
+                [this]() { sendInput(std::vector<std::uint8_t>{0x03}); });
+        // The canvas is owned by the tab widget, not by the session. When the tab goes away
+        // the pointer has to stop being valid, or the next byte would be fed to a deleted
+        // widget.
+        connect(canvas_, &QObject::destroyed, this, [this]() { canvas_ = nullptr; });
+    }
+}
+
+TerminalSession::~TerminalSession() {
+    close();
+}
+
+QString TerminalSession::id() const {
+    return QString::fromStdString(profile_.id);
+}
+
+QString TerminalSession::title() const {
+    if (!profile_.name.empty()) {
+        return QString::fromStdString(profile_.name);
+    }
+    if (profile_.host) {
+        return QString::fromStdString(*profile_.host);
+    }
+    return QStringLiteral("session");
+}
+
+protocols::TransportState TerminalSession::state() const noexcept {
+    if (!channel_) {
+        return protocols::TransportState::kIdle;
+    }
+    return channel_->state();
+}
+
+bool TerminalSession::connectSession(std::string& error) {
+    if (channel_) {
+        error = "the session is already open";
+        return false;
+    }
+
+    std::shared_ptr<protocols::ITransportChannel> channel = makeChannel(profile_, error);
+    if (!channel) {
+        return false;
+    }
+    channel_ = channel;
+
+    std::shared_ptr<CallbackGuard> guard = guard_;
+    channel_->setDataCallback([this, guard](const std::uint8_t* data, std::size_t size) {
+        if (!enterCallback(guard)) {
+            return;
+        }
+        onTransportData(data, size);
+        leaveCallback(guard);
+    });
+    channel_->setStateCallback(
+        [this, guard](protocols::TransportState state, const std::string& detail) {
+            if (!enterCallback(guard)) {
+                return;
+            }
+            onTransportState(state, detail);
+            leaveCallback(guard);
+        });
+
+    // The handshake runs off the UI thread: libssh's connect blocks for the whole
+    // connection timeout, and the UI thread never waits on the network.
+    //
+    // The worker shares both the channel and the completion flag with the session. It
+    // touches neither the session nor its members, so a session that is destroyed while the
+    // handshake is still running cannot be pulled out from under the worker.
+    std::shared_ptr<ConnectState> state = connect_state_;
+    connect_worker_ = std::thread([channel, state]() {
+        channel->connectAsync();
+        {
+            std::lock_guard lock(state->mutex);
+            state->finished = true;
+        }
+        state->signal.notify_all();
+    });
+    return true;
+}
+
+void TerminalSession::sendInput(const std::vector<std::uint8_t>& bytes) {
+    if (!channel_ || bytes.empty()) {
+        return;
+    }
+    channel_->send(bytes.data(), bytes.size());
+}
+
+void TerminalSession::close() {
+    if (!channel_) {
+        return;
+    }
+
+    // Clearing the callbacks stops new ones from starting, and the guard makes the ones
+    // already on their way wait for the session to finish tearing down.
+    channel_->setDataCallback(nullptr);
+    channel_->setStateCallback(nullptr);
+    {
+        std::unique_lock lock(guard_->mutex);
+        guard_->alive = false;
+        guard_->idle.wait(lock, [this] { return guard_->in_flight == 0; });
+    }
+
+    // The canvas outlives the session for a moment -- the tab widget deletes it on the next
+    // event loop turn. Its input sink points at this session, so it goes first.
+    if (canvas_ != nullptr) {
+        canvas_->setInputSink(nullptr);
+    }
+
+    bool worker_done = true;
+    {
+        std::unique_lock lock(connect_state_->mutex);
+        worker_done = connect_state_->signal.wait_for(lock, kConnectDrainTimeout,
+                                                      [this] { return connect_state_->finished; });
+    }
+
+    if (connect_worker_.joinable()) {
+        if (worker_done) {
+            connect_worker_.join();
+        } else {
+            // The handshake is still running -- an unreachable host can hold it for the
+            // whole timeout. The worker owns a reference to the channel and tears it down
+            // when it finishes, so the session lets go without touching it.
+            connect_worker_.detach();
+        }
+    }
+
+    if (worker_done && channel_) {
+        channel_->disconnect();
+    }
+    channel_.reset();
+}
+
+void TerminalSession::onTransportData(const std::uint8_t* data, std::size_t size) {
+    // The transport's reader thread is not the UI thread. The bytes are copied into a queued
+    // invocation, so the emulator is only ever driven from the thread that owns the grid.
+    // The canvas is the invocation's context: when the tab closes, the pending event goes
+    // with it.
+    TerminalCanvasWidget* canvas = canvas_;
+    if (canvas == nullptr) {
+        return;
+    }
+    const std::vector<std::uint8_t> bytes(data, data + size);
+    QMetaObject::invokeMethod(
+        canvas, [canvas, bytes]() { canvas->feed(bytes.data(), bytes.size()); },
+        Qt::QueuedConnection);
+}
+
+void TerminalSession::onTransportState(protocols::TransportState state, const std::string& detail) {
+    const int value = static_cast<int>(state);
+    const QString text = QString::fromStdString(detail);
+    QMetaObject::invokeMethod(
+        this, [this, value, text]() { emit stateChanged(value, text); }, Qt::QueuedConnection);
+}
+
+bool TerminalSession::enterCallback(const std::shared_ptr<CallbackGuard>& guard) {
+    std::lock_guard lock(guard->mutex);
+    if (!guard->alive) {
+        return false;
+    }
+    ++guard->in_flight;
+    return true;
+}
+
+void TerminalSession::leaveCallback(const std::shared_ptr<CallbackGuard>& guard) {
+    {
+        std::lock_guard lock(guard->mutex);
+        --guard->in_flight;
+    }
+    guard->idle.notify_all();
+}
+
+}  // namespace openscrt::ui

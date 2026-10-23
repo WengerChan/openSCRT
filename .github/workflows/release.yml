@@ -173,20 +173,20 @@ jobs:
         shell: bash
         run: out/build/windows-ci/bin/Release/openscrt.exe --version
 
-      # Running with no arguments is the double-click path a user hits first, and on Windows it
-      # may show a message box. Guarded twice: the code only opens a box when a console exists and
-      # contains nothing else, and this waits with a timeout so a regression fails in a minute
-      # instead of hanging the job until the 45-minute limit.
-      - name: Smoke test the no-argument launch
+      # The window shell is a GUI application now: the no-argument launch opens a window and
+      # stays open, so it can no longer be smoke-tested by waiting for the process to exit.
+      # --self-test builds the same window on the offscreen platform and exits, which proves
+      # the shell assembles without needing a desktop session.
+      - name: Smoke test the GUI shell
         shell: pwsh
         run: |
           $exe = Join-Path $env:GITHUB_WORKSPACE 'out/build/windows-ci/bin/Release/openscrt.exe'
-          $p = Start-Process $exe -NoNewWindow -PassThru
-          if (-not $p.WaitForExit(60000)) {
-            $p.Kill()
-            throw "openscrt.exe with no arguments did not exit within 60s"
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          $p = Start-Process $exe -ArgumentList '--self-test' -NoNewWindow -PassThru -Wait
+          if ($p.ExitCode -ne 0) {
+            throw "openscrt.exe --self-test exited with $($p.ExitCode)"
           }
-          "no-argument launch exited with $($p.ExitCode)"
+          "GUI self-test exited with $($p.ExitCode)"
 
       - name: Stage the portable tree
         shell: bash
@@ -231,9 +231,10 @@ jobs:
           echo "imports:"; for dll in $DEPS; do echo "  $dll"; done
 
           # windeployqt refuses anything it does not recognise as a Qt binary and exits 1.
-          # Phase 0 links Qt6::Core but calls nothing into it, so the linker records no Qt import
-          # and there is genuinely nothing for it to deploy. Gate on the import table rather than
-          # on the tool's opinion: when P1-T12 adds the Qt shell this branch starts firing.
+          # The Phase 1 shell is a Qt Widgets application, so the import table now records the
+          # Qt runtime and this branch is the expected path. It stays conditional on the
+          # import table rather than on windeployqt's opinion, so a future change that drops
+          # the Qt dependency does not break the packaging step.
           if echo "$DEPS" | grep -qiE '[A-Za-z0-9_-]*Qt6[A-Za-z0-9_-]*\.dll'; then
             if [ -z "$WINDEPLOYQT" ]; then
               echo "::error::the binary imports Qt but windeployqt.exe was not found"
@@ -242,7 +243,7 @@ jobs:
             echo "windeployqt: $WINDEPLOYQT"
             "$WINDEPLOYQT" --release --no-translations --no-opengl-sw --no-system-d3d-compiler "$EXE"
           else
-            echo "::notice::the binary imports no Qt library yet (Phase 0 links Qt6::Core but never calls into it); skipping windeployqt"
+            echo "::notice::the binary imports no Qt library; skipping windeployqt"
           fi
 
           # Bundle every remaining imported DLL that Windows does not ship: vcpkg's libsodium.dll
@@ -516,9 +517,12 @@ jobs:
             | `openSCRT-<version>-windows-x64.msi` | Double-click. Installs per-machine to `%ProgramFiles%\openSCRT` with an uninstall entry in Add/Remove Programs. The installer does not touch `PATH`; add `%ProgramFiles%\openSCRT\bin` yourself if you want the command on it. |
             | `openSCRT-<version>-windows-x64-portable.zip` | Unzip anywhere and run `bin\openscrt.exe`. No installation, no admin rights. |
 
-            Both bundle every DLL the binary imports -- `libsodium`, the UCRT forwarders, and, once the Qt shell lands, the Qt runtime -- so neither needs Qt installed.
+            Both bundle every DLL the binary imports -- `libsodium`, the UCRT forwarders and the
+            Qt runtime -- so neither needs Qt installed.
 
-            This release is the Phase 0 CLI bootstrap: it has no window yet, so double-clicking
-            `openscrt.exe` shows a message explaining what it is. The Qt shell arrives in P1-T12.
+            This release carries the Phase 1 workspace shell: double-clicking `openscrt.exe`
+            opens the terminal window with the Session Manager dock, the tabbed workspace and
+            the Quick Connect dialog. `openscrt.exe --version` still prints the build details
+            for a bug report.
 
             Verify a download against `SHA256SUMS.txt`.
