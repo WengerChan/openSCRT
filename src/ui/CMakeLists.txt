@@ -2,18 +2,23 @@
 # emulation core stays free of Qt and remains headless-testable; the dirty-band logic that the
 # renderer consumes lives in openscrt_terminal for the same reason.
 
-if(NOT Qt6Gui_FOUND)
+if(NOT Qt6Gui_FOUND OR NOT Qt6Widgets_FOUND)
     message(FATAL_ERROR
-        "openscrt_ui needs Qt6::Gui. Qt is installed by the CI Qt step; see docs/DEVELOPMENT_PLAN.md D2.")
+        "openscrt_ui needs Qt6::Gui and Qt6::Widgets. Qt is installed by the CI Qt step; "
+        "see docs/DEVELOPMENT_PLAN.md D2.")
 endif()
+
+# AUTOMOC for the widget's Q_OBJECT and signals.
+set(CMAKE_AUTOMOC ON)
 
 add_library(openscrt_ui STATIC
     ModuleInfo.cpp
     renderer/GlyphAtlas.cpp
-    renderer/TerminalRenderer.cpp)
+    renderer/TerminalRenderer.cpp
+    workspace/TerminalCanvasWidget.cpp)
 
 target_include_directories(openscrt_ui PUBLIC ${PROJECT_SOURCE_DIR}/src)
 
 target_link_libraries(openscrt_ui
     PUBLIC openscrt_warnings
-    PRIVATE openscrt_core openscrt_terminal Qt6::Core Qt6::Gui)
+    PRIVATE openscrt_core openscrt_terminal Qt6::Core Qt6::Gui Qt6::Widgets)
