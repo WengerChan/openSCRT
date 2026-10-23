@@ -156,6 +156,16 @@ openscrt_add_test(perf_scrollback_throughput
     SOURCES perf/ScrollbackThroughputTest.cpp support/ResidentMemory.cpp
     LIBS openscrt_terminal)
 
+# P1-A3: the widget's own frame time, which is what the user sees. The offscreen platform
+# runs the whole paint path, so the number is the frame cost; the display server's
+# compositing is not modelled and stays a human item.
+openscrt_add_test(perf_widget_frame_budget
+    LABEL perf
+    SOURCES perf/WidgetFrameBudgetTest.cpp
+    LIBS openscrt_ui Qt6::Gui Qt6::Widgets)
+set_tests_properties(perf_widget_frame_budget PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # The GUI shell smoke test. It runs the real executable with --self-test, which builds the
 # window, shows it and checks the docks and the menu bar, all on the offscreen platform.
 # Without this the only thing CI proves about the shell is that it compiles.
