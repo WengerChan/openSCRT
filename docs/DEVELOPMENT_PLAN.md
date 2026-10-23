@@ -184,12 +184,28 @@
 | :--- | :--- | :--- | :--- |
 | P1-A1 | 三平台编译 + 连接主流 Linux 服务器 | 四个 job 全绿，流水线 **1 min 45 s** | 🟡 **编译满足；真机 SSH 未做，Windows ConPTY 显式失败** |
 | P1-A2 | vim/htop/tmux 排版与色彩正确 | VT 状态机与 SGR 有针对性测试（含真彩两种写法、备用屏、滚动区域） | 🟡 **仿真层满足；vttest 截图基线比对未做** |
-| P1-A3 | `seq 1 1000000` 帧率 ≥60 FPS | `FrameCoalescer` 语义已测（突发合并、刷新率上限、空闲不出帧）；`DamageTracker` 脏行合并已测 | ❌ **未达成**：无渲染器，尚无 FPS 测量 |
+| P1-A3 | `seq 1 1000000` 帧率 ≥60 FPS | 渲染器 + 字形图集已实现；perf 层实测（run #39886377367）：解析 **5.18 μs/行、193,000 行/s**；全屏重绘 **2.32 ms**（≈431 FPS 等效）；600 ms 饱和输出产出 **38 帧** | 🟡 **机器可判定的一半满足**：全屏重绘 2.32 ms 远低于 16 ms 帧预算，刷新率上限生效。**人工一半未做**：Widget 端到端 FPS 需真实显示环境 |
+| P1-A3b | （补充）脏矩形收益 | 200 次单行增量重绘 3.55 ms vs 200 次全屏重绘 4.53 ms，**仅 1.3×** | 🟡 **收益偏弱**：`paintBand` 每行仍全宽填充背景，成本主要在逐格 `drawText` 而非行填充。下一步应改为图集 blit（当前尚未使用 `GlyphAtlas` 的矩形做 blit） |
 | P1-A4 | SPSC 在 TSan 下无数据竞争 | 并发测试覆盖 4 线程 × 2 万次 signal | 🟡 **逻辑有测试；`-fsanitize=thread` 未在 CI 中启用** |
 | P1-A5 | 回滚 128,000 行稳定、检索 p99 ≤1ms | 容量按页对齐为 131,072；查找 O(1) 有测试 | 🟡 **容量与复杂度满足；延迟未实测** |
 | P1-A6 | 备用屏进出不污染主屏 | `AlternateScreenDoesNotFeedScrollback` 等用例 | ✅ |
 | P1-A7 | 三端真机登录验证 | — | ❌ **未做（人工项）** |
 | P1-A8 | 核心库覆盖率 ≥65% | **lines 74.0%（1156/1563）**、functions 87.9%、branches 61.7% | ✅ |
+
+**P1-A3 实测原始输出（run #39886377367，Linux）**
+
+```
+[perf] parse: 20000 lines in 103.6 ms (5.182 us/line, 192980 lines/s)
+[perf] repaint: 24 rows in 2.32 ms (430.9 FPS equivalent for one frame)
+[perf] 200 repaints: partial 3.55 ms vs full 4.53 ms (1.3x)
+[perf] 600 ms of saturated output produced 38 frames (63.3 FPS)
+[perf] scrollback push: 2000 lines in 485 us (0.242 us/line)
+[perf] scrollback lookup: 2000 samples in 216 us
+```
+
+读法：16 ms 的帧预算里，全屏重绘只占 2.32 ms，解析吞吐意味着单帧可消化的输出量在万行量级——**60 FPS 门槛有充足余量**。饱和输出下 38 帧 / 600 ms 略高于 60 Hz 上限，来自"首帧必须绘制"加上毫秒级时间量化，不是上限失效。
+
+**1.3× 这个数字不理想，如实记录**：`GlyphAtlas` 建好了但渲染器仍在用 `drawText` 而不是图集 blit，逐格绘制的成本没有降下来；脏行跟踪省下的只有行背景填充。在字形更密或列更宽的场景下这个比例会更好，但当前证据说明**下一步的优化点明确**：把 `paintCell` 改成 `drawImage(atlas, glyphRect, target)`。
 
 **覆盖到的真实缺陷（均由测试逼出，非读代码可得）**
 
