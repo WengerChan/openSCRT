@@ -493,8 +493,10 @@ jobs:
     timeout-minutes: 90
     env:
       # The workflow-level env names the Windows triplet; a job-level env wins, and the port
-      # list is derived per job anyway.
-      VCPKG_TARGET_TRIPLET: x64-osx
+      # list is derived per job anyway. The macOS runners are Apple Silicon, and vcpkg has to
+      # build the dependencies for the same architecture as the compiler: linking an x86_64
+      # library into an arm64 binary fails at the last step of the build.
+      VCPKG_TARGET_TRIPLET: arm64-osx
     steps:
       - uses: actions/checkout@v4
 
@@ -607,7 +609,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION=${{ steps.version.outputs.version }}
-          STAGE_NAME="openscrt-$VERSION-macos-x64"
+          STAGE_NAME="openscrt-$VERSION-macos-arm64"
           STAGE="$GITHUB_WORKSPACE/out/pkg/$STAGE_NAME"
           rm -rf "$STAGE"
           mkdir -p "$STAGE"
@@ -627,9 +629,9 @@ jobs:
             exit 1
           fi
 
-          tar -C "$STAGE/bin" -czf "$GITHUB_WORKSPACE/out/pkg/openSCRT-$VERSION-macos-x64.tar.gz" openscrt.app
+          tar -C "$STAGE/bin" -czf "$GITHUB_WORKSPACE/out/pkg/openSCRT-$VERSION-macos-arm64.tar.gz" openscrt.app
           cd "$GITHUB_WORKSPACE/out/pkg"
-          shasum -a 256 "openSCRT-$VERSION-macos-x64.tar.gz" > SHA256SUMS-macos.txt
+          shasum -a 256 "openSCRT-$VERSION-macos-arm64.tar.gz" > SHA256SUMS-macos.txt
           cat SHA256SUMS-macos.txt
 
       - name: Upload macOS artifact
@@ -883,7 +885,7 @@ jobs:
             | --- | --- | --- |
             | `openSCRT-<version>-windows-x64.msi` | Windows x64 | Double-click. Installs per-machine to `%ProgramFiles%\openSCRT` with an uninstall entry in Add/Remove Programs. The installer does not touch `PATH`; add `%ProgramFiles%\openSCRT\bin` yourself if you want the command on `PATH`. |
             | `openSCRT-<version>-windows-x64-portable.zip` | Windows x64 | Unzip anywhere and run `bin\openscrt.exe`. No installation, no admin rights. |
-            | `openSCRT-<version>-macos-x64.tar.gz` | macOS x64 | Unpack, then open `openscrt.app`. On Apple Silicon it runs under Rosetta 2. |
+            | `openSCRT-<version>-macos-arm64.tar.gz` | macOS Apple Silicon | Unpack, then open `openscrt.app`. |
             | `openSCRT-<version>-linux-x86_64.tar.gz` | Linux x86_64 | Unpack, then run `bin/openscrt`; the wrapper points the loader and the Qt plugin path at the unpacked tree. |
 
             Every archive carries the runtime the binary needs -- the Qt libraries and, on

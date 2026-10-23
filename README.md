@@ -30,14 +30,14 @@ packages for all three platforms and publishes them. The tag must match `VERSION
 [`CMakeLists.txt`](CMakeLists.txt), so bump the version first, then tag.
 
 ```
-git tag v0.1.2 && git push origin v0.1.2
+git tag v0.1.3 && git push origin v0.1.3
 ```
 
 | Asset | Platform | Install |
 | --- | --- | --- |
 | `openSCRT-<version>-windows-x64.msi` | Windows x64 | Double-click. Per-machine install to `%ProgramFiles%\openSCRT` with an uninstall entry in Add/Remove Programs. The installer does not touch `PATH` — add `%ProgramFiles%\openSCRT\bin` yourself if you want the command on `PATH`. |
 | `openSCRT-<version>-windows-x64-portable.zip` | Windows x64 | Unzip anywhere, run `bin\openscrt.exe`. No installer, no admin rights. |
-| `openSCRT-<version>-macos-x64.tar.gz` | macOS x64 | Unpack, open `openscrt.app`. On Apple Silicon it runs under Rosetta 2. |
+| `openSCRT-<version>-macos-arm64.tar.gz` | macOS Apple Silicon | Unpack, open `openscrt.app`. |
 | `openSCRT-<version>-linux-x86_64.tar.gz` | Linux x86_64 | Unpack, run `bin/openscrt`; the wrapper points the loader and the Qt plugin path at the unpacked tree. |
 
 Every archive carries the runtime the binary needs — the Qt libraries, and on Windows
