@@ -480,10 +480,13 @@ TransportResult LocalPtyChannel::disconnect() {
         return TransportResult{true, {}};
     }
 #if defined(_WIN32)
-    // The reader is stopped before its handles are closed. Closing them underneath a
-    // thread that is polling the pipe makes the poll fail with an invalid handle, and
-    // the reader gives up before it has taken the last bytes out of the console.
-    stopReader();
+    // The order of these three steps is load-bearing. The reader thread parks in a
+    // synchronous PeekNamedPipe -- the documentation says so explicitly: on a synchronous
+    // handle in a multi-threaded application it blocks like any other I/O call -- and the
+    // only thing that releases it is closing the handle underneath it. Closing first and
+    // joining afterwards is what keeps the join from waiting for ever; joining first and
+    // closing afterwards deadlocks, because the reader never sees stopping_ while it is
+    // parked in the peek.
     if (platform_->input_write != INVALID_HANDLE_VALUE) {
         CloseHandle(platform_->input_write);
         platform_->input_write = INVALID_HANDLE_VALUE;
@@ -497,8 +500,8 @@ TransportResult LocalPtyChannel::disconnect() {
         ::close(platform_->master);
         platform_->master = -1;
     }
-    stopReader();
 #endif
+    stopReader();
 #if defined(_WIN32)
     if (platform_->pseudo_console != nullptr) {
         conPty().close(platform_->pseudo_console);

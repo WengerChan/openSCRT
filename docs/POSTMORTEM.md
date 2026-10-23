@@ -306,6 +306,28 @@ POSIX 端全绿。
 `CreateProcess` 成功——**三者都不代表子进程 attach 成功**。这个失败是完全静默的：
 没有错误码，没有对话框，子进程只是安安静静地用继承来的句柄跑起来了。
 
+### 8.4 「看起来更合理」的顺序调整，让 CI 挂了十分钟
+
+修好 ConPTY 之后顺手做了一处清理：把 `disconnect()` 里的顺序从"先关句柄、再 join 读线程"
+改成"先 join 读线程、再关句柄"——理由听上去很正当：读线程不该拿着一个已被关掉的句柄去轮询。
+
+结果：Windows 的 `unit_local_pty_channel` 直接**超时 600 秒**，整条用例卡在析构里。
+
+原因在 `PeekNamedPipe` 的文档里写着：
+
+> The **PeekNamedPipe** function can block thread execution the same way any I/O function can
+> when called on a **synchronous handle in a multi-threaded application**.
+
+也就是说读线程是**停在 Peek 里的**，它根本走不到循环开头去看 `stopping_`。
+旧顺序之所以能用，恰恰是因为**关句柄就是把读线程从 Peek 里踢出来的手段**：挂起的 Peek
+立刻以 `ERROR_INVALID_HANDLE` 失败，读线程退出，join 返回。把顺序一换，join 就永远等下去。
+
+**教训**：改一个"看起来更合理"的顺序之前，先问**"这一段现在靠什么活着"**。
+旧代码里的怪癖常常是踩过坑之后留下的支撑点，而不是可以顺手抹平的瑕疵。
+POSIX 分支没有这个问题，因为 `poll()` 有 200 ms 超时——读线程每隔 200 ms 就会醒一次看
+`stopping_`，所以那边两种顺序都不会挂。**同一个"等待"，两种实现，一个有超时一个没有，
+语义就不一样。**
+
 ---
 
 ## 落到 CI 上的自动化防线
