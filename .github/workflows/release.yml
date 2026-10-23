@@ -827,10 +827,13 @@ jobs:
 
   publish:
     name: publish release
-    needs: package-windows
+    # Every platform, and `always()` on top of it: the release has to wait for the macOS and
+    # Linux packages, but a platform that failed to package must not take the release down
+    # with it -- the artifacts that did get built are still published.
+    needs: [package-windows, package-macos, package-linux]
     # Manual runs (workflow_dispatch) build and upload artifacts but must not publish: only a tag
     # push is allowed to create a public Release.
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: always() && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
