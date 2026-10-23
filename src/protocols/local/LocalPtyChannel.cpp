@@ -401,6 +401,17 @@ void LocalPtyChannel::startReader() {
             }
             size = static_cast<std::size_t>(read);
             {
+                DWORD child_state = 0;
+                const BOOL alive =
+                    WaitForSingleObject(platform_->process.hProcess, 0) == WAIT_TIMEOUT;
+                DWORD child_code = 0;
+                if (!alive) {
+                    GetExitCodeProcess(platform_->process.hProcess, &child_code);
+                }
+                std::fprintf(stderr, "[probe] child alive=%d exit=%lu\n", alive ? 1 : 0,
+                             static_cast<unsigned long>(child_code));
+            }
+            {
                 std::fprintf(stderr, "[probe] read %zu bytes: ", size);
                 for (std::size_t i = 0; i < size && i < 80; ++i) {
                     const unsigned char byte = buffer[i];
@@ -557,7 +568,10 @@ void LocalPtyChannel::send(const std::uint8_t* data, std::size_t size) {
     // The console reads the input as a byte stream of key presses. Microsoft's own ConPTY
     // sample writes plain bytes into this pipe, so that is what the console expects.
     DWORD written = 0;
-    WriteFile(platform_->input_write, data, static_cast<DWORD>(size), &written, nullptr);
+    const BOOL sent =
+        WriteFile(platform_->input_write, data, static_cast<DWORD>(size), &written, nullptr);
+    std::fprintf(stderr, "[probe] sent %zu bytes: ok=%d written=%lu err=%lu\n", size, sent ? 1 : 0,
+                 static_cast<unsigned long>(written), static_cast<unsigned long>(GetLastError()));
 #else
     if (platform_->master < 0) {
         return;
