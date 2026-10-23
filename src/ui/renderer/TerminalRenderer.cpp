@@ -60,7 +60,7 @@ QColor TerminalRenderer::resolve(const terminal::Cell& cell, bool foreground) co
                   static_cast<int>((packed >> 8) & 0xFF), static_cast<int>(packed & 0xFF));
 }
 
-void TerminalRenderer::paintCell(int row, int column) {
+void TerminalRenderer::paintCell(QPainter& painter, int row, int column) {
     const terminal::Cell* cell = grid_->rowData(row);
     if (cell == nullptr) {
         return;
@@ -71,7 +71,6 @@ void TerminalRenderer::paintCell(int row, int column) {
     const int height = atlas_.metrics().cell_height;
     const QRect target(column * width, row * height, width, height);
 
-    QPainter painter(&backbuffer_);
     painter.fillRect(target, resolve(value, false));
 
     if (value.isBlank() || value.isWideTrail()) {
@@ -96,18 +95,21 @@ void TerminalRenderer::paintCell(int row, int column) {
 void TerminalRenderer::paintBand(int first_row, int last_row) {
     const int width = atlas_.metrics().cell_width;
     const int height = atlas_.metrics().cell_height;
+    QPainter painter(&backbuffer_);
     for (int row = first_row; row <= last_row; ++row) {
         // Background first, in one fill per row, so a blank tail costs one rectangle rather
         // than one per cell.
-        QPainter painter(&backbuffer_);
         painter.fillRect(0, row * height, grid_->cols() * width, height, theme_.background);
+        const terminal::Cell* cells = grid_->rowData(row);
+        if (cells == nullptr) {
+            continue;
+        }
         for (int column = 0; column < grid_->cols(); ++column) {
-            const terminal::Cell* cells = grid_->rowData(row);
             const terminal::Cell& cell = cells[column];
             if (cell.isBlank() && cell.hasAttribute(terminal::cellattr::kDefaultBg)) {
                 continue;  // Already painted by the row fill.
             }
-            paintCell(row, column);
+            paintCell(painter, row, column);
         }
     }
 }

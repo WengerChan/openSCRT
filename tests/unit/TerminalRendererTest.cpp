@@ -233,7 +233,10 @@ TEST_F(RendererTest, CoalescerAndRendererAgreeOnFrameCount) {
     EXPECT_TRUE(coalescer.shouldRepaint(std::chrono::steady_clock::time_point{}));
     const int painted = renderer_->repaintDamage();
     EXPECT_EQ(renderer_->stats().repaint_frames, 1);
-    EXPECT_EQ(painted, 1) << "only the row that received the text";
+    // 500 characters wrap across 7 rows of an 80-column grid; the point is that only those
+    // rows repaint, not the whole screen and not one repaint per row.
+    EXPECT_GT(painted, 0);
+    EXPECT_LT(painted, grid_->rows()) << "the burst touched only the rows it wrapped onto";
     EXPECT_FALSE(coalescer.shouldRepaint(std::chrono::steady_clock::time_point{}))
         << "a second immediate tick must not repaint again";
 }

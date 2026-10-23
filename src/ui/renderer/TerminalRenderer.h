@@ -9,6 +9,7 @@
 
 #include <QColor>
 #include <QImage>
+#include <QPainter>
 #include <chrono>
 #include <memory>
 
@@ -67,8 +68,11 @@ class TerminalRenderer {
     [[nodiscard]] double lastPaintMilliseconds() const noexcept { return last_paint_ms_; }
 
  private:
+    // One QPainter per band, passed down. A second painter on the same QImage cannot
+    // begin while the first is alive, so constructing one per cell silently drops
+    // every glyph.
     void paintBand(int first_row, int last_row);
-    void paintCell(int row, int column);
+    void paintCell(QPainter& painter, int row, int column);
     [[nodiscard]] GlyphStyle styleFor(const terminal::Cell& cell) const noexcept;
     [[nodiscard]] QColor resolve(const terminal::Cell& cell, bool foreground) const;
 
