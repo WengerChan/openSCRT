@@ -12,6 +12,11 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+// WIN32_LEAN_AND_MEAN keeps consoleapi.h out of windows.h, and that is where CreatePseudoConsole,
+// ResizePseudoConsole and ClosePseudoConsole live.
+#include <consoleapi.h>
+#include <fcntl.h>
+#include <io.h>
 #else
 #include <fcntl.h>
 #include <poll.h>
@@ -86,9 +91,13 @@ bool hasTermEnv() {
 #if defined(_WIN32)
 
 struct LocalPtyChannel::Platform {
-    HANDLE output_write{INVALID_HANDLE_VALUE};
-    HANDLE input_read{INVALID_HANDLE_VALUE};
-    std::wstring name;
+    // We write to input_write; the child's stdin reads from it.
+    HANDLE input_write{INVALID_HANDLE_VALUE};
+    // We read from output_read; the child's stdout/stderr write to it.
+    HANDLE output_read{INVALID_HANDLE_VALUE};
+    HPCON pseudo_console{nullptr};
+    PROCESS_INFORMATION process{};
+    std::wstring command_line;
 };
 
 #else
@@ -135,8 +144,74 @@ TransportResult LocalPtyChannel::connectAsync() {
     setState(TransportState::kConnecting, options_.shell);
 
 #if defined(_WIN32)
-    setState(TransportState::kFailed, "ConPTY is not available in this build");
-    return TransportResult{false, "ConPTY not available"};
+    // ConPTY: the child attaches to a pseudo console, and the two ends of the pipe are the
+    // parent's stdin and stdout. This is what makes PowerShell, cmd and WSL behave like a
+    // real console instead of a redirected pipe.
+    HANDLE input_read = INVALID_HANDLE_VALUE;
+    HANDLE output_write = INVALID_HANDLE_VALUE;
+    if (!CreatePipe(&input_read, &platform_->input_write, nullptr, 0) ||
+        !CreatePipe(&platform_->output_read, &output_write, nullptr, 0)) {
+        setState(TransportState::kFailed, "CreatePipe failed");
+        return TransportResult{false, "CreatePipe failed"};
+    }
+
+    COORD size{};
+    size.X = static_cast<SHORT>(options_.initial_size.columns);
+    size.Y = static_cast<SHORT>(options_.initial_size.rows);
+    const HRESULT created =
+        CreatePseudoConsole(size, input_read, output_write, 0, &platform_->pseudo_console);
+    CloseHandle(input_read);
+    CloseHandle(output_write);
+    if (FAILED(created)) {
+        setState(TransportState::kFailed, "CreatePseudoConsole failed");
+        return TransportResult{false, "CreatePseudoConsole failed"};
+    }
+
+    SIZE_T attribute_size = 0;
+    InitializeProcThreadAttributeList(nullptr, 1, 0, &attribute_size);
+    std::vector<BYTE> attribute_buffer(attribute_size);
+    auto* attributes = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attribute_buffer.data());
+    if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
+                                   platform_->pseudo_console, sizeof(HPCON), nullptr, nullptr)) {
+        ClosePseudoConsole(platform_->pseudo_console);
+        platform_->pseudo_console = nullptr;
+        setState(TransportState::kFailed, "UpdateProcThreadAttribute failed");
+        return TransportResult{false, "UpdateProcThreadAttribute failed"};
+    }
+
+    STARTUPINFOEXW startup{};
+    startup.StartupInfo.cb = sizeof(startup);
+    startup.lpAttributeList = attributes;
+
+    // Build the command line as the shell plus any extra arguments.
+    std::wstring command = std::wstring(options_.shell.begin(), options_.shell.end());
+    for (const std::string& argument : options_.arguments) {
+        command += L" ";
+        command += std::wstring(argument.begin(), argument.end());
+    }
+    platform_->command_line = command;
+
+    std::vector<wchar_t> mutable_command(command.begin(), command.end());
+    mutable_command.push_back(L'\0');
+
+    const BOOL created_process =
+        CreateProcessW(nullptr, mutable_command.data(), nullptr, nullptr, FALSE,
+                       EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT, nullptr, nullptr,
+                       &startup.StartupInfo, &platform_->process);
+    DeleteProcThreadAttributeList(attributes);
+    if (!created_process) {
+        ClosePseudoConsole(platform_->pseudo_console);
+        platform_->pseudo_console = nullptr;
+        setState(TransportState::kFailed, "CreateProcess failed");
+        return TransportResult{false, "CreateProcess failed"};
+    }
+
+    // The parent must not keep the child's ends open, or the reader never sees EOF.
+    CloseHandle(platform_->process.hThread);
+
+    startReader();
+    setState(TransportState::kConnected, options_.shell);
+    return TransportResult{true, {}};
 #else
     int master_fd = -1;
     int slave_fd = -1;
@@ -221,7 +296,7 @@ void LocalPtyChannel::startReader() {
             std::size_t size = 0;
 #if defined(_WIN32)
             DWORD read = 0;
-            if (!ReadFile(platform_->input_read, buffer, sizeof(buffer), &read, nullptr) ||
+            if (!ReadFile(platform_->output_read, buffer, sizeof(buffer), &read, nullptr) ||
                 read == 0) {
                 break;
             }
@@ -288,14 +363,33 @@ TransportResult LocalPtyChannel::disconnect() {
     if (state_.load() == TransportState::kIdle) {
         return TransportResult{true, {}};
     }
-#if !defined(_WIN32)
+#if defined(_WIN32)
+    if (platform_->input_write != INVALID_HANDLE_VALUE) {
+        CloseHandle(platform_->input_write);
+        platform_->input_write = INVALID_HANDLE_VALUE;
+    }
+    if (platform_->output_read != INVALID_HANDLE_VALUE) {
+        CloseHandle(platform_->output_read);
+        platform_->output_read = INVALID_HANDLE_VALUE;
+    }
+#else
     if (platform_->master >= 0) {
         ::close(platform_->master);
         platform_->master = -1;
     }
 #endif
     stopReader();
-#if !defined(_WIN32)
+#if defined(_WIN32)
+    if (platform_->pseudo_console != nullptr) {
+        ClosePseudoConsole(platform_->pseudo_console);
+        platform_->pseudo_console = nullptr;
+    }
+    if (platform_->process.hProcess != nullptr) {
+        WaitForSingleObject(platform_->process.hProcess, 2000);
+        CloseHandle(platform_->process.hProcess);
+        platform_->process.hProcess = nullptr;
+    }
+#else
     if (platform_->child > 0) {
         int status = 0;
         waitpid(platform_->child, &status, 0);
@@ -346,7 +440,13 @@ void LocalPtyChannel::send(const std::uint8_t* data, std::size_t size) {
 #if defined(_WIN32)
     static_cast<void>(size);  // no native transport until ConPTY lands
 #endif
-#if !defined(_WIN32)
+#if defined(_WIN32)
+    if (platform_->input_write == INVALID_HANDLE_VALUE) {
+        return;
+    }
+    DWORD written = 0;
+    WriteFile(platform_->input_write, data, static_cast<DWORD>(size), &written, nullptr);
+#else
     if (platform_->master < 0) {
         return;
     }
@@ -370,8 +470,13 @@ void LocalPtyChannel::send(std::string_view text) {
 
 bool LocalPtyChannel::resizeWindow(const WindowSize& size) {
 #if defined(_WIN32)
-    static_cast<void>(size);  // no native transport until ConPTY lands
-    return false;
+    if (platform_->pseudo_console == nullptr) {
+        return false;
+    }
+    COORD native{};
+    native.X = static_cast<SHORT>(size.columns);
+    native.Y = static_cast<SHORT>(size.rows);
+    return SUCCEEDED(ResizePseudoConsole(platform_->pseudo_console, native));
 #else
     if (platform_->master < 0) {
         return false;
@@ -389,7 +494,7 @@ std::string LocalPtyChannel::remoteAddress() const {
 
 int LocalPtyChannel::processIdForTesting() const noexcept {
 #if defined(_WIN32)
-    return -1;
+    return platform_ != nullptr ? static_cast<int>(platform_->process.dwProcessId) : -1;
 #else
     return platform_ != nullptr ? static_cast<int>(platform_->child) : -1;
 #endif

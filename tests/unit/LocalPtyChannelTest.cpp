@@ -25,12 +25,18 @@ namespace {
 
 #if defined(OPENSCRT_LOCAL_PTY_UNSUPPORTED)
 
-TEST(LocalPtyChannelTest, ConPtyNotYetImplemented) {
-    LocalPtyChannel channel;
+TEST(LocalPtyChannelTest, ConPtyFailsCleanlyForAMissingShell) {
+    // ConPTY is implemented on Windows. Spawning a shell that does not exist must fail
+    // cleanly rather than aborting or hanging.
+    LocalPtyChannel::Options options;
+    options.shell = "openscrt-no-such-shell";
+    LocalPtyChannel channel{options};
+
     const TransportResult result = channel.connectAsync();
     EXPECT_FALSE(result.ok);
-    EXPECT_NE(result.error.find("ConPTY"), std::string::npos);
+    EXPECT_FALSE(result.error.empty()) << "a failure must say why";
     EXPECT_EQ(channel.kind(), TransportKind::kLocalPty);
+    EXPECT_TRUE(channel.disconnect().ok);
 }
 
 #else
