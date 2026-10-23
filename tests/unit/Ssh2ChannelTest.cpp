@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <cstdint>
 #include <string>
 
 #include "protocols/ssh/Ssh2Channel.h"
@@ -80,7 +81,8 @@ TEST(Ssh2ChannelTest, DisconnectAfterAFailedConnectIsHarmless) {
 
 TEST(Ssh2ChannelTest, SendingBeforeConnectingIsIgnored) {
     Ssh2Channel channel{unreachableHost()};
-    channel.send("hello", 5);
+    const std::uint8_t bytes[] = {'h', 'e', 'l', 'l', 'o'};
+    channel.send(bytes, sizeof(bytes));
     channel.send("hello");
     SUCCEED() << "must not crash without a session";
 }
