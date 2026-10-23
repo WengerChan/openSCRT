@@ -214,22 +214,32 @@ TransportResult LocalPtyChannel::connectAsync() {
         return TransportResult{
             false, "the local shell needs Windows 10 1809 or later: this system has no ConPTY"};
     }
+    // The console host runs in its own process and reaches these two ends by handle
+    // inheritance, so they have to be inheritable. The parent's own ends are marked
+    // non-inheritable right after, or the child would keep them open and the reader
+    // would never see the end of the stream.
+    SECURITY_ATTRIBUTES inheritable{};
+    inheritable.nLength = sizeof(inheritable);
+    inheritable.bInheritHandle = TRUE;
+
     HANDLE input_read = INVALID_HANDLE_VALUE;
     HANDLE output_write = INVALID_HANDLE_VALUE;
-    if (!CreatePipe(&input_read, &platform_->input_write, nullptr, 0) ||
-        !CreatePipe(&platform_->output_read, &output_write, nullptr, 0)) {
+    if (!CreatePipe(&input_read, &platform_->input_write, &inheritable, 0) ||
+        !CreatePipe(&platform_->output_read, &output_write, &inheritable, 0)) {
         setState(TransportState::kFailed, "CreatePipe failed");
         return TransportResult{false, "CreatePipe failed"};
     }
+    SetHandleInformation(platform_->input_write, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(platform_->output_read, HANDLE_FLAG_INHERIT, 0);
 
     COORD size{};
     size.X = static_cast<SHORT>(options_.initial_size.columns);
     size.Y = static_cast<SHORT>(options_.initial_size.rows);
     const HRESULT created =
         conPty().create(size, input_read, output_write, 0, &platform_->pseudo_console);
-    CloseHandle(input_read);
-    CloseHandle(output_write);
     if (FAILED(created)) {
+        CloseHandle(input_read);
+        CloseHandle(output_write);
         setState(TransportState::kFailed, "CreatePseudoConsole failed");
         return TransportResult{false, "CreatePseudoConsole failed"};
     }
@@ -243,6 +253,8 @@ TransportResult LocalPtyChannel::connectAsync() {
     // UpdateProcThreadAttribute fail -- which is exactly what it did here, so the local
     // shell channel never started on Windows at all.
     if (!InitializeProcThreadAttributeList(attributes, 1, 0, &attribute_size)) {
+        CloseHandle(input_read);
+        CloseHandle(output_write);
         conPty().close(platform_->pseudo_console);
         platform_->pseudo_console = nullptr;
         setState(TransportState::kFailed, "InitializeProcThreadAttributeList failed");
@@ -251,6 +263,8 @@ TransportResult LocalPtyChannel::connectAsync() {
     if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
                                    platform_->pseudo_console, sizeof(HPCON), nullptr, nullptr)) {
         DeleteProcThreadAttributeList(attributes);
+        CloseHandle(input_read);
+        CloseHandle(output_write);
         conPty().close(platform_->pseudo_console);
         platform_->pseudo_console = nullptr;
         setState(TransportState::kFailed, "UpdateProcThreadAttribute failed");
@@ -277,6 +291,12 @@ TransportResult LocalPtyChannel::connectAsync() {
                        EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT, nullptr, nullptr,
                        &startup.StartupInfo, &platform_->process);
     DeleteProcThreadAttributeList(attributes);
+    // The pseudoconsole keeps its own copies of the pipe ends. Releasing ours only now
+    // is what the documentation asks for: closing them before the child is created
+    // leaves the console host without a working channel, the child then fails to attach
+    // and silently runs with the parent's inherited handles instead of the console.
+    CloseHandle(input_read);
+    CloseHandle(output_write);
     if (!created_process) {
         conPty().close(platform_->pseudo_console);
         platform_->pseudo_console = nullptr;
