@@ -187,6 +187,28 @@ TEST_F(EmulatorTest, SgrBackgroundTrueColourColonForm) {
     EXPECT_EQ(grid.at(0, 0).bg, makeRgba(1, 2, 3));
 }
 
+TEST_F(EmulatorTest, EraseKeepsTheBackgroundThatIsInForce) {
+    // htop paints a background and then erases the line. The erased cells have to keep
+    // that background, or the row's colour band disappears. Found by comparing against
+    // tmux on what htop actually draws.
+    emulator.write(
+        "\x1B[48;5;17m"
+        "\x1B[1;1H"
+        "\x1B[K"
+        "X");
+    EXPECT_EQ(grid.at(0, 1).bg, paletteColor(17));
+    EXPECT_TRUE(grid.at(0, 1).hasAttribute(cellattr::kDefaultFg));
+}
+
+TEST_F(EmulatorTest, EraseWithoutABackgroundLeavesTheDefaultOne) {
+    emulator.write(
+        "\x1B[1;1H"
+        "\x1B[K"
+        "X");
+    EXPECT_TRUE(grid.at(0, 1).hasAttribute(cellattr::kDefaultBg));
+    EXPECT_EQ(grid.at(0, 1).bg, 0u);
+}
+
 TEST_F(EmulatorTest, SgrTrueColourColonFormAcceptsTheShortForm) {
     // The ITU T.416 spelling is 38:2:<colour-space>:r:g:b, but the short form
     // 38:2:r:g:b is what terminals in the wild emit, and tmux accepts it. The reference

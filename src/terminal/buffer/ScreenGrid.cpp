@@ -12,6 +12,15 @@ void fillBlank(Cell* cells, int count) noexcept {
     }
 }
 
+// Blanks a cell the way an erase does: with the background that is in force, not with the
+// default one. See ScreenGrid::setEraseStyle for why that matters.
+void blankWithStyle(Cell& cell, const CellStyle& style) noexcept {
+    cell.codepoint = 0;
+    cell.fg = style.fg;
+    cell.bg = style.bg;
+    cell.attrs = style.attrs;
+}
+
 int clampInt(int value, int lo, int hi) noexcept {
     return std::clamp(value, lo, hi);
 }
@@ -289,7 +298,7 @@ void ScreenGrid::eraseInLine(EraseInLine scope) {
     }
     setRowDirty(cursor_row_);
     for (int i = 0; i < count; ++i) {
-        line[start + i].setBlank();
+        blankWithStyle(line[start + i], erase_style_);
         line[start + i].markDirty();
     }
 }
@@ -299,25 +308,29 @@ void ScreenGrid::eraseInDisplay(EraseInDisplay scope) {
         return;
     }
     clampCursor();
+    const auto blankRow = [this](int row) {
+        Cell* line = rowData(row);
+        for (int i = 0; i < cols_; ++i) {
+            blankWithStyle(line[i], erase_style_);
+        }
+        markRowDirty(row);
+    };
     switch (scope) {
         case EraseInDisplay::kCursorToEnd:
             eraseInLine(EraseInLine::kCursorToEnd);
             for (int row = cursor_row_ + 1; row < rows_; ++row) {
-                fillBlank(rowData(row), cols_);
-                markRowDirty(row);
+                blankRow(row);
             }
             break;
         case EraseInDisplay::kCursorToStart:
             eraseInLine(EraseInLine::kCursorToStart);
             for (int row = 0; row < cursor_row_; ++row) {
-                fillBlank(rowData(row), cols_);
-                markRowDirty(row);
+                blankRow(row);
             }
             break;
         case EraseInDisplay::kAll:
             for (int row = 0; row < rows_; ++row) {
-                fillBlank(rowData(row), cols_);
-                markRowDirty(row);
+                blankRow(row);
             }
             break;
     }
@@ -332,7 +345,7 @@ void ScreenGrid::eraseCharacters(int count) {
         setRowDirty(cursor_row_);
     }
     for (int i = 0; i < count && cursor_column_ + i < cols_; ++i) {
-        line[cursor_column_ + i].setBlank();
+        blankWithStyle(line[cursor_column_ + i], erase_style_);
         line[cursor_column_ + i].markDirty();
     }
 }

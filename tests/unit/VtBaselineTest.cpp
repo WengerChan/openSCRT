@@ -358,9 +358,11 @@ TEST(VtBaselineTest, RealProgramOutputRendersTheWayTmuxRendersIt) {
         }
     }
 
+    // On the Linux runner the programs are installed, so a capture that produced nothing
+    // there means the comparison quietly stopped testing anything. Elsewhere the count is
+    // only informational -- and it is printed, so the variable is not unused anywhere.
+    std::printf("[vt] %d real program capture(s) compared against tmux\n", compared);
 #if defined(__linux__)
-    // The Linux runner installs the programs, so a capture that produced nothing there
-    // means the comparison quietly stopped testing anything.
     EXPECT_GT(compared, 0) << "no real program produced any output";
 #endif
 }

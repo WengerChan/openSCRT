@@ -191,6 +191,7 @@ void TerminalEmulator::csiDispatch(const CsiSequence& sequence) {
             applyScroll(sequence, final);
             return;
         case 'X':  // ECH: blank n cells from the cursor, without moving it.
+            grid_->setEraseStyle(style_);
             grid_->eraseCharacters(std::max(1, paramOr(sequence, 0, 1)));
             return;
         case 'P':  // DCH: delete n cells, pulling the rest of the row left.
@@ -311,6 +312,8 @@ void TerminalEmulator::applyCursorMovement(const CsiSequence& sequence, char fin
 }
 
 void TerminalEmulator::applyEraseDisplay(const CsiSequence& sequence) {
+    // An erase paints with the background that is in force, so the grid has to know it.
+    grid_->setEraseStyle(style_);
     switch (paramOr(sequence, 0, 0)) {
         case 0:
             grid_->eraseInDisplay(EraseInDisplay::kCursorToEnd);
@@ -325,6 +328,7 @@ void TerminalEmulator::applyEraseDisplay(const CsiSequence& sequence) {
 }
 
 void TerminalEmulator::applyEraseLine(const CsiSequence& sequence) {
+    grid_->setEraseStyle(style_);
     switch (paramOr(sequence, 0, 0)) {
         case 0:
             grid_->eraseInLine(EraseInLine::kCursorToEnd);

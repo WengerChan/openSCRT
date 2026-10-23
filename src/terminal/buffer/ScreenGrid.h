@@ -79,6 +79,14 @@ class ScreenGrid {
     void eraseInDisplay(EraseInDisplay scope);
     void eraseCharacters(int count);
 
+    // The attributes an erase paints with.
+    //
+    // xterm paints erased cells with the *current* background colour, not with the default
+    // one. A program that sets a background and then erases a line expects the line to
+    // keep that background, and dropping it is visible: htop's alternating row
+    // backgrounds disappear if the erase falls back to the default colour.
+    void setEraseStyle(const CellStyle& style) noexcept { erase_style_ = style; }
+
     // Blanks `count` cells from the cursor and pulls the remainder of the row left, leaving
     // blanks at the right margin (CSI P / DCH).
     void deleteCharacters(int count);
@@ -144,6 +152,7 @@ class ScreenGrid {
     // Set when the cursor sat on the last column after a put; the next put wraps first.
     // This is what makes xterm-compatible right-margin behaviour work.
     bool pending_wrap_ = false;
+    CellStyle erase_style_{};
     ScrolledOffHandler scrolled_off_;
     std::vector<std::uint32_t> dirty_rows_;  // bit per row
 };
