@@ -49,6 +49,16 @@ void Ssh2Channel::setState(TransportState state, const std::string& detail) {
     }
 }
 
+void Ssh2Channel::setDataCallback(DataCallback callback) {
+    std::lock_guard<std::mutex> lock(callback_mutex_);
+    data_callback_ = std::move(callback);
+}
+
+void Ssh2Channel::setStateCallback(StateCallback callback) {
+    std::lock_guard<std::mutex> lock(callback_mutex_);
+    state_callback_ = std::move(callback);
+}
+
 bool Ssh2Channel::authenticate(Session& session, std::string& error) {
     const auto password_only = options_.auth_method == SshAuthMethod::kPassword;
     const auto key_only = options_.auth_method == SshAuthMethod::kPublicKey;
