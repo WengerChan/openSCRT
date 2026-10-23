@@ -85,6 +85,9 @@ void ScreenGrid::resize(int rows, int cols) {
 
     rows_ = rows;
     cols_ = cols;
+    // One bit per row. Must be sized here: every dirty-marking path indexes into it, and a
+    // short vector is an out-of-bounds write, not a logic error.
+    dirty_rows_.assign(static_cast<std::size_t>(rows) / 32u + 1u, 0u);
     active_ = isAlternateScreen() ? &alternate_ : &primary_;
 
     tab_stops_.clear();
@@ -467,7 +470,7 @@ void ScreenGrid::markRowDirty(int row) noexcept {
 }
 
 void ScreenGrid::setRowDirty(int row) noexcept {
-    if (row < 0 || row >= rows_) {
+    if (row < 0 || row >= rows_ || dirty_rows_.empty()) {
         return;
     }
     dirty_rows_[static_cast<std::size_t>(row) / 32u] |= (1u << (static_cast<unsigned>(row) % 32u));
