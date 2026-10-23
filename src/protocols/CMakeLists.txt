@@ -54,14 +54,23 @@ else()
         ${LIBSSH_LIBRARY} ${LIBSSH_SSL_LIBRARY} ${LIBSSH_CRYPTO_LIBRARY})
 endif()
 
+# OpenSSL is used directly, not only through libssh: the ssh.com (VanDyke) private key
+# format needs 3DES-CBC to decrypt the key body and MD5 to derive the cipher key.
+#
+# The version that matters is the one in the vcpkg tree -- libssh is a static library
+# built against that exact OpenSSL, and mixing it with the system one is how a client
+# ends up with "undefined reference to BN_new".
+find_package(OpenSSL REQUIRED)
+
 add_library(openscrt_protocols STATIC
     ModuleInfo.cpp
     ITransportChannel.cpp
     local/LocalPtyChannel.cpp
-    ssh/Ssh2Channel.cpp)
+    ssh/Ssh2Channel.cpp
+    ssh/SshComKey.cpp)
 
 target_include_directories(openscrt_protocols PUBLIC ${PROJECT_SOURCE_DIR}/src)
 
 target_link_libraries(openscrt_protocols
     PUBLIC openscrt_warnings
-    PRIVATE openscrt_core openscrt_terminal openscrt_ssh)
+    PRIVATE openscrt_core openscrt_terminal openscrt_ssh OpenSSL::Crypto)

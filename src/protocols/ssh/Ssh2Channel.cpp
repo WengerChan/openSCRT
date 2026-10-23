@@ -1,5 +1,7 @@
 #include "protocols/ssh/Ssh2Channel.h"
 
+#include "protocols/ssh/SshComKey.h"
+
 #include <libssh/libssh.h>
 
 #include <utility>
@@ -66,13 +68,34 @@ bool Ssh2Channel::authenticate(Session& session, std::string& error) {
 
     // Public key first: it is the only method that works unattended.
     if (!password_only && !options_.private_key_path.empty()) {
+        // A key in the ssh.com (VanDyke) format -- the one SecureCRT writes -- is not
+        // something libssh can read, so it is converted to the OpenSSH container first.
+        std::string converted;
+        if (isSshComKeyFile(options_.private_key_path)) {
+            SshComRsaKey com_key;
+            std::string read_error;
+            if (readSshComKeyFile(options_.private_key_path, options_.private_key_passphrase, com_key,
+                                  read_error)) {
+                converted = toOpenSshPrivateKey(com_key);
+            } else {
+                error = "could not read the ssh.com private key: " + read_error;
+                if (key_only) {
+                    return false;
+                }
+            }
+        }
+
         // libssh 0.11 takes the file name and writes the key through an out-parameter; the
         // old ssh_pki_import_privkey_file(session, ...) signature is gone.
-        const int imported = ssh_pki_import_privkey_file(
-            options_.private_key_path.c_str(),
-            options_.private_key_passphrase.empty() ? nullptr
-                                                    : options_.private_key_passphrase.c_str(),
-            nullptr, nullptr, &session.private_key);
+        const int imported =
+            converted.empty()
+                ? ssh_pki_import_privkey_file(
+                      options_.private_key_path.c_str(),
+                      options_.private_key_passphrase.empty() ? nullptr
+                                                              : options_.private_key_passphrase.c_str(),
+                      nullptr, nullptr, &session.private_key)
+                : ssh_pki_import_privkey_base64(converted.c_str(), nullptr, nullptr, nullptr,
+                                                &session.private_key);
         if (imported == SSH_OK && session.private_key != nullptr) {
             if (ssh_userauth_publickey(session.session, nullptr, session.private_key) ==
                 SSH_AUTH_SUCCESS) {

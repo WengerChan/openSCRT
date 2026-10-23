@@ -269,6 +269,11 @@ jobs:
           chmod 700 "$HOME/.ssh"
           ssh-keygen -t ed25519 -N '' -f "$HOME/.ssh/openscrt_test_key" -q
           cp "$HOME/.ssh/openscrt_test_key.pub" "$HOME/.ssh/authorized_keys"
+          # The ssh.com (VanDyke) key the P1-T11 test uses, so the conversion is proved
+          # end to end: the server accepts the key that our parser produced from the
+          # ssh.com file, not just a key libssh already understood.
+          printf 'ssh-rsa %s openscrt-sshcom-fixture\n' \
+            "$(cat tests/fixtures/ssh/sshcom_rsa_plain.pub)" >> "$HOME/.ssh/authorized_keys"
           chmod 600 "$HOME/.ssh/authorized_keys"
 
           # StrictModes off: the runner's home directory is not root-owned, and sshd would

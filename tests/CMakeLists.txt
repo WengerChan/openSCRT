@@ -84,6 +84,17 @@ openscrt_add_test(unit_ssh2_channel
     SOURCES unit/Ssh2ChannelTest.cpp
     LIBS openscrt_protocols)
 
+# P1-T11: the ssh.com (VanDyke) private key format.
+#
+# The test drives libssh directly, to check that the converted key is one libssh can
+# actually use, so it links the SSH support target for the headers.
+openscrt_add_test(unit_sshcom_key
+    LABEL unit
+    SOURCES unit/SshComKeyTest.cpp
+    LIBS openscrt_protocols openscrt_ssh)
+target_compile_definitions(unit_sshcom_key PRIVATE
+    OPENCRT_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+
 openscrt_add_test(unit_local_pty_channel
     LABEL unit
     SOURCES unit/LocalPtyChannelTest.cpp
