@@ -512,10 +512,11 @@ jobs:
           body: |
             Windows build of openSCRT.
 
-            **The 0.1.x releases are command-line programs with no window.** Double-clicking
-            the binary prints a message and exits; there is no GUI to interact with yet. The
-            Qt workspace shell is in development (Phase 1, P1-T12), and the first release
-            that opens a window has not been cut.
+            **0.1.2 is the first release with a window.** 0.1.0 and 0.1.1 were the
+            command-line bootstrap: double-clicking the binary printed a message and exited.
+            This one opens the terminal window with the Session Manager dock, the tabbed
+            workspace and the Quick Connect dialog; `openscrt.exe --version` still prints
+            the build details for a bug report.
 
             Requires Windows 10 1809 or later: the Qt runtime in the package imports
             kernel32 exports that older systems do not export, and the loader stops the
@@ -528,10 +529,5 @@ jobs:
 
             Both bundle every DLL the binary imports -- `libsodium`, the UCRT forwarders and the
             Qt runtime -- so neither needs Qt installed.
-
-            This release carries the Phase 1 workspace shell: double-clicking `openscrt.exe`
-            opens the terminal window with the Session Manager dock, the tabbed workspace and
-            the Quick Connect dialog. `openscrt.exe --version` still prints the build details
-            for a bug report.
 
             Verify a download against `SHA256SUMS.txt`.
