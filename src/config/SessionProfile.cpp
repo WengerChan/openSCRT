@@ -115,7 +115,13 @@ bool SessionTree::remove(const std::string& id) {
     const auto found =
         std::remove_if(profiles_.begin(), profiles_.end(),
                        [&id](const SessionProfile& profile) { return profile.id == id; });
-    return found != profiles_.end();
+    if (found == profiles_.end()) {
+        return false;
+    }
+    // remove_if only compacts. Without erase the removed profile still occupies a slot, so
+    // childrenOf() keeps matching it and the parent could never be deleted afterwards.
+    profiles_.erase(found, profiles_.end());
+    return true;
 }
 
 const SessionProfile* SessionTree::find(const std::string& id) const {
@@ -147,28 +153,40 @@ bool SessionTree::resolve(const std::string& id, Resolved& out) const {
     out.protocol = default_session_.protocol.value_or(Protocol::kSsh2);
     out.private_key_path = default_session_.private_key_path.value_or("");
 
-    // Walk from the session up to the root, letting nearer ancestors win. The loop is bounded
-    // by the profile count so a malformed file can never spin forever.
+    // Walk from the session up to the root. The NEAREST value has to win, so each field is
+    // filled only once: writing unconditionally lets the most distant ancestor overwrite it,
+    // because the walk ends at the root.
+    bool have_host = !out.host.empty();
+    bool have_user = !out.user.empty();
+    bool have_key = !out.private_key_path.empty();
+    bool have_port = false;  // 0 is not a valid port, so "unset" has to be tracked separately.
+    bool have_protocol = false;
+
     std::unordered_set<std::string> seen;
     const SessionProfile* node = start;
     while (node != nullptr) {
         if (!seen.insert(node->id).second) {
             return false;  // Cycle; should be impossible, but never trust a loaded file.
         }
-        if (node->host) {
+        if (!have_host && node->host) {
             out.host = *node->host;
+            have_host = true;
         }
-        if (node->port) {
+        if (!have_port && node->port) {
             out.port = *node->port;
+            have_port = true;
         }
-        if (node->user) {
+        if (!have_user && node->user) {
             out.user = *node->user;
+            have_user = true;
         }
-        if (node->protocol) {
+        if (!have_protocol && node->protocol) {
             out.protocol = *node->protocol;
+            have_protocol = true;
         }
-        if (node->private_key_path) {
+        if (!have_key && node->private_key_path) {
             out.private_key_path = *node->private_key_path;
+            have_key = true;
         }
         node = node->parent_id.empty() ? nullptr : find(node->parent_id);
     }
