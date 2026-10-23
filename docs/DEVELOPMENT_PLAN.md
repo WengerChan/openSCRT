@@ -294,6 +294,24 @@
 | R6 | Windows ConPTY 运行时未验证（仅 Windows leg 编译通过） | 人工 | 否——但这是 Windows 端唯一的真实风险点，与 R1 合并处理 |
 | R7 | P1-T6：字形图集与脏矩形渲染器未做（脏行合并逻辑已留在无 Qt 的 terminal 层） | 实现 | 否——已在 §4.2 标 🟡，按路线图归入后续阶段 |
 
+**P1-A7 人工验收清单（待执行）**
+
+Windows / macOS / Linux 各做一遍，逐项打勾并留下记录：
+
+| # | 操作 | 期望结果 | 结论 |
+| :--- | :--- | :--- | :--- |
+| M1 | 启动程序 | 主窗口出现，含 File / Edit / View / Options / Transfer / Script / Tools / Window / Help 菜单栏，以及 `Session Manager` 与 `Active Sessions` 两个 dock | |
+| M2 | File → New Session (Quick Connect)... | 对话框可填 Host / Port / Username / Protocol / Key File；Host 为空时 OK 被拒并给出提示 | |
+| M3 | 填真实服务器 → OK | 状态栏出现 `Connected to <host>`；**握手期间界面不冻结**（仍可拖动窗口） | |
+| M4 | 在标签页里敲命令 | 回显与远端一致；`ls`、`echo`、中文输出均正常 | |
+| M5 | 跑 `vim` / `htop` / `less`（服务器有的话） | 排版、颜色、备用屏进出正常；退出后主屏不被污染 | |
+| M6 | Ctrl+Tab 切标签、Ctrl+W 关标签 | 多标签互不干扰；关闭后连接断开且无残留 | |
+| M7 | File → Save Sessions → 退出 → 重开 | 会话树仍在；`Active Sessions` 列表已空 | |
+| M8 | 关掉服务器或断网 | 状态变为断开，不卡死、不弹栈溢出 | |
+
+每台机器需记录：操作系统版本、Qt 版本、`openscrt --version` 输出、服务器地址（可打码）、M1–M8 的逐项结论与截图。
+**M3 与 M5 是本阶段的关键项**——M3 证明握手没有阻塞 UI 线程，M5 证明 VT 状态机与 SGR 在真实排版下成立；这两项在 CI 里都无法替代。
+
 
 ---
 
