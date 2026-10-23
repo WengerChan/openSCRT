@@ -29,7 +29,10 @@ TEST(SpscRingBufferTest, StartsEmpty) {
 TEST(SpscRingBufferTest, ZeroCapacityIsCorrectedToOne) {
     Buffer buffer(0);
     EXPECT_EQ(buffer.capacity(), 1u);
-    EXPECT_EQ(buffer.write(nullptr, 0), 0u);
+    // A real pointer, not nullptr: a zero-length memcpy from a null pointer is undefined
+    // behaviour, and at -O1 and above the fortified libc rejects it outright.
+    const std::uint8_t nothing = 0;
+    EXPECT_EQ(buffer.write(&nothing, 0), 0u);
 }
 
 TEST(SpscRingBufferTest, WriteReadRoundTripPreservesOrder) {

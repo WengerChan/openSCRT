@@ -1,15 +1,18 @@
 // SSH2 channel tests (P1-T11).
 //
-// There is no SSH server in CI, so these cover the contract and the failure paths: the
-// channel must report its kind, fail cleanly on an unreachable host instead of hanging or
-// crashing, and survive being disconnected before or after a failed connect.
+// Most of these cover the contract and the failure paths: the channel must report its kind,
+// fail cleanly on an unreachable host instead of hanging or crashing, and survive being
+// disconnected before or after a failed connect.
 //
-// Connecting to a real server is the manual half of P1-A1 and stays recorded as such.
+// The last one is different: it connects to a real SSH server that the CI Linux leg starts
+// on a loopback port. Without it, the handshake and the public-key login -- the whole point
+// of P1-T11 -- would never be executed by anything.
 
 #include <gtest/gtest.h>
 
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <string>
 
 #include "protocols/ssh/Ssh2Channel.h"
@@ -108,6 +111,58 @@ TEST(Ssh2ChannelTest, StateCallbackFiresOnFailure) {
     });
     static_cast<void>(channel.connectAsync());
     EXPECT_TRUE(sawFailure);
+}
+
+TEST(Ssh2ChannelTest, ConnectsToARealServerAndRunsACommand) {
+    // The one test that actually talks to an SSH server. The CI Linux leg starts an sshd
+    // on a loopback port and points these variables at it; every other platform has no
+    // server and says so instead of pretending to have passed.
+    //
+    // Until this existed, every SSH test covered a failure path: the handshake and the
+    // public-key login had never been executed anywhere.
+    const char* port = std::getenv("OPENCRT_TEST_SSH_PORT");
+    const char* user = std::getenv("OPENCRT_TEST_SSH_USER");
+    const char* key = std::getenv("OPENCRT_TEST_SSH_KEY");
+    if (port == nullptr || user == nullptr || key == nullptr) {
+        GTEST_SKIP() << "no SSH server configured for this run";
+    }
+
+    SshConnectionOptions options;
+    options.host = "127.0.0.1";
+    options.port = std::atoi(port);
+    options.user = user;
+    options.private_key_path = key;
+    options.auth_method = SshAuthMethod::kPublicKey;
+    options.timeout_seconds = 20;
+
+    Ssh2Channel channel{options};
+    const TransportResult result = channel.connectAsync();
+    ASSERT_TRUE(result.ok) << result.error;
+    EXPECT_EQ(channel.state(), TransportState::kConnected);
+
+    // The marker the shell prints is not the text that was typed: the remote PTY echoes
+    // the command back, and a marker identical to the command would match the echo even
+    // if the command never ran.
+    channel.send("printf 'openscrt-ssh-%s\\n' ok\r");
+
+    std::string accumulated;
+    std::uint8_t buffer[1024];
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+    while (std::chrono::steady_clock::now() < deadline) {
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - std::chrono::steady_clock::now());
+        const std::size_t count = channel.readAvailable(buffer, sizeof(buffer), remaining);
+        accumulated.append(reinterpret_cast<char*>(buffer), count);
+        if (accumulated.find("openscrt-ssh-ok") != std::string::npos) {
+            break;
+        }
+        if (count == 0 && channel.state() != TransportState::kConnected) {
+            break;
+        }
+    }
+    EXPECT_NE(accumulated.find("openscrt-ssh-ok"), std::string::npos)
+        << "the command output never came back over the SSH channel";
+    EXPECT_TRUE(channel.disconnect().ok);
 }
 
 }  // namespace

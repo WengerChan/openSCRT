@@ -256,6 +256,12 @@
 | `TerminalSession` 同时被 `unique_ptr` 与 QObject parent 拥有 | 双重释放，退出时随机崩溃 |
 | `Ssh2Channel::connectAsync()` 在调用线程同步握手 | UI 线程最长阻塞 15 s（SSH 超时），窗口无响应 → 改到工作线程 |
 | `QSettings::childGroups("sessions")` 返回的是**直接子组名** | 若按全路径解析会把 `sessions/a/b` 误当成一个会话 id |
+| `QSettings::childGroups(prefix)` 在 Qt 6 已删除 | 编译失败；且 `childKeys()` 只报当前组的叶子键（本文件的键都在下一层）→ 改用 `beginGroup("sessions") + childGroups()` |
+| `QMenu::addAction(text, receiver, slot, shortcut)` 在 Qt 6.4 起带 `[[deprecated]]` | `-Werror` 下直接编译失败 → 改用 `addAction(text, shortcut, receiver, slot)` |
+| 整文件重写漏掉 `MainWindow::setStatus` 的定义 | 编译通过、**链接期**报 undefined reference（CI 才发现，代价一轮往返） |
+| `openscrt_config` 把 `Qt6::Core` 设为 PRIVATE | 静态库不传播使用要求 → `unit_config_manager` 找不到 `<QSettings>` 的头文件 |
+| `const SessionTree` 上调用 `setDefaultSession` | const 限定符丢失，编译失败 |
+| "悬空父节点被丢弃"用例其实是空的 | 树本身拒绝这种 profile，保存出来的文件里根本没有孤儿 → 改为手写 INI 才有意义 |
 
 **覆盖率（run #39916950710）**：lines **71.8%**（1293/1800）、functions 87.9%（196/223）、branches 58.0%（695/1199）。13 个单测目标 + 2 个性能基准全绿。
 

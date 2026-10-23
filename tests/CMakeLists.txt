@@ -149,7 +149,10 @@ if(OPENCRT_ENABLE_TSAN AND NOT MSVC)
     target_include_directories(unit_spsc_ring_buffer_tsan PRIVATE ${PROJECT_SOURCE_DIR}/src
                                                         ${PROJECT_SOURCE_DIR}/tests)
     target_link_libraries(unit_spsc_ring_buffer_tsan PRIVATE openscrt_test_support)
-    target_compile_options(unit_spsc_ring_buffer_tsan PRIVATE -fsanitize=thread -g -O1
+    # No -O flag on purpose: the target inherits whatever the build type chose, so the
+    # sanitizer run sees exactly the same code the ordinary build does. Mixing optimisation
+    # levels in would make a warning appear here that the shipped build never hits.
+    target_compile_options(unit_spsc_ring_buffer_tsan PRIVATE -fsanitize=thread -g
                                                            -fno-profile-arcs -fno-test-coverage)
     target_link_options(unit_spsc_ring_buffer_tsan PRIVATE -fsanitize=thread)
     add_test(NAME unit_spsc_ring_buffer_tsan COMMAND unit_spsc_ring_buffer_tsan)

@@ -223,6 +223,72 @@ jobs:
           ( cd "$CLASSIC_DIR" && "$VCPKG_ROOT_DIR/vcpkg" install ${SPECS} \
               --x-install-root="$VCPKG_INSTALLED_DIR" )
 
+      # A real SSH server for the SSH channel test (P1-A1).
+      #
+      # Until now every SSH test covered a failure path, because there was no server to
+      # connect to: the handshake and the public-key login were never executed anywhere.
+      # The Linux leg starts an sshd on a loopback port and points the test at it.
+      - name: Start a local SSH server (Linux)
+        if: runner.os == 'Linux'
+        # Not fatal: a runner that cannot start sshd must still build and test everything
+        # else. The SSH test then skips itself and says so, instead of the whole job
+        # failing on an optional server.
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openssh-server
+          sudo mkdir -p /run/sshd
+          sudo ssh-keygen -A
+
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          ssh-keygen -t ed25519 -N '' -f "$HOME/.ssh/openscrt_test_key" -q
+          cp "$HOME/.ssh/openscrt_test_key.pub" "$HOME/.ssh/authorized_keys"
+          chmod 600 "$HOME/.ssh/authorized_keys"
+
+          # StrictModes off: the runner's home directory is not root-owned, and sshd would
+          # otherwise refuse the authorized_keys file for that reason alone.
+          SSHD_CONFIG="$RUNNER_TEMP/sshd_config"
+          cat > "$SSHD_CONFIG" <<EOF
+          Port 2222
+          ListenAddress 127.0.0.1
+          HostKey /etc/ssh/ssh_host_ed25519_key
+          AuthorizedKeysFile $HOME/.ssh/authorized_keys
+          PubkeyAuthentication yes
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          UsePAM no
+          PermitRootLogin no
+          StrictModes no
+          LogLevel VERBOSE
+          EOF
+
+          sudo /usr/sbin/sshd -f "$SSHD_CONFIG" -E "$RUNNER_TEMP/sshd.log" || {
+            echo "::error::sshd refused to start"
+            cat "$RUNNER_TEMP/sshd.log" || true
+            exit 1
+          }
+
+          # Wait for the port to answer before handing the test over.
+          for _ in $(seq 1 30); do
+            if (exec 3<>/dev/tcp/127.0.0.1/2222) 2>/dev/null; then
+              exec 3>&-
+              break
+            fi
+            sleep 1
+          done
+          if ! (exec 3<>/dev/tcp/127.0.0.1/2222) 2>/dev/null; then
+            echo "::error::sshd did not answer on port 2222"
+            cat "$RUNNER_TEMP/sshd.log" || true
+            exit 1
+          fi
+
+          echo "OPENCRT_TEST_SSH_PORT=2222" >> "$GITHUB_ENV"
+          echo "OPENCRT_TEST_SSH_USER=$(id -un)" >> "$GITHUB_ENV"
+          echo "OPENCRT_TEST_SSH_KEY=$HOME/.ssh/openscrt_test_key" >> "$GITHUB_ENV"
+
       - name: Configure (${{ matrix.preset }})
         shell: bash
         run: |
