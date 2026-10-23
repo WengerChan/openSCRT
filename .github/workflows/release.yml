@@ -470,7 +470,7 @@ jobs:
           $lines = foreach ($f in $files) {
             "{0}  {1}" -f (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower(), $f.Name
           }
-          $sums = Join-Path $pkg 'SHA256SUMS.txt'
+          $sums = Join-Path $pkg 'SHA256SUMS-windows.txt'
           # LF, not CRLF: Set-Content would emit CRLF and the trailing \r becomes part of the file
           # name, which makes `sha256sum -c` / `shasum -c` fail on macOS and Linux.
           [System.IO.File]::WriteAllText($sums, ($lines -join "`n") + "`n")
@@ -483,7 +483,345 @@ jobs:
           path: |
             out/pkg/*.msi
             out/pkg/*.zip
-            out/pkg/SHA256SUMS.txt
+            out/pkg/SHA256SUMS-windows.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  package-macos:
+    name: package (macos-14)
+    runs-on: macos-14
+    timeout-minutes: 90
+    env:
+      # The workflow-level env names the Windows triplet; a job-level env wins, and the port
+      # list is derived per job anyway.
+      VCPKG_TARGET_TRIPLET: x64-osx
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROJECT_VERSION=$(sed -n 's/^[[:space:]]*VERSION[[:space:]]\{1,\}\([0-9.]\{1,\}\)[[:space:]]*$/\1/p' CMakeLists.txt | head -1)
+          if [ -z "$PROJECT_VERSION" ]; then
+            echo "::error::could not read VERSION from CMakeLists.txt"
+            exit 1
+          fi
+          echo "project version: $PROJECT_VERSION"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            if [ "$TAG_VERSION" != "$PROJECT_VERSION" ]; then
+              echo "::error::tag $GITHUB_REF_NAME does not match CMakeLists.txt VERSION $PROJECT_VERSION"
+              exit 1
+            fi
+          fi
+          echo "version=$PROJECT_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install autotools (autotools-based vcpkg ports)
+        shell: bash
+        run: brew install autoconf automake libtool
+
+      - uses: lukka/get-cmake@latest
+        with:
+          # The same pins as ci.yml: the version is a deliberate choice, not a floor.
+          cmakeVersion: '~3.31.0'
+          ninjaVersion: '1.12.1'
+
+      - name: Acquire vcpkg at the manifest baseline
+        shell: bash
+        run: |
+          BASELINE=$(python -c "import json;print(json.load(open('vcpkg.json'))['builtin-baseline'])")
+          git init -q "$VCPKG_ROOT_DIR"
+          git -C "$VCPKG_ROOT_DIR" remote add origin https://github.com/microsoft/vcpkg.git
+          git -C "$VCPKG_ROOT_DIR" fetch -q --depth 1 origin "$BASELINE"
+          git -C "$VCPKG_ROOT_DIR" checkout -q --force FETCH_HEAD
+          (cd "$VCPKG_ROOT_DIR" && ./bootstrap-vcpkg.sh -disableMetrics)
+          "$VCPKG_ROOT_DIR/vcpkg" version
+
+      - name: Install Qt 6.8 + qtserialport
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          modules: qtserialport
+          cache: true
+
+      - name: Install runtime dependencies (vcpkg, manifest mode)
+        shell: bash
+        run: |
+          export VCPKG_MANIFEST_DIR="$RUNNER_TEMP/vcpkg-release-manifest"
+          python .github/scripts/ci-vcpkg-manifest.py "$VCPKG_MANIFEST_DIR"
+          echo "VCPKG_MANIFEST_DIR=$VCPKG_MANIFEST_DIR" >> "$GITHUB_ENV"
+
+          CLASSIC_DIR="$RUNNER_TEMP/vcpkg-classic-mode"
+          mkdir -p "$CLASSIC_DIR"
+          unset VCPKG_MANIFEST_DIR
+          set -f
+          SPECS=""
+          while IFS= read -r port || [ -n "$port" ]; do
+            port="${port%$'\r'}"
+            [ -z "$port" ] && continue
+            SPECS="${SPECS} ${port}:${VCPKG_TARGET_TRIPLET}"
+          done < "$RUNNER_TEMP/vcpkg-release-manifest/ports.txt"
+          set +f
+          if [ -z "${SPECS// /}" ]; then
+            echo "::error::no ports left to install after applying the skip table"
+            exit 1
+          fi
+          ( cd "$CLASSIC_DIR" && "$VCPKG_ROOT_DIR/vcpkg" install ${SPECS} \
+              --x-install-root="$VCPKG_INSTALLED_DIR" )
+
+      - name: Configure (macos-ci, Release, no tests)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${QT_ROOT_DIR:-}" ]; then
+            echo "::error::QT_ROOT_DIR is empty -- install-qt-action did not run or changed layout"
+            exit 1
+          fi
+          echo "QT_ROOT_DIR=$QT_ROOT_DIR"
+          cmake --preset macos-ci \
+            -DOPENCRT_BUILD_TESTS=OFF \
+            -DOPENCRT_WARNINGS_AS_ERRORS=ON \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT_DIR/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET="$VCPKG_TARGET_TRIPLET" \
+            -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" \
+            -DVCPKG_MANIFEST_DIR="$VCPKG_MANIFEST_DIR" \
+            -DVCPKG_MANIFEST_INSTALL=OFF \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR;$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET"
+
+      - name: Build (macos-ci)
+        shell: bash
+        run: cmake --build --preset macos-ci
+
+      - name: Smoke test the Release binary
+        shell: bash
+        run: out/build/macos-ci/bin/openscrt --version
+
+      - name: Smoke test the GUI shell
+        shell: bash
+        run: QT_QPA_PLATFORM=offscreen out/build/macos-ci/bin/openscrt --self-test
+
+      - name: Stage the app bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=${{ steps.version.outputs.version }}
+          STAGE_NAME="openscrt-$VERSION-macos-x64"
+          STAGE="$GITHUB_WORKSPACE/out/pkg/$STAGE_NAME"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          cmake --install out/build/macos-ci --config Release --prefix "$STAGE"
+
+          # macdeployqt copies the Qt frameworks into the bundle and rewrites the load paths.
+          # -codesign=- means "do not sign": the runner has no signing identity, and an
+          # unsigned bundle is what a manual verification wants anyway.
+          MACDEPLOYQT="$QT_ROOT_DIR/bin/macdeployqt"
+          if [ ! -x "$MACDEPLOYQT" ]; then
+            echo "::error::macdeployqt not found at $MACDEPLOYQT"
+            exit 1
+          fi
+          "$MACDEPLOYQT" "$STAGE/bin/openscrt" -appbundle -codesign=- -verbose=1
+          if [ ! -d "$STAGE/bin/openscrt.app" ]; then
+            echo "::error::macdeployqt did not produce openscrt.app"
+            exit 1
+          fi
+
+          tar -C "$STAGE/bin" -czf "$GITHUB_WORKSPACE/out/pkg/openSCRT-$VERSION-macos-x64.tar.gz" openscrt.app
+          cd "$GITHUB_WORKSPACE/out/pkg"
+          shasum -a 256 "openSCRT-$VERSION-macos-x64.tar.gz" > SHA256SUMS-macos.txt
+          cat SHA256SUMS-macos.txt
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openSCRT-macos-x64
+          path: |
+            out/pkg/openSCRT-*.tar.gz
+            out/pkg/SHA256SUMS-macos.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  package-linux:
+    name: package (ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      VCPKG_TARGET_TRIPLET: x64-linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROJECT_VERSION=$(sed -n 's/^[[:space:]]*VERSION[[:space:]]\{1,\}\([0-9.]\{1,\}\)[[:space:]]*$/\1/p' CMakeLists.txt | head -1)
+          if [ -z "$PROJECT_VERSION" ]; then
+            echo "::error::could not read VERSION from CMakeLists.txt"
+            exit 1
+          fi
+          echo "project version: $PROJECT_VERSION"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            if [ "$TAG_VERSION" != "$PROJECT_VERSION" ]; then
+              echo "::error::tag $GITHUB_REF_NAME does not match CMakeLists.txt VERSION $PROJECT_VERSION"
+              exit 1
+            fi
+          fi
+          echo "version=$PROJECT_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install autotools (autotools-based vcpkg ports)
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq autoconf automake libtool
+
+      - uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: '~3.31.0'
+          ninjaVersion: '1.12.1'
+
+      - name: Acquire vcpkg at the manifest baseline
+        shell: bash
+        run: |
+          BASELINE=$(python -c "import json;print(json.load(open('vcpkg.json'))['builtin-baseline'])")
+          git init -q "$VCPKG_ROOT_DIR"
+          git -C "$VCPKG_ROOT_DIR" remote add origin https://github.com/microsoft/vcpkg.git
+          git -C "$VCPKG_ROOT_DIR" fetch -q --depth 1 origin "$BASELINE"
+          git -C "$VCPKG_ROOT_DIR" checkout -q --force FETCH_HEAD
+          (cd "$VCPKG_ROOT_DIR" && ./bootstrap-vcpkg.sh -disableMetrics)
+          "$VCPKG_ROOT_DIR/vcpkg" version
+
+      - name: Install Qt 6.8 + qtserialport
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          modules: qtserialport
+          cache: true
+
+      - name: Install runtime dependencies (vcpkg, manifest mode)
+        shell: bash
+        run: |
+          export VCPKG_MANIFEST_DIR="$RUNNER_TEMP/vcpkg-release-manifest"
+          python .github/scripts/ci-vcpkg-manifest.py "$VCPKG_MANIFEST_DIR"
+          echo "VCPKG_MANIFEST_DIR=$VCPKG_MANIFEST_DIR" >> "$GITHUB_ENV"
+
+          CLASSIC_DIR="$RUNNER_TEMP/vcpkg-classic-mode"
+          mkdir -p "$CLASSIC_DIR"
+          unset VCPKG_MANIFEST_DIR
+          set -f
+          SPECS=""
+          while IFS= read -r port || [ -n "$port" ]; do
+            port="${port%$'\r'}"
+            [ -z "$port" ] && continue
+            SPECS="${SPECS} ${port}:${VCPKG_TARGET_TRIPLET}"
+          done < "$RUNNER_TEMP/vcpkg-release-manifest/ports.txt"
+          set +f
+          if [ -z "${SPECS// /}" ]; then
+            echo "::error::no ports left to install after applying the skip table"
+            exit 1
+          fi
+          ( cd "$CLASSIC_DIR" && "$VCPKG_ROOT_DIR/vcpkg" install ${SPECS} \
+              --x-install-root="$VCPKG_INSTALLED_DIR" )
+
+      - name: Configure (linux-ci, Release, no tests)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${QT_ROOT_DIR:-}" ]; then
+            echo "::error::QT_ROOT_DIR is empty -- install-qt-action did not run or changed layout"
+            exit 1
+          fi
+          echo "QT_ROOT_DIR=$QT_ROOT_DIR"
+          cmake --preset linux-ci \
+            -DOPENCRT_BUILD_TESTS=OFF \
+            -DOPENCRT_WARNINGS_AS_ERRORS=ON \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT_DIR/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET="$VCPKG_TARGET_TRIPLET" \
+            -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" \
+            -DVCPKG_MANIFEST_DIR="$VCPKG_MANIFEST_DIR" \
+            -DVCPKG_MANIFEST_INSTALL=OFF \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR;$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET"
+
+      - name: Build (linux-ci)
+        shell: bash
+        run: cmake --build --preset linux-ci
+
+      - name: Smoke test the Release binary
+        shell: bash
+        run: out/build/linux-ci/bin/openscrt --version
+
+      - name: Smoke test the GUI shell
+        shell: bash
+        run: QT_QPA_PLATFORM=offscreen out/build/linux-ci/bin/openscrt --self-test
+
+      - name: Stage the portable tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=${{ steps.version.outputs.version }}
+          STAGE_NAME="openscrt-$VERSION-linux-x86_64"
+          STAGE="$GITHUB_WORKSPACE/out/pkg/$STAGE_NAME"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE/bin" "$STAGE/lib"
+          cmake --install out/build/linux-ci --config Release --prefix "$STAGE"
+
+          # Only the Qt runtime and the vcpkg libraries travel with the binary. The rest of
+          # the dependency list is the desktop's own (libGL, libxcb, libstdc++), and shipping
+          # a runner's copy of those onto a stranger's machine is how a package breaks a
+          # working system.
+          ldd "$STAGE/bin/openscrt" | sed -n 's/.*=> \(\/[^ ]*\).*/\1/p' | sort -u > "$STAGE/ldd.txt"
+          while IFS= read -r lib || [ -n "$lib" ]; do
+            case "$lib" in
+              "$QT_ROOT_DIR"/*|"$VCPKG_INSTALLED_DIR"/*) cp -L "$lib" "$STAGE/lib/" ;;
+            esac
+          done < "$STAGE/ldd.txt"
+          rm -f "$STAGE/ldd.txt"
+
+          # Plugins are loaded at run time, not linked, so ldd never sees them.
+          mkdir -p "$STAGE/lib/qt/plugins"
+          cp -R "$QT_ROOT_DIR/plugins/platforms" "$STAGE/lib/qt/plugins/"
+          cp -R "$QT_ROOT_DIR/plugins/imageformats" "$STAGE/lib/qt/plugins/"
+
+          # The real binary gets a wrapper that points the loader and the plugin path at the
+          # tree it was unpacked into, so the archive works wherever it is unpacked.
+          mv "$STAGE/bin/openscrt" "$STAGE/bin/openscrt.bin"
+          cat > "$STAGE/bin/openscrt" <<'WRAPPER'
+          #!/bin/sh
+          here=$(cd "$(dirname "$0")" && pwd)
+          LD_LIBRARY_PATH="$here/../lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          QT_PLUGIN_PATH="$here/../lib/qt/plugins${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
+          export LD_LIBRARY_PATH QT_PLUGIN_PATH
+          exec "$here/openscrt.bin" "$@"
+          WRAPPER
+          chmod +x "$STAGE/bin/openscrt"
+
+      - name: Verify the staged tree is self-contained
+        shell: bash
+        run: |
+          set -euo pipefail
+          STAGE="$GITHUB_WORKSPACE/out/pkg/openscrt-${{ steps.version.outputs.version }}-linux-x86_64"
+          "$STAGE/bin/openscrt" --version
+          QT_QPA_PLATFORM=offscreen "$STAGE/bin/openscrt" --self-test
+
+      - name: Pack the tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=${{ steps.version.outputs.version }}
+          cd "$GITHUB_WORKSPACE/out/pkg"
+          tar -czf "openSCRT-$VERSION-linux-x86_64.tar.gz" "openscrt-$VERSION-linux-x86_64"
+          sha256sum "openSCRT-$VERSION-linux-x86_64.tar.gz" > SHA256SUMS-linux.txt
+          cat SHA256SUMS-linux.txt
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openSCRT-linux-x86_64
+          path: |
+            out/pkg/openSCRT-*.tar.gz
+            out/pkg/SHA256SUMS-linux.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -500,8 +838,24 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: openSCRT-windows-x64
+          # Every platform's artifact, merged into one directory. A pattern instead of a
+          # single name so a platform that failed to package does not take the release down
+          # with it: the Windows assets are always there, and the file names say which
+          # platform each one is for.
+          pattern: openSCRT-*
           path: dist
+          merge-multiple: true
+
+      - name: Merge the per-platform checksum files
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Each platform job writes its own list; the release page points at one file, so
+          # they are concatenated here. Merging them this way keeps every platform's hash
+          # instead of letting the last upload overwrite the others.
+          cat dist/SHA256SUMS-*.txt > dist/SHA256SUMS.txt
+          rm -f dist/SHA256SUMS-*.txt
+          cat dist/SHA256SUMS.txt
 
       - name: Create the GitHub Release
         uses: softprops/action-gh-release@v2
@@ -510,7 +864,7 @@ jobs:
           fail_on_unmatched_files: true
           generate_release_notes: true
           body: |
-            Windows build of openSCRT.
+            Builds of openSCRT for Windows, macOS and Linux.
 
             **0.1.2 is the first release with a window.** 0.1.0 and 0.1.1 were the
             command-line bootstrap: double-clicking the binary printed a message and exited.
@@ -522,12 +876,15 @@ jobs:
             kernel32 exports that older systems do not export, and the loader stops the
             program before it can say so itself.
 
-            | Artifact | Install |
-            | --- | --- |
-            | `openSCRT-<version>-windows-x64.msi` | Double-click. Installs per-machine to `%ProgramFiles%\openSCRT` with an uninstall entry in Add/Remove Programs. The installer does not touch `PATH`; add `%ProgramFiles%\openSCRT\bin` yourself if you want the command on it. |
-            | `openSCRT-<version>-windows-x64-portable.zip` | Unzip anywhere and run `bin\openscrt.exe`. No installation, no admin rights. |
+            | Artifact | Platform | Install |
+            | --- | --- | --- |
+            | `openSCRT-<version>-windows-x64.msi` | Windows x64 | Double-click. Installs per-machine to `%ProgramFiles%\openSCRT` with an uninstall entry in Add/Remove Programs. The installer does not touch `PATH`; add `%ProgramFiles%\openSCRT\bin` yourself if you want the command on `PATH`. |
+            | `openSCRT-<version>-windows-x64-portable.zip` | Windows x64 | Unzip anywhere and run `bin\openscrt.exe`. No installation, no admin rights. |
+            | `openSCRT-<version>-macos-x64.tar.gz` | macOS x64 | Unpack, then open `openscrt.app`. On Apple Silicon it runs under Rosetta 2. |
+            | `openSCRT-<version>-linux-x86_64.tar.gz` | Linux x86_64 | Unpack, then run `bin/openscrt`; the wrapper points the loader and the Qt plugin path at the unpacked tree. |
 
-            Both bundle every DLL the binary imports -- `libsodium`, the UCRT forwarders and the
-            Qt runtime -- so neither needs Qt installed.
+            Every archive carries the runtime the binary needs -- the Qt libraries and, on
+            Windows, `libsodium` and the UCRT forwarders -- so none of them needs Qt or
+            libsodium installed.
 
             Verify a download against `SHA256SUMS.txt`.
