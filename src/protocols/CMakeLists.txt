@@ -1,20 +1,58 @@
 # Multi-protocol transport channels (SSH2 / serial / telnet / local PTY).
 # All channels implement ITransportChannel; the interface is frozen after P1-T9.
 
-# libssh (P1-T11). Found by path rather than by package config: the vcpkg port ships the
-# headers and a pkg-config file, and find_path/find_library work against the installed
-# tree regardless of which metadata the port happens to provide.
-find_path(LIBSSH_INCLUDE_DIR NAMES libssh/libssh.h)
-find_library(LIBSSH_LIBRARY NAMES ssh libssh)
-if(NOT LIBSSH_INCLUDE_DIR OR NOT LIBSSH_LIBRARY)
-    message(FATAL_ERROR
-        "openscrt_protocols needs libssh (P1-T11). It is declared in vcpkg.json; if CI "
-        "skipped it, delete its entry in the SKIP table in .github/scripts/ci-vcpkg-manifest.py.")
-endif()
+# libssh (P1-T11).
+#
+# Preferred path: the vcpkg port installs a CMake package config, and that config does
+# find_dependency(OpenSSL) for us. libssh is a static library, so whoever links it must
+# also link the OpenSSL it was built against -- skipping that is what produced
+# "undefined reference to BN_new" in run #39894293542.
+#
+# Fallback path: find the library by path and link the vcpkg tree's OpenSSL explicitly.
+# The fallback searches the vcpkg installed tree first so it cannot pick up a system
+# OpenSSL of a different ABI than the one libssh was compiled against.
+find_package(libssh CONFIG QUIET)
 
-add_library(openscrt_ssh INTERFACE)
-target_include_directories(openscrt_ssh SYSTEM INTERFACE ${LIBSSH_INCLUDE_DIR})
-target_link_libraries(openscrt_ssh INTERFACE ${LIBSSH_LIBRARY})
+if(TARGET libssh::libssh_static)
+    add_library(openscrt_ssh INTERFACE)
+    target_link_libraries(openscrt_ssh INTERFACE libssh::libssh_static)
+    message(STATUS "libssh: using libssh::libssh_static")
+elseif(TARGET libssh::libssh_shared)
+    add_library(openscrt_ssh INTERFACE)
+    target_link_libraries(openscrt_ssh INTERFACE libssh::libssh_shared)
+    message(STATUS "libssh: using libssh::libssh_shared")
+else()
+    message(STATUS "libssh: no CMake package config, falling back to a path search")
+    find_path(LIBSSH_INCLUDE_DIR NAMES libssh/libssh.h)
+    find_library(LIBSSH_LIBRARY NAMES ssh libssh)
+    if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+        set(OPENSCRT_VCPKG_LIB_DIR "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib")
+    else()
+        set(OPENSCRT_VCPKG_LIB_DIR "")
+    endif()
+
+    find_library(LIBSSH_SSL_LIBRARY NAMES ssl
+                 PATHS "${OPENSCRT_VCPKG_LIB_DIR}" NO_DEFAULT_PATH)
+    find_library(LIBSSH_CRYPTO_LIBRARY NAMES crypto
+                 PATHS "${OPENSCRT_VCPKG_LIB_DIR}" NO_DEFAULT_PATH)
+    if(NOT LIBSSH_SSL_LIBRARY OR NOT LIBSSH_CRYPTO_LIBRARY)
+        find_library(LIBSSH_SSL_LIBRARY NAMES ssl)
+        find_library(LIBSSH_CRYPTO_LIBRARY NAMES crypto)
+    endif()
+
+    if(NOT LIBSSH_INCLUDE_DIR OR NOT LIBSSH_LIBRARY OR NOT LIBSSH_SSL_LIBRARY OR
+       NOT LIBSSH_CRYPTO_LIBRARY)
+        message(FATAL_ERROR
+            "openscrt_protocols needs libssh and its OpenSSL (P1-T11). libssh is declared in "
+            "vcpkg.json; if CI skipped it, delete its entry in the SKIP table in "
+            ".github/scripts/ci-vcpkg-manifest.py.")
+    endif()
+
+    add_library(openscrt_ssh INTERFACE)
+    target_include_directories(openscrt_ssh SYSTEM INTERFACE ${LIBSSH_INCLUDE_DIR})
+    target_link_libraries(openscrt_ssh INTERFACE
+        ${LIBSSH_LIBRARY} ${LIBSSH_SSL_LIBRARY} ${LIBSSH_CRYPTO_LIBRARY})
+endif()
 
 add_library(openscrt_protocols STATIC
     ModuleInfo.cpp
