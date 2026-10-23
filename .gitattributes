@@ -1,0 +1,12 @@
+# Line endings are part of the data here, not a matter of taste.
+#
+# The Windows runner checks out with core.autocrlf=true, which turns every LF into CRLF.
+# For the VT fixtures that changes the byte stream they decode to -- a stray CR moves the
+# cursor to column 0 -- and for the baselines it changes the bytes they are compared
+# against. Both would show up as a difference that no code change could explain.
+#
+# eol=lf is therefore not a style choice: it is what makes the comparison mean the same
+# thing on all three runners.
+* text=auto eol=lf
+tests/fixtures/** text eol=lf
+tests/baselines/** text eol=lf

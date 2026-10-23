@@ -214,7 +214,9 @@ class BaselineWriter : public ::testing::Environment {
             const std::vector<std::uint8_t> bytes = decodeFixture(readFile(fixture));
             const std::string reference = openscrt::test::renderWithTmux(bytes, kRows, kCols);
             if (reference.empty()) {
-                std::printf("could not render %s through tmux\n", fixture.filename().c_str());
+                // path::c_str() is a wchar_t* on Windows, which %s will not take.
+                std::printf("could not render %s through tmux\n",
+                            fixture.filename().string().c_str());
                 continue;
             }
             const fs::path target = fs::path(directory) / (fixture.stem().string() + ".txt");
