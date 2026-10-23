@@ -103,6 +103,16 @@ class ScreenGrid {
     [[nodiscard]] int dirtyRowCount() const noexcept;
     [[nodiscard]] bool rowIsDirty(int row) const noexcept;
 
+    // Row-granular dirty flags.
+    //
+    // Scanning every cell to find damage costs O(rows * cols) on every frame, which is the
+    // same work whether one row changed or all of them did -- and that fixed cost is what
+    // capped the measured incremental-versus-full repaint ratio at 1.3x. The bitmap makes
+    // the scan O(rows) and clearing proportional to the damage instead of the screen.
+    void setRowDirty(int row) noexcept;
+    [[nodiscard]] bool rowDirtyFlag(int row) const noexcept;
+    void clearDirtyRowFlags() noexcept;
+
     // UTF-8 rendering of a row with trailing blanks trimmed; used by search, copy, logging
     // and the unit tests.
     [[nodiscard]] std::string rowText(int row) const;
@@ -135,6 +145,7 @@ class ScreenGrid {
     // This is what makes xterm-compatible right-margin behaviour work.
     bool pending_wrap_ = false;
     ScrolledOffHandler scrolled_off_;
+    std::vector<std::uint32_t> dirty_rows_;  // bit per row
 };
 
 }  // namespace openscrt::terminal

@@ -174,6 +174,7 @@ void ScreenGrid::put(std::uint32_t codepoint, const CellStyle& style) {
         lineFeed();
     }
 
+    setRowDirty(cursor_row_);
     Cell& cell = at(cursor_row_, cursor_column_);
     cell.codepoint = codepoint;
     cell.fg = style.fg;
@@ -283,6 +284,7 @@ void ScreenGrid::eraseInLine(EraseInLine scope) {
         case EraseInLine::kAll:
             break;
     }
+    setRowDirty(cursor_row_);
     for (int i = 0; i < count; ++i) {
         line[start + i].setBlank();
         line[start + i].markDirty();
@@ -323,6 +325,9 @@ void ScreenGrid::eraseCharacters(int count) {
         return;
     }
     Cell* line = rowData(cursor_row_);
+    if (count > 0) {
+        setRowDirty(cursor_row_);
+    }
     for (int i = 0; i < count && cursor_column_ + i < cols_; ++i) {
         line[cursor_column_ + i].setBlank();
         line[cursor_column_ + i].markDirty();
@@ -339,6 +344,7 @@ void ScreenGrid::deleteCharacters(int count) {
         return;
     }
     const int start = std::min(cursor_column_, cols_);
+    setRowDirty(cursor_row_);
     const int removable = std::min(count, cols_ - start);
     const int tail = cols_ - start - removable;
     if (tail > 0) {
@@ -457,18 +463,46 @@ void ScreenGrid::markRowDirty(int row) noexcept {
     for (int col = 0; col < cols_; ++col) {
         line[col].markDirty();
     }
+    setRowDirty(row);
+}
+
+void ScreenGrid::setRowDirty(int row) noexcept {
+    if (row < 0 || row >= rows_) {
+        return;
+    }
+    dirty_rows_[static_cast<std::size_t>(row) / 32u] |= (1u << (static_cast<unsigned>(row) % 32u));
+}
+
+bool ScreenGrid::rowDirtyFlag(int row) const noexcept {
+    if (row < 0 || row >= rows_ || dirty_rows_.empty()) {
+        return false;
+    }
+    const std::uint32_t word = dirty_rows_[static_cast<std::size_t>(row) / 32u];
+    return (word & (1u << (static_cast<unsigned>(row) % 32u))) != 0;
+}
+
+void ScreenGrid::clearDirtyRowFlags() noexcept {
+    std::fill(dirty_rows_.begin(), dirty_rows_.end(), 0u);
 }
 
 void ScreenGrid::clearDirtyFlags() noexcept {
-    for (Cell& cell : *active_) {
-        cell.clearDirty();
+    // Only touch the rows that are actually flagged. Clearing every cell would reintroduce
+    // the fixed O(rows * cols) cost this bitmap exists to remove.
+    for (int row = 0; row < rows_; ++row) {
+        if (rowDirtyFlag(row)) {
+            Cell* line = rowData(row);
+            for (int col = 0; col < cols_; ++col) {
+                line[col].clearDirty();
+            }
+        }
     }
+    clearDirtyRowFlags();
 }
 
 int ScreenGrid::dirtyRowCount() const noexcept {
     int count = 0;
     for (int row = 0; row < rows_; ++row) {
-        if (rowIsDirty(row)) {
+        if (rowDirtyFlag(row)) {
             ++count;
         }
     }

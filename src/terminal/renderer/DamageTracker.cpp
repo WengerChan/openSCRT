@@ -11,7 +11,7 @@ std::vector<RowBand> DamageTracker::collect(ScreenGrid& grid) {
     int open_first = -1;
 
     for (int row = 0; row < rows; ++row) {
-        if (grid.rowIsDirty(row)) {
+        if (grid.rowDirtyFlag(row)) {
             if (open_first < 0) {
                 open_first = row;
             }
