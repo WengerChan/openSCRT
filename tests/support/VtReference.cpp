@@ -165,6 +165,11 @@ void applyBasicCode(SgrState& state, int code) {
         case 6:
             state.setFlag(cellattr::kBlink, true);
             return;
+        case 7:
+            // Reverse video. tmux reports it as an attribute rather than resolving it into
+            // swapped colours, so the reference keeps it as one.
+            state.setFlag(cellattr::kInverse, true);
+            return;
         case 9:
             state.setFlag(cellattr::kStrikeThrough, true);
             return;
@@ -180,6 +185,9 @@ void applyBasicCode(SgrState& state, int code) {
             return;
         case 25:
             state.setFlag(cellattr::kBlink, false);
+            return;
+        case 27:
+            state.setFlag(cellattr::kInverse, false);
             return;
         case 29:
             state.setFlag(cellattr::kStrikeThrough, false);
@@ -350,15 +358,16 @@ std::uint32_t decodeUtf8(const std::string& text, std::size_t& index) {
 }
 
 // Rebuilds a grid out of tmux's captured pane. The captured text carries SGR sequences
-// inline; each line is parsed independently because tmux restarts the attribute state at
-// the beginning of a line.
+// inline, and the attribute state runs on across the line breaks: tmux emits a sequence
+// when the attributes change from the previous cell, and a line break is not such a
+// change. Resetting the state per line would lose every colour after the first row.
 ScreenGrid buildGrid(const std::string& captured, int rows, int cols) {
     ScreenGrid grid(rows, cols);
     const std::vector<std::string> lines = splitOn(captured, '\n');
+    SgrState state;
 
     for (int row = 0; row < rows && row < static_cast<int>(lines.size()); ++row) {
         const std::string& line = lines[static_cast<std::size_t>(row)];
-        SgrState state;
         int column = 0;
         std::size_t index = 0;
 

@@ -12,13 +12,19 @@ void fillBlank(Cell* cells, int count) noexcept {
     }
 }
 
-// Blanks a cell the way an erase does: with the background that is in force, not with the
-// default one. See ScreenGrid::setEraseStyle for why that matters.
+// Blanks a cell the way an erase does: with the background that is in force, and nothing
+// else. See ScreenGrid::setEraseStyle for why the background matters; the foreground goes
+// back to the default because a blank has no glyph to draw it with, and terminals differ
+// on whether it is remembered -- tmux resets it, and matching that keeps the comparison
+// against tmux honest.
 void blankWithStyle(Cell& cell, const CellStyle& style) noexcept {
     cell.codepoint = 0;
-    cell.fg = style.fg;
+    cell.fg = 0;
     cell.bg = style.bg;
-    cell.attrs = style.attrs;
+    cell.attrs = cellattr::kDefaultFg;
+    if (style.hasAttribute(cellattr::kDefaultBg)) {
+        cell.attrs |= cellattr::kDefaultBg;
+    }
 }
 
 int clampInt(int value, int lo, int hi) noexcept {

@@ -24,19 +24,20 @@ struct CellSignature {
     }
 };
 
-// A cell that carries no glyph and the default background cannot show a foreground
-// colour: there is nothing to draw it with. Terminals differ on whether such a cell
-// remembers the colour that was in force when it was written -- tmux does not keep it --
+// A blank with the default background is a plain cell: it has no glyph to draw a
+// foreground colour with, and no attribute that would show. Terminals differ on whether
+// such a cell remembers what was in force when it was written -- tmux does not keep it --
 // so the comparison normalises it away on both sides. Without that, vim's status line
-// would differ from tmux's over a foreground colour that is not on the screen.
+// would differ from tmux's over a colour that is not on the screen at all.
+bool isPlainBlank(const Cell& cell) {
+    if (cell.codepoint != 0 && cell.codepoint != ' ') {
+        return false;
+    }
+    return cell.hasAttribute(cellattr::kDefaultBg);
+}
+
 bool foregroundCounts(const Cell& cell) {
-    if (cell.isWideTrail()) {
-        return true;  // The trailing half of a wide glyph belongs to its lead cell.
-    }
-    if (cell.codepoint == 0 || cell.codepoint == ' ') {
-        return !cell.hasAttribute(cellattr::kDefaultBg);
-    }
-    return true;
+    return !isPlainBlank(cell);
 }
 
 // Whether a cell contributes anything to the picture: a glyph, or a background that is
@@ -57,7 +58,9 @@ CellSignature signatureOf(const Cell& cell) {
     signature.default_fg = cell.hasAttribute(cellattr::kDefaultFg);
     signature.default_bg = cell.hasAttribute(cellattr::kDefaultBg);
     if (!foregroundCounts(cell)) {
+        // A plain blank keeps its background and nothing else.
         signature.fg = 0;
+        signature.flags = 0;
         signature.default_fg = true;
     }
     return signature;
