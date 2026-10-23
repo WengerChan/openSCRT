@@ -30,6 +30,7 @@ than only checking our own binaries.
 """
 
 import argparse
+import os
 import struct
 import sys
 
@@ -171,6 +172,9 @@ def main():
 
     highest = limit
     for path in arguments.report:
+        if not os.path.exists(path):
+            print(f"  {path}: not present here, skipped")
+            continue
         needed = floor_of(path)
         print(f"  {path}: needs {format_version(needed)}")
         if needed > highest:
