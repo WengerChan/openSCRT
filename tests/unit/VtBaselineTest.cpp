@@ -213,6 +213,31 @@ std::vector<std::string> realProgramCommands() {
     };
 }
 
+// Writes the raw capture next to the test's other output, so a difference can be
+// diagnosed from the bytes rather than from the picture they produce.
+void writeCapture(const std::string& command, const std::vector<std::uint8_t>& captured) {
+    const char* directory = std::getenv("OPENCRT_VT_CAPTURE_DIR");
+    if (directory == nullptr || directory[0] == '\0') {
+        return;
+    }
+    std::error_code error;
+    fs::create_directories(directory, error);
+
+    // The command becomes a file name: everything that is not a letter, a digit or a dash
+    // goes, and what is left is enough to tell the three apart.
+    std::string name;
+    for (const char character : command) {
+        const bool plain = (character >= 'a' && character <= 'z') ||
+                           (character >= 'A' && character <= 'Z') ||
+                           (character >= '0' && character <= '9') || character == '-';
+        name.push_back(plain ? character : '_');
+    }
+    const fs::path target = fs::path(directory) / (name + ".bin");
+    std::ofstream stream(target, std::ios::binary | std::ios::trunc);
+    stream.write(reinterpret_cast<const char*>(captured.data()),
+                 static_cast<std::streamsize>(captured.size()));
+}
+
 // Prints the first differing lines, so a human sees what moved instead of a bare
 // "not equal".
 void reportDifference(const std::string& expected, const std::string& actual) {
@@ -345,6 +370,7 @@ TEST(VtBaselineTest, RealProgramOutputRendersTheWayTmuxRendersIt) {
         if (!drewSomething) {
             continue;
         }
+        writeCapture(command, captured);
 
         const std::string ours = renderWithOurEmulator(captured);
         const std::string theirs = openscrt::test::renderWithTmux(captured, kRows, kCols);

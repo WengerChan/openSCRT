@@ -347,13 +347,22 @@ jobs:
           OPENCRT_VT_WRITE_BASELINES=out/vt-baselines \
             out/build/${{ matrix.preset }}/bin/unit_vt_baseline \
             --gtest_filter='VtBaselineTest.TheCorpusIsNotEmpty'
+          # The raw captures of what vim, htop and less draw. They are published next to
+          # the baselines so a difference can be diagnosed from the bytes rather than from
+          # the picture they produce. The comparison itself may fail -- that is the point
+          # of publishing them -- so this step does not turn that into a build failure.
+          OPENCRT_VT_CAPTURE_DIR=out/vt-captures \
+            out/build/${{ matrix.preset }}/bin/unit_vt_baseline \
+            --gtest_filter='VtBaselineTest.RealProgramOutputRendersTheWayTmuxRendersIt' || true
 
       - name: Upload VT baselines
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: vt-baselines-linux
-          path: out/vt-baselines
+          path: |
+            out/vt-baselines
+            out/vt-captures
           if-no-files-found: error
 
       - name: Test (unit tier)
