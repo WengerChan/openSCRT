@@ -40,6 +40,20 @@
         "OPENCRT_WARNINGS_AS_ERRORS": "ON",
         "FETCHCONTENT_FULLY_DISCONNECTED": "OFF"
       }
+    },
+    {
+      "name": "linux-tsan",
+      "displayName": "CI configure (Linux, ThreadSanitizer)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "OPENCRT_BUILD_TESTS": "ON",
+        "OPENCRT_WARNINGS_AS_ERRORS": "ON",
+        "FETCHCONTENT_FULLY_DISCONNECTED": "OFF",
+        "OPENCRT_ENABLE_TSAN": "ON",
+        "OPENCRT_ENABLE_COVERAGE": "OFF"
+      }
     }
   ],
   "buildPresets": [
@@ -55,6 +69,10 @@
     {
       "name": "macos-ci",
       "configurePreset": "macos-ci"
+    },
+    {
+      "name": "linux-tsan",
+      "configurePreset": "linux-tsan"
     }
   ],
   "testPresets": [

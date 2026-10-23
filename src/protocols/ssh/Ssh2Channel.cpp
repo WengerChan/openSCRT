@@ -78,6 +78,13 @@ bool Ssh2Channel::authenticate(Session& session, std::string& error) {
                 SSH_AUTH_SUCCESS) {
                 return true;
             }
+            if (error.empty()) {
+                // libssh knows why: the server said no, and said why. Without this the
+                // caller only sees "authentication failed", which is not an answer.
+                const char* reason = ssh_get_error(session.session);
+                error = std::string("public key authentication failed: ") +
+                        (reason != nullptr && *reason != '\0' ? reason : "the server said no");
+            }
         } else if (key_only) {
             error = "could not read the private key file";
             return false;

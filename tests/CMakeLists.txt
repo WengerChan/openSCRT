@@ -141,20 +141,21 @@ set_tests_properties(app_gui_self_test PROPERTIES
 # so the concurrency test gets its own target instead of a global flag: instrumenting the
 # whole tree would slow every other test down without telling us anything the ring
 # buffer's own accesses do not. GoogleTest stays uninstrumented on purpose -- it does not
-# touch the ring, and an uninstrumented library linked into an instrumented one is exactly
-# the configuration that produces false positives.
+# touch the ring.
+#
+# The target is built in its own build tree (preset linux-tsan) because it must NOT be built
+# together with --coverage: gcov keeps its counters in plain globals, two threads increment
+# the same one, and ThreadSanitizer reports that as a data race. It is a race in the coverage
+# counters, not in the ring buffer, and the only way to keep the two apart is to not build
+# them together.
 option(OPENCRT_ENABLE_TSAN "Build the SPSC concurrency test with ThreadSanitizer" OFF)
 if(OPENCRT_ENABLE_TSAN AND NOT MSVC)
     add_executable(unit_spsc_ring_buffer_tsan unit/SpscRingBufferTest.cpp)
     target_include_directories(unit_spsc_ring_buffer_tsan PRIVATE ${PROJECT_SOURCE_DIR}/src
                                                         ${PROJECT_SOURCE_DIR}/tests)
     target_link_libraries(unit_spsc_ring_buffer_tsan PRIVATE openscrt_test_support)
-    # No -O flag on purpose: the target inherits whatever the build type chose, so the
-    # sanitizer run sees exactly the same code the ordinary build does. Mixing optimisation
-    # levels in would make a warning appear here that the shipped build never hits.
-    target_compile_options(unit_spsc_ring_buffer_tsan PRIVATE -fsanitize=thread -g
-                                                           -fno-profile-arcs -fno-test-coverage)
+    target_compile_options(unit_spsc_ring_buffer_tsan PRIVATE -fsanitize=thread -g)
     target_link_options(unit_spsc_ring_buffer_tsan PRIVATE -fsanitize=thread)
     add_test(NAME unit_spsc_ring_buffer_tsan COMMAND unit_spsc_ring_buffer_tsan)
-    set_tests_properties(unit_spsc_ring_buffer_tsan PROPERTIES LABELS "unit" TIMEOUT 900)
+    set_tests_properties(unit_spsc_ring_buffer_tsan PROPERTIES LABELS "tsan" TIMEOUT 900)
 endif()

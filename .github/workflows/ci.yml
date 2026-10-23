@@ -259,9 +259,13 @@ jobs:
           PubkeyAuthentication yes
           PasswordAuthentication no
           KbdInteractiveAuthentication no
-          UsePAM no
+          # UsePAM yes, not no: with UsePAM no, sshd refuses any account whose password
+          # field is locked -- and the runner account's is. The login then fails with a
+          # bare "authentication failed" that has nothing to do with the key.
+          UsePAM yes
           PermitRootLogin no
           StrictModes no
+          UseDNS no
           LogLevel VERBOSE
           EOF
 
@@ -289,12 +293,33 @@ jobs:
           echo "OPENCRT_TEST_SSH_USER=$(id -un)" >> "$GITHUB_ENV"
           echo "OPENCRT_TEST_SSH_KEY=$HOME/.ssh/openscrt_test_key" >> "$GITHUB_ENV"
 
+      # P1-A4: the SPSC ring buffer under ThreadSanitizer.
+      #
+      # Its own build tree, because --coverage must not be on at the same time: gcov keeps
+      # its counters in plain globals, two threads increment the same one, and the
+      # sanitizer reports that as a data race in the ring buffer that is not there.
+      - name: ThreadSanitizer (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --preset linux-tsan \
+            -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT_DIR/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET="$VCPKG_TARGET_TRIPLET" \
+            -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" \
+            -DVCPKG_MANIFEST_DIR="$VCPKG_MANIFEST_DIR" \
+            -DVCPKG_MANIFEST_INSTALL=OFF \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR;$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET" \
+            -DGTest_ROOT="$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET"
+          # Only the sanitizer target: the rest of the tree was already built above.
+          cmake --build --preset linux-tsan --target unit_spsc_ring_buffer_tsan
+          ctest --test-dir out/build/linux-tsan -L tsan --output-on-failure --timeout 900
+
       - name: Configure (${{ matrix.preset }})
         shell: bash
         run: |
           cmake --preset ${{ matrix.preset }} \
             -DOPENCRT_ENABLE_COVERAGE=${{ runner.os == 'Linux' && 'ON' || 'OFF' }} \
-            -DOPENCRT_ENABLE_TSAN=${{ runner.os == 'Linux' && 'ON' || 'OFF' }} \
             -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT_DIR/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET="$VCPKG_TARGET_TRIPLET" \
             -DVCPKG_INSTALLED_DIR="$VCPKG_INSTALLED_DIR" \
