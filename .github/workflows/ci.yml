@@ -253,7 +253,9 @@ jobs:
         env:
           # Reduced benchmark budget so CI stays fast; tests must read this to scale iterations.
           OPENCRT_PERF_ITERS: "2000"
-        run: ctest --test-dir out/build/${{ matrix.preset }} -C Release -L perf --output-on-failure --timeout 600
+        run: # -V: the perf tier exists to produce numbers, and ctest hides a passing test's
+          # output otherwise. This is what makes P1-A3 evidence visible in the run log.
+          ctest --test-dir out/build/${{ matrix.preset }} -C Release -L perf -V --output-on-failure --timeout 600
 
       # P0-A5: coverage report with an enforced floor. gcovr filters to the libraries that carry
       # unit tests and drops src/app (a non-test executable that would report a permanent 0%).

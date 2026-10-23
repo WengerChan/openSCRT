@@ -81,6 +81,15 @@ openscrt_add_test(unit_control_sequence_parser
 # P1-A5: scrollback write throughput and lookup latency under a realistic 128k-line working
 # set. Iteration count is scaled by OPENCRT_PERF_ITERS so the shared CI runner stays inside
 # its budget while a dedicated runner can raise it.
+# P1-A3 lives in the perf tier so its numbers are echoed into the run log: ctest only shows a
+# passing test's output under -V, and CI runs the perf tier with -V.
+openscrt_add_test(perf_render_budget
+    LABEL perf
+    SOURCES perf/RenderBudgetTest.cpp
+    LIBS openscrt_ui Qt6::Gui)
+set_tests_properties(perf_render_budget PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 openscrt_add_test(perf_scrollback_throughput
     LABEL perf
     SOURCES perf/ScrollbackThroughputTest.cpp
