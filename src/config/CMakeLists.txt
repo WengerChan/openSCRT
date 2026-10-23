@@ -1,6 +1,8 @@
 # Global/session option hierarchy, Default Session inheritance, SecureCRT config import.
 
-add_library(openscrt_config STATIC ModuleInfo.cpp)
+add_library(openscrt_config STATIC
+    ModuleInfo.cpp
+    SessionProfile.cpp)
 
 target_include_directories(openscrt_config PUBLIC ${PROJECT_SOURCE_DIR}/src)
 
