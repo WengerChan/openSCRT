@@ -38,6 +38,14 @@ openSCRT — C++20 + Qt 6 的 SecureCRT 对标终端。读代码前先读
 - **脚本化改文件后，必须 grep 确认改动真的落盘**。`str.replace` 在锚点文本漂移时
   **静默不替换、不报错**，本仓库已经因此踩坑 3 次（成员变量漏加、函数调用漏改、
   位图初始化漏写），每次都白白多付一轮 CI 往返。改动提交前用 `grep` 验证结果。
+- **改 YAML / JSON 后，本地先解析一遍再推**。`python3 -c "import yaml;yaml.safe_load(...)"`
+  只能发现语法错，发现不了"这行跑到了别的 step 的 `run:` 里"——那类错误会让
+  一个步骤在**所有断言都通过之后**以 exit 127 收场，job 变红且证据被抹掉。
+  改完用 `grep -n` 确认关键行仍属于它该在的块。
+- **sanitizer 与覆盖率永不同构建**。gcov 计数器是普通全局，两线程自增同一计数器会被
+  TSan 报成 data race（本地实测 217 处假阳性）。要跑 TSan 就换独立构建树
+  （`linux-tsan` preset，coverage OFF），并把该步骤放在 job **最后**——它一失败，
+  前面的 build / test / coverage 会被一起 skip。
 - **整文件重写后，核对"声明 vs 定义"**。整体重写一个 `.cpp` 时最容易漏掉几个成员函数，
   症状是链接期 `undefined reference`，而不是编译错误——CI 才发现，代价一轮往返。
   提交前用一次声明/定义差集自查。

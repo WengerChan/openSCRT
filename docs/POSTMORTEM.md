@@ -1,9 +1,9 @@
-# 复盘：CI 打通过程中的 21 轮失败
+# 复盘：CI 打通过程中的 25 轮失败
 
 本文记录 openSCRT 从"首次提交"到"三平台全绿"之间每一次失败的**真实根因**与**可执行的预防规则**。
 规则不是感想——每条都对应一次实际浪费的排查轮次，并在 `AGENTS.md` 中被固化为硬约束。
 
-时间跨度：2026-10-21 ~ 2026-10-22，21 轮 CI，最终 run 全链路 3 分 02 秒。
+时间跨度：2026-10-21 ~ 2026-10-23。第一轮 21 轮 CI（Phase 0 门禁打通三平台），最终 run 全链路 3 分 02 秒；第二轮 4 个坑出现在 Phase 1 收尾（工作区外壳 + CI 内真实 SSH + TSan 门禁），见文末「第二轮」。
 
 ---
 
@@ -131,6 +131,51 @@ Windows 上 `build-test` 单 job 75.6 分钟，其中 **74.6 分钟（98.7%）�
 
 ---
 
+## 第二轮：Phase 1 收尾阶段的 4 个新坑
+
+Phase 1 收尾（工作区外壳 + 配置持久化 + CI 内真实 SSH）又踩了 4 个坑。和上面六条不同源：上面是"看不懂日志"，下面是"**日志是对的，是我以为的东西错了**"。
+
+### 7.1 把 sanitizer 和覆盖率塞进同一个构建树 → 217 个假阳性 data race
+
+gcov 的计数器是**普通全局变量**。同一个二进制里同时开 `--coverage` 和 `-fsanitize=thread`，两个线程各自自增同一个计数器，TSan 就把这个自增报成 data race。
+
+本地实测：217 处报告，**全部指向 `__gcov` 符号**，没有一处指向环形缓冲本身。
+
+**预防规则**：
+> sanitizer 和覆盖率**永不同构建**。要跑 TSan 就换一棵构建树（`linux-tsan` preset，coverage OFF），
+> 且 TSan 步骤放在 job **最后**——它一失败，前面的 build / test / coverage 全被 skip，
+> 一轮 CI 白跑，什么证据都留不下。
+
+### 7.2 批量改写脚本把一行 YAML 挪到了别人的 `run:` 里
+
+用脚本做"移动步骤"这类重排时，`if-no-files-found: error` 被切到了下一个步骤的 `run:` 脚本尾部。shell 把它当命令执行 → `command not found` → exit 127。
+
+后果不是"配置写错了"这么轻：**这个步骤里所有已经通过的断言都被这一次退出码抹掉**，job 变红；读日志的人第一眼看到的是 `exit 127`，要往回翻很久才知道真正的测试早就 Passed 了。
+
+**预防规则**：
+> 脚本改完 YAML，**先本地解析一遍**（`python3 -c "import yaml;yaml.safe_load(...)"`），
+> 再 grep 确认关键行的归属步骤——这比通读一遍 diff 还快。
+> 判据：`grep -n "if-no-files-found" ci.yml` 的行号必须落在它该在的那个 step 块内。
+
+### 7.3 fortified libc 把 `memcpy(dst, nullptr, 0)` 判为错误
+
+Linux 上 `-O1` 及以上会开 `_FORTIFY_SOURCE`，于是 `memcpy(dst, nullptr, 0)` 变成编译期错误（`-Werror=nonnull`）。coverage 构建用 `-O0` 把它掩盖住了，于是"本地绿、CI 红"。
+
+**预防规则**：
+> C 接口收到"可能为空的指针 + 可能为 0 的长度"时，**在入口显式拒绝空指针**，不要把判断推给 libc。
+> 空指针 + 0 长度在标准里是未定义行为，各家 fortified 实现会各自加码。
+
+### 7.4 sshd 用 `UsePAM no` → 公钥认证被拒，却伪装成"密钥不对"
+
+runner 账号的密码字段是锁定的（`!`）。`UsePAM no` 时 sshd 走自己的账户检查，遇到锁定的密码字段直接拒绝，错误信息是笼统的 `authentication failed`——看起来像密钥生成错了，实际上跟密钥毫无关系。
+
+**预防规则**：
+> 诊断"认证失败"时，**先确认账号本身能不能被 PAM 认证**，再怀疑密钥。
+> 冒烟标记要和命令文本**不一样**：PTY 会回显你输入的命令，标记写死成命令的一部分时，
+> 测试会在命令根本没执行的情况下通过——**恒真的测试比没有测试更危险**。
+
+---
+
 ## 落到 CI 上的自动化防线
 
 上面六条里有五条已经固化成流水线里的自动检查，改坏了会红：
@@ -143,6 +188,9 @@ Windows 上 `build-test` 单 job 75.6 分钟，其中 **74.6 分钟（98.7%）�
 | 六（只装被链接的） | SKIP 表 + "SKIP 里出现 vcpkg.json 没有的 port 就报错"的错字守卫 |
 | 覆盖率门槛 | gcovr `--fail-under-line 40`，报告以 artifact 上传 |
 | 代码质量 | `-Wall -Wextra -Wpedantic -Werror`（MSVC `/W4 /WX`）、`[[nodiscard]]` 契约 |
+| 7.1（sanitizer 与覆盖率不同构建） | 独立的 `linux-tsan` preset（coverage OFF）+ 单独的 `unit_spsc_ring_buffer_tsan` 目标，job 末尾单独跑 |
+| 7.3（空指针防护） | `SpscRingBuffer::write()/read()` 显式拒绝空指针，入口处就断掉 fortified libc 的未定义行为 |
+| 7.4（冒烟标记不可恒真） | 远端标记用插值形式（`openscrt-ssh-ok`）而非命令文本本身，PTY 回显匹配不上 |
 
 **唯一没有自动化的**是根因二和根因三——它们需要判断力，只能靠 `AGENTS.md` 里的行为约束。
 
