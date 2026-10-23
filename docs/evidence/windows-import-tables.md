@@ -10,6 +10,26 @@ documented as available from Windows 10 1607, and a real 1607 kernel32
 (10.0.14393.1715) does not export it -- the documentation describes the
 KernelBase and apiset layers, and kernel32 starts forwarding the export later.
 
+## The floor of the shipped v0.1.2 package
+
+Measured on the published `openSCRT-0.1.2-windows-x64-portable.zip` with the same
+script the CI runs:
+
+```
+$ python3 .github/scripts/check_import_floor.py --floor 1607 \
+    --strict .cache/v012/openscrt-0.1.2-windows-x64/bin/openscrt.exe \
+    --report .cache/v012/openscrt-0.1.2-windows-x64/bin/Qt6Core.dll
+declared floor: Windows 10.0 build 14393
+  openscrt.exe: needs 10.0 build 14393  [ok]
+  Qt6Core.dll:  needs 10.0 build 16299
+package floor: Windows 10.0 build 16299
+```
+
+**Our own executable now needs 1607** -- the three ConPTY entry points are resolved at
+run time, so they are no longer in the import table. The package as a whole still needs
+**1709**, because `Qt6Core.dll` imports `SetThreadDescription`, and that symbol is not
+ours to remove.
+
 ## The floor, per binary
 
 | Binary | kernel32 imports | Newest Windows it needs |
