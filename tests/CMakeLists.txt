@@ -134,14 +134,14 @@ set_tests_properties(unit_vt_baseline PROPERTIES LABELS "unit" TIMEOUT 600)
 # passing test's output under -V, and CI runs the perf tier with -V.
 openscrt_add_test(perf_render_budget
     LABEL perf
-    SOURCES perf/RenderBudgetTest.cpp
+    SOURCES perf/RenderBudgetTest.cpp support/ResidentMemory.cpp
     LIBS openscrt_ui Qt6::Gui)
 set_tests_properties(perf_render_budget PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 openscrt_add_test(perf_scrollback_throughput
     LABEL perf
-    SOURCES perf/ScrollbackThroughputTest.cpp
+    SOURCES perf/ScrollbackThroughputTest.cpp support/ResidentMemory.cpp
     LIBS openscrt_terminal)
 
 # The GUI shell smoke test. It runs the real executable with --self-test, which builds the

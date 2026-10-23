@@ -124,7 +124,10 @@ TEST(SpscRingBufferTest, ClearResetsAccounting) {
 TEST(SpscRingBufferTest, ConcurrentProducerAndConsumerLoseNoBytes) {
     // Mirrors the P1-A4 gate: run under -fsanitize=thread in CI. Each byte is tagged with the
     // producer index so a reorder or duplication is detectable, not just a count mismatch.
-    constexpr std::uint64_t kTotal = 2'000'000;
+    // The count is the one the acceptance criterion names: ten million read/write
+    // operations. Ten million bytes through a 4 KB ring is ten million writes and ten
+    // million reads, which is what the criterion counts.
+    constexpr std::uint64_t kTotal = 10'000'000;
 
     Buffer buffer(4096);
     std::vector<std::uint8_t> consumed;

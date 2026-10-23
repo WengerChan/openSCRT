@@ -355,8 +355,12 @@ jobs:
         continue-on-error: false
         shell: bash
         env:
-          # Reduced benchmark budget so CI stays fast; tests must read this to scale iterations.
-          OPENCRT_PERF_ITERS: "2000"
+          # The working set the roadmap names: 128,000 lines or more, so the scrollback is
+          # measured at full size (and past its 131,072-line cap, so the eviction path runs
+          # too). 140,000 lines cost about 60 ms -- there was no reason to scale them down.
+          OPENCRT_PERF_ITERS: "140000"
+          # seq 1 1000000, the stream P1-A3 is written against.
+          OPENCRT_PERF_LINES: "1000000"
         run: # -V: the perf tier exists to produce numbers, and ctest hides a passing test's
           # output otherwise. This is what makes P1-A3 evidence visible in the run log.
           ctest --test-dir out/build/${{ matrix.preset }} -C Release -L perf -V --output-on-failure --timeout 600

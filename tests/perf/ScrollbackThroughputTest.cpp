@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "support/ResidentMemory.h"
 #include "terminal/buffer/RingScrollbackBuffer.h"
 
 namespace openscrt::terminal {
@@ -42,11 +43,13 @@ TEST(PerfScrollbackTest, FullRingWriteThroughput) {
     std::string payload = "[2026-10-21 12:00:00.123] INFO  connection established to 10.20.30.40";
     payload.resize(80, ' ');
 
+    const std::size_t memory_before = openscrt::test::residentBytes();
     const auto start = std::chrono::steady_clock::now();
     for (std::size_t i = 0; i < iterations; ++i) {
         buffer.push(payload);
     }
     const auto elapsed = std::chrono::steady_clock::now() - start;
+    const std::size_t memory_after = openscrt::test::residentBytes();
     const auto micros = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
 
     const double per_line_us =
@@ -56,6 +59,16 @@ TEST(PerfScrollbackTest, FullRingWriteThroughput) {
     EXPECT_LE(buffer.size(), buffer.capacity());
     // Budget: 20 us/line. Real cost is ~0.05 us/line; the headroom absorbs a slow runner.
     EXPECT_LT(per_line_us, 20.0) << "scrollback write path regressed";
+
+    // P1-A5's "memory stays stable once 128,000 lines are in": the ring is capped, so the
+    // process must not grow with the number of lines written.
+    if (memory_before > 0 && memory_after > memory_before) {
+        const std::size_t growth = memory_after - memory_before;
+        std::printf("[perf] scrollback memory: grew %.1f MB holding %zu lines\n",
+                    static_cast<double>(growth) / 1048576.0, buffer.size());
+        EXPECT_LE(growth, 256u * 1024u * 1024u)
+            << "the scrollback grew the process by more than 256 MB";
+    }
 }
 
 TEST(PerfScrollbackTest, RandomLookupStaysConstantTime) {

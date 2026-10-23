@@ -19,9 +19,12 @@
 #include <QtGlobal>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <string>
 
+#include "support/ResidentMemory.h"
+#include "terminal/buffer/RingScrollbackBuffer.h"
 #include "terminal/emulator/TerminalEmulator.h"
 #include "terminal/renderer/DamageTracker.h"
 #include "terminal/renderer/FrameCoalescer.h"
@@ -39,6 +42,22 @@ const QGuiApplication& application() {
         return new QGuiApplication(argc, argv);
     }();
     return *instance;
+}
+
+// The size of the stream the roadmap names: seq 1 1000000. Scaled down only when a
+// caller asks for it, so the default is the size the criterion is written against.
+std::size_t streamLines() {
+    constexpr std::size_t kDefault = 1000000;
+    const char* env = std::getenv("OPENCRT_PERF_LINES");
+    if (env == nullptr || env[0] == '\0') {
+        return kDefault;
+    }
+    char* end = nullptr;
+    const unsigned long value = std::strtoul(env, &end, 10);
+    if (end == env || value == 0) {
+        return kDefault;
+    }
+    return static_cast<std::size_t>(value);
 }
 
 class RenderBudgetTest : public ::testing::Test {
@@ -62,22 +81,51 @@ class RenderBudgetTest : public ::testing::Test {
 };
 
 TEST_F(RenderBudgetTest, ParseThroughputUnderALongStream) {
-    terminal::TerminalEmulator emulator{*grid_};
+    // The roadmap's criterion is "seq 1 1000000", so that is the stream this measures.
+    // The scrollback is attached because a real session has one: without it the lines that
+    // scroll off the top are dropped, and the memory half of the criterion would be
+    // measuring a program that keeps nothing.
+    terminal::RingScrollbackBuffer scrollback;
+    terminal::TerminalEmulator emulator{*grid_, &scrollback};
 
-    constexpr int kLines = 20000;
+    const std::size_t lines = streamLines();
+    const std::size_t memory_before = openscrt::test::residentBytes();
+
     const auto start = std::chrono::steady_clock::now();
-    for (int i = 0; i < kLines; ++i) {
+    for (std::size_t i = 0; i < lines; ++i) {
         emulator.write(std::to_string(i + 1) + "\r\n");
     }
     const double elapsed = milliseconds(start);
+    const std::size_t memory_after = openscrt::test::residentBytes();
 
-    std::fprintf(stderr, "[perf] parse: %d lines in %.1f ms (%.3f us/line, %.0f lines/s)\n", kLines,
-                 elapsed, elapsed * 1000.0 / kLines,
-                 elapsed > 0 ? kLines / (elapsed / 1000.0) : 0.0);
+    const double per_line_us = elapsed * 1000.0 / static_cast<double>(lines);
+    // A 60 FPS frame is 16.7 ms. How much output can be parsed inside one frame is the
+    // number that decides whether the UI can keep up with the stream.
+    const double lines_per_frame = per_line_us > 0.0 ? 16.7 * 1000.0 / per_line_us : 0.0;
 
-    // 60 FPS with a 16 ms budget leaves roughly 10 ms of the frame for parsing. At 20k lines
-    // the whole stream must parse in well under that to keep the frame loop fed.
-    EXPECT_LT(elapsed, 1000.0) << "parser throughput regressed";
+    std::fprintf(stderr,
+                 "[perf] parse: %zu lines in %.1f ms (%.3f us/line, %.0f lines/s, %.0f lines "
+                 "per 60 Hz frame)\n",
+                 lines, elapsed, per_line_us, elapsed > 0.0 ? lines / (elapsed / 1000.0) : 0.0,
+                 lines_per_frame);
+
+    // The budget is per line, not per stream: the old gate was 1000 ms for 20,000 lines,
+    // which is 20 us per line, and keeping that rate means the budget does not change when
+    // the stream grows to the size the criterion names.
+    EXPECT_LT(per_line_us, 20.0) << "parser throughput regressed";
+    // 500 lines per frame is a quarter of what the observed rate delivers, and still more
+    // than a real terminal ever has to absorb in one frame.
+    EXPECT_GT(lines_per_frame, 500.0) << "the parser cannot keep the frame loop fed";
+
+    if (memory_before > 0 && memory_after > memory_before) {
+        const std::size_t growth = memory_after - memory_before;
+        std::fprintf(stderr, "[perf] memory: grew %.1f MB while streaming %zu lines\n",
+                     static_cast<double>(growth) / 1048576.0, lines);
+        // The criterion's own bound. The scrollback's cap is what keeps this from growing
+        // with the stream, and the cap itself is unit-tested.
+        EXPECT_LE(growth, 256u * 1024u * 1024u)
+            << "the stream grew the process by more than 256 MB";
+    }
 }
 
 TEST_F(RenderBudgetTest, RepaintOfAFullScreenStaysInsideAFrame) {
