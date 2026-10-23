@@ -138,10 +138,19 @@ Outcome runShape(Shape shape, const std::string& marker) {
     ::InitializeProcThreadAttributeList(nullptr, 1, 0, &attribute_size);
     std::vector<BYTE> attribute_buffer(attribute_size);
     auto* attributes = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attribute_buffer.data());
-    if (!::InitializeProcThreadAttributeList(attributes, 1, 0, &attribute_size) ||
-        !::UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
+    if (!::InitializeProcThreadAttributeList(attributes, 1, 0, &attribute_size)) {
+        std::fprintf(stderr, "[matrix] %s: InitializeProcThreadAttributeList failed\n",
+                     shapeName(shape));
+        conPty().close(pseudo_console);
+        ::CloseHandle(input_read);
+        ::CloseHandle(input_write);
+        ::CloseHandle(output_read);
+        ::CloseHandle(output_write);
+        return outcome;
+    }
+    if (!::UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
                                      pseudo_console, sizeof(HPCON), nullptr, nullptr)) {
-        std::fprintf(stderr, "[matrix] %s: attribute list failed\n", shapeName(shape));
+        std::fprintf(stderr, "[matrix] %s: UpdateProcThreadAttribute failed\n", shapeName(shape));
         ::DeleteProcThreadAttributeList(attributes);
         conPty().close(pseudo_console);
         ::CloseHandle(input_read);
