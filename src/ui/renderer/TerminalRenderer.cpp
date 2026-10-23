@@ -1,6 +1,7 @@
 #include "ui/renderer/TerminalRenderer.h"
 
 #include <QPainter>
+#include <QRectF>
 #include <algorithm>
 
 #include "terminal/emulator/Palette.h"
@@ -95,7 +96,8 @@ void TerminalRenderer::paintCell(QPainter& painter, int row, int column) {
                                static_cast<std::uint32_t>(foreground.alpha());
     const QRect glyph = atlas_.ensureTintedGlyph(value.codepoint, styleFor(value), rgba);
     if (!glyph.isNull()) {
-        painter.drawImage(atlas_.atlasImage(), glyph, target);
+        // Source+target rect overloads take QRectF, not QRect.
+        painter.drawImage(QRectF(target), atlas_.atlasImage(), QRectF(glyph));
         return;
     }
     painter.setPen(foreground);

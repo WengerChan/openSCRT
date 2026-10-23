@@ -38,7 +38,7 @@ struct GlyphKey {
 };
 
 struct GlyphKeyHash {
-    std::size_t operator()(const GlyphKey& key) noexcept {
+    std::size_t operator()(const GlyphKey& key) const noexcept {
         return (static_cast<std::size_t>(key.codepoint) * 131u) ^
                (static_cast<std::size_t>(key.style) * 2654435761u);
     }
@@ -59,7 +59,7 @@ struct TintedGlyphKey {
 };
 
 struct TintedGlyphKeyHash {
-    std::size_t operator()(const TintedGlyphKey& key) noexcept {
+    std::size_t operator()(const TintedGlyphKey& key) const noexcept {
         std::size_t hash = (static_cast<std::size_t>(key.codepoint) * 131u) ^
                            (static_cast<std::size_t>(key.style) * 2654435761u);
         return hash ^ (static_cast<std::size_t>(key.rgba) * 40503u);

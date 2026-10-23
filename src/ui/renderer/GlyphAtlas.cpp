@@ -115,7 +115,7 @@ QRect GlyphAtlas::ensureTintedGlyph(std::uint32_t codepoint, GlyphStyle style, s
 
     // Render the outline, then recolour it by copying alpha into every colour channel. Doing
     // this once per (glyph, colour) is what turns per-frame text shaping into a blit.
-    const QImage outline(rasteriseGlyph(codepoint, style));
+    QImage outline = rasteriseGlyph(codepoint, style);  // non-const: scanLine is written
     if (outline.isNull()) {
         return QRect();
     }
