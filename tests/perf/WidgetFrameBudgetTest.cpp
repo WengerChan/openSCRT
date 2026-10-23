@@ -59,8 +59,10 @@ class WidgetFrameBudgetTest : public ::testing::Test {
     void frameWithOutput(std::string_view output) {
         widget_->feed(output);
         const auto start = std::chrono::steady_clock::now();
-        painted_rows_ += widget_->renderer().repaintDamage();
-        widget_->repaint();
+        // The tick's work -- repainting the damaged rows -- and then the blit it asks
+        // for, which the event loop delivers.
+        widget_->drawFrame();
+        application().processEvents();
         const auto elapsed = std::chrono::steady_clock::now() - start;
         frame_times_.push_back(std::chrono::duration<double, std::milli>(elapsed).count());
     }
@@ -74,7 +76,6 @@ class WidgetFrameBudgetTest : public ::testing::Test {
 
     std::unique_ptr<TerminalCanvasWidget> widget_;
     std::vector<double> frame_times_;
-    int painted_rows_{0};
 };
 
 TEST_F(WidgetFrameBudgetTest, TheWidgetKeepsUpWithTheFrameBudget) {
@@ -93,7 +94,7 @@ TEST_F(WidgetFrameBudgetTest, TheWidgetKeepsUpWithTheFrameBudget) {
 
     // The criterion: the frame time's p95 must stay inside a 60 FPS frame.
     EXPECT_LE(p95, 16.7) << "the widget misses the 60 FPS frame budget";
-    EXPECT_GT(painted_rows_, 0) << "the widget painted nothing at all";
+    EXPECT_GT(widget_->repaintedRowCount(), 0) << "the widget painted nothing at all";
 }
 
 TEST_F(WidgetFrameBudgetTest, AFullScreenOfOutputStillFitsInAFrame) {

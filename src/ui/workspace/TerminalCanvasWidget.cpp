@@ -189,13 +189,17 @@ void TerminalCanvasWidget::resizeEvent(QResizeEvent* event) {
     emit windowSizeChanged(size.rows, size.columns);
 }
 
+void TerminalCanvasWidget::drawFrame() {
+    repainted_rows_ += renderer_->repaintDamage();
+    ++frames_drawn_;
+    update();
+}
+
 void TerminalCanvasWidget::onFrameTick() {
     if (!coalescer_.shouldRepaint(std::chrono::steady_clock::now())) {
         return;
     }
-    repainted_rows_ += renderer_->repaintDamage();
-    ++frames_drawn_;
-    update();
+    drawFrame();
 }
 
 }  // namespace openscrt::ui

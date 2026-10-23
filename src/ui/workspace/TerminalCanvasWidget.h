@@ -68,6 +68,13 @@ class TerminalCanvasWidget : public QWidget {
     [[nodiscard]] terminal::TerminalEmulator& emulator() noexcept { return *emulator_; }
     [[nodiscard]] const TerminalRenderer& renderer() const noexcept { return *renderer_; }
 
+    // Draws one frame: repaints the damaged rows and asks for the blit.
+    //
+    // The frame loop calls this, and so does the frame-budget measurement, so both
+    // measure the same work. Driving the widget from outside would otherwise mean
+    // timing the blit alone, which is the cheap half of a frame.
+    void drawFrame();
+
     // Frame statistics, used by the P1-A3 measurement.
     [[nodiscard]] int frameCount() const noexcept { return frames_drawn_; }
     [[nodiscard]] int repaintedRowCount() const noexcept { return repainted_rows_; }
