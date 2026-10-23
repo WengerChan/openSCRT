@@ -178,7 +178,7 @@
 | P1-T8 帧合并调度 | ✅ | 60/120Hz；突发合并为 1 帧、持续输出受刷新率上限约束、空闲不出帧 |
 | P1-T9 传输接口冻结 | ✅ | `ITransportChannel` |
 | P1-T10 本地 Shell | ✅ | POSIX `forkpty` 与 Windows ConPTY 均已实现（ConPTY 仅由 Windows leg 编译验证，运行时待人工） |
-| P1-T11 SSH2 通道 | ✅ | libssh 0.11 真实 API；公钥→密码→keyboard-interactive；**D4 契约已在同 PR 从 SKIP 表删除 `libssh`** |
+| P1-T11 SSH2 通道 | 🟡 | libssh 0.11 真实 API；公钥→密码→keyboard-interactive；**D4 契约已在同 PR 从 SKIP 表删除 `libssh`**；密钥类型由 libssh 覆盖 RSA / ECDSA / Ed25519。**缺口：路线图要求的"VanDyke 私钥格式"未实现**——libssh 只认 OpenSSH / PEM，而 SecureCRT 自己的密钥正是 ssh.com（`BEGIN SSH2 ENCRYPTED PRIVATE KEY`）格式，用户从 SecureCRT 迁过来的密钥会读不了 |
 | P1-T12 主窗口与工作区 | ✅ | **完整落地**：会话继承树 + Default Session 模板（纯逻辑、无 Qt 依赖）+ `ConfigManager`（QSettings INI，**只写被覆盖字段**）+ `MainWindow`（经典菜单栏 File/Edit/View/Options/Transfer/Script/Tools/Window/Help；`Session Manager` 与 `Active Sessions` 两个 dock；状态栏）+ `WorkspaceTabs` 多标签工作区 + `QuickConnectDialog`；`--self-test` 在 offscreen 平台自检窗口装配，CI 可判定 |
 
 **验收取证**
@@ -319,6 +319,7 @@
 | R5 | ~~P1-A5：128,000 行工作集未实测~~ | — | **已关闭**：run #39961633389 起 perf 层按 140,000 行工作集实测（越过容量上限，淘汰路径同时跑到），p99 0.572 µs、内存增长 16.1 MB |
 | R6 | Windows ConPTY 运行时未验证（仅 Windows leg 编译通过） | 人工 | 否——但这是 Windows 端唯一的真实风险点，与 R1 合并处理 |
 | R7 | ~~P1-T6：字形图集与脏矩形渲染器未做~~ | — | **已关闭**：图集与渲染器都在 `src/ui/renderer/`（见 D6），并有 `unit_terminal_renderer` 覆盖（ASCII/CJK 栅格化、缓存、样式分离、脏行只画一行、相邻行合并） |
+| R9 | P1-T11：VanDyke（ssh.com）私钥格式未实现 | 实现 | 否——**但这是路线图点名的交付物**，且直接影响从 SecureCRT 迁移的用户：他们的密钥默认就是 ssh.com 格式。OpenSSH / PEM 由 libssh 覆盖 ✅ |
 | R8 | **判据按缩水规模测过，就不算测过** | 方法论 | 否——但这是本阶段最容易被忽略的一类缺口：P1-A3/A4/A5 三条判据都长期跑在缩水的规模上（2 万行 / 200 万字节 / 2,000 行工作集），归档里却如实记成"未实测"。本轮全部改回判据原文的规模，耗时远低于预期（100 万行 10.6 s），**缩水的理由当初站不住** |
 
 **P1-A7 人工验收清单（待执行）**
