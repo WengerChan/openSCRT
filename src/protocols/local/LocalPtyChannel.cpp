@@ -401,7 +401,6 @@ void LocalPtyChannel::startReader() {
             }
             size = static_cast<std::size_t>(read);
             {
-                DWORD child_state = 0;
                 const BOOL alive =
                     WaitForSingleObject(platform_->process.hProcess, 0) == WAIT_TIMEOUT;
                 DWORD child_code = 0;
