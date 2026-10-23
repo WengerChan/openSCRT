@@ -77,7 +77,10 @@ class TerminalRenderer {
     [[nodiscard]] QColor resolve(const terminal::Cell& cell, bool foreground) const;
 
     terminal::ScreenGrid* grid_;
-    terminal::RingScrollbackBuffer* scrollback_;
+    // Kept for the scrollback view (P1-T12). Nothing reads it yet, and clang's
+    // -Wunused-private-field is part of the warning set, so the intent is stated here rather
+    // than left for someone to guess at.
+    [[maybe_unused]] terminal::RingScrollbackBuffer* scrollback_;
     GlyphAtlas atlas_;
     Theme theme_;
     QImage backbuffer_;
