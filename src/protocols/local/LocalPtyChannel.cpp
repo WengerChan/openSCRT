@@ -1,8 +1,10 @@
 #include "protocols/local/LocalPtyChannel.h"
 
 #include <cerrno>
+#include <chrono>
 #include <cstdlib>
 #include <memory>
+#include <thread>
 #include <utility>
 
 #if defined(_WIN32)
@@ -306,6 +308,18 @@ void LocalPtyChannel::startReader() {
 
             std::size_t size = 0;
 #if defined(_WIN32)
+            // PeekNamedPipe reports what is waiting without blocking, which is what the
+            // POSIX branch gets from poll. A blocking ReadFile would leave the thread
+            // stuck in the kernel when the channel is disconnected, and the join in
+            // stopReader() would then never return.
+            DWORD available = 0;
+            if (!PeekNamedPipe(platform_->output_read, nullptr, 0, nullptr, &available, nullptr)) {
+                break;  // The pipe is gone: the console is closed.
+            }
+            if (available == 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                continue;
+            }
             DWORD read = 0;
             if (!ReadFile(platform_->output_read, buffer, sizeof(buffer), &read, nullptr) ||
                 read == 0) {
