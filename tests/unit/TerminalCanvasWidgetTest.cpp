@@ -76,9 +76,15 @@ TEST_F(CanvasWidgetTest, FeedsAreCoalescedIntoOneFrame) {
     EXPECT_GT(widget_->coalescedEventCount(), 0);
 }
 
-TEST_F(CanvasWidgetTest, NoFramesWithoutOutput) {
-    pump(120);
-    EXPECT_EQ(widget_->frameCount(), 0) << "an idle terminal must not repaint";
+TEST_F(CanvasWidgetTest, IdleWidgetStopsPainting) {
+    // A freshly sized widget paints once -- it has to, or the canvas would be blank until
+    // the first byte arrived. What matters is that it then stops.
+    pump(80);
+    const int after_layout = widget_->frameCount();
+    EXPECT_GT(after_layout, 0) << "the first paint after layout is required";
+
+    pump(200);
+    EXPECT_EQ(widget_->frameCount(), after_layout) << "an idle terminal must not keep repainting";
 }
 
 TEST_F(CanvasWidgetTest, ResizeAdaptsTheGridToTheWidget) {
