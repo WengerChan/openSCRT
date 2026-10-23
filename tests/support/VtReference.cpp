@@ -19,11 +19,14 @@ namespace openscrt::test {
 namespace {
 
 using openscrt::terminal::Cell;
-using openscrt::terminal::cellattr;
 using openscrt::terminal::ColorRgba;
 using openscrt::terminal::makeRgba;
 using openscrt::terminal::paletteColor;
 using openscrt::terminal::ScreenGrid;
+
+// A namespace alias, not a using-declaration: C++ does not allow a using-declaration to
+// name a namespace.
+namespace cellattr = openscrt::terminal::cellattr;
 
 // popen is spelled _popen on MSVC, and the undecorated name is deprecated there: with /WX
 // it would be a compile error, not a warning.
@@ -446,8 +449,10 @@ std::string renderWithTmux(const std::vector<std::uint8_t>& bytes, int rows, int
     }
 
     // tmux processes the input asynchronously, so the capture has to wait for the pane to
-    // settle. Three identical captures in a row means it stopped changing.
-    std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    // settle. Three identical captures in a row means it stopped changing. The first wait
+    // is generous on purpose: without it, two empty captures in a row would look like a
+    // pane that had settled before tmux had processed anything.
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
     std::string previous;
     int stable = 0;
     for (int attempt = 0; attempt < 60 && stable < 3; ++attempt) {
