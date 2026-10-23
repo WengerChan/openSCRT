@@ -76,7 +76,9 @@ def main():
     q, offset = read_bigint(blob, offset)
     p, offset = read_bigint(blob, offset)
 
-    public_blob = b"ssh-rsa" + mpint(exponent) + mpint(modulus)
+    # The public key blob starts with the algorithm name as a length-prefixed string.
+    # That is what an authorized_keys line carries, and what libssh exports.
+    public_blob = struct.pack(">I", 7) + b"ssh-rsa" + mpint(exponent) + mpint(modulus)
     print(f"key type: {key_type}")
     print(f"modulus: {len(modulus)} bytes, exponent: {int.from_bytes(exponent, 'big')}")
     print(f"plain length field: {plain_len}")

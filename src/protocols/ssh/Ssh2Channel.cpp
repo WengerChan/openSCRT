@@ -1,10 +1,10 @@
 #include "protocols/ssh/Ssh2Channel.h"
 
-#include "protocols/ssh/SshComKey.h"
-
 #include <libssh/libssh.h>
 
 #include <utility>
+
+#include "protocols/ssh/SshComKey.h"
 
 namespace openscrt::protocols::ssh {
 namespace {
@@ -74,8 +74,8 @@ bool Ssh2Channel::authenticate(Session& session, std::string& error) {
         if (isSshComKeyFile(options_.private_key_path)) {
             SshComRsaKey com_key;
             std::string read_error;
-            if (readSshComKeyFile(options_.private_key_path, options_.private_key_passphrase, com_key,
-                                  read_error)) {
+            if (readSshComKeyFile(options_.private_key_path, options_.private_key_passphrase,
+                                  com_key, read_error)) {
                 converted = toOpenSshPrivateKey(com_key);
             } else {
                 error = "could not read the ssh.com private key: " + read_error;
@@ -89,11 +89,11 @@ bool Ssh2Channel::authenticate(Session& session, std::string& error) {
         // old ssh_pki_import_privkey_file(session, ...) signature is gone.
         const int imported =
             converted.empty()
-                ? ssh_pki_import_privkey_file(
-                      options_.private_key_path.c_str(),
-                      options_.private_key_passphrase.empty() ? nullptr
-                                                              : options_.private_key_passphrase.c_str(),
-                      nullptr, nullptr, &session.private_key)
+                ? ssh_pki_import_privkey_file(options_.private_key_path.c_str(),
+                                              options_.private_key_passphrase.empty()
+                                                  ? nullptr
+                                                  : options_.private_key_passphrase.c_str(),
+                                              nullptr, nullptr, &session.private_key)
                 : ssh_pki_import_privkey_base64(converted.c_str(), nullptr, nullptr, nullptr,
                                                 &session.private_key);
         if (imported == SSH_OK && session.private_key != nullptr) {
