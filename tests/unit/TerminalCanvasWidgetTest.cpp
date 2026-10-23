@@ -5,8 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include <QApplication>
 #include <QCoreApplication>
-#include <QGuiApplication>
 #include <QtGlobal>
 #include <chrono>
 #include <string>
@@ -18,13 +18,15 @@
 namespace openscrt::ui {
 namespace {
 
-const QGuiApplication& application() {
-    static QGuiApplication* instance = [] {
+// QWidget requires QApplication, not QGuiApplication: creating a widget under a plain
+// QGuiApplication aborts the process.
+const QApplication& application() {
+    static QApplication* instance = [] {
         qputenv("QT_QPA_PLATFORM", "offscreen");
         static int argc = 1;
         static char name[] = "openscrt-widget-tests";
         static char* argv[] = {name, nullptr};
-        return new QGuiApplication(argc, argv);
+        return new QApplication(argc, argv);
     }();
     return *instance;
 }
