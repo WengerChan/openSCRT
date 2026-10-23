@@ -1,6 +1,5 @@
 #include "protocols/ssh/Ssh2Channel.h"
 
-#include <libssh/callbacks.h>
 #include <libssh/libssh.h>
 
 #include <utility>
@@ -9,6 +8,8 @@ namespace openscrt::protocols::ssh {
 namespace {
 
 constexpr std::size_t kReadChunk = 8192;
+// How long the reader waits for data before checking the stop flag again.
+constexpr int kPollTimeoutMs = 100;
 
 }  // namespace
 
@@ -16,17 +17,19 @@ struct Ssh2Channel::Session {
     ssh_session session{nullptr};
     ssh_channel channel{nullptr};
     ssh_key private_key{nullptr};
-    int port{22};
-    // libssh keeps the pointer for SSH_OPTIONS_PORT, so the value has to outlive the
-    // option_set call and the connect.
-    long timeout{15};
+    // libssh keeps the pointer for SSH_OPTIONS_PORT and SSH_OPTIONS_TIMEOUT, so the values
+    // have to outlive the option_set calls and the connect. Their types are fixed by
+    // libssh's options struct: uint16_t for the port, unsigned long for the timeout.
+    std::uint16_t port{22};
+    unsigned long timeout{15};
+    int strict_host_key_check{0};
 };
 
 Ssh2Channel::Ssh2Channel(SshConnectionOptions options)
     : options_(std::move(options)), ring_(64 * 1024) {
     session_ = std::make_unique<Session>();
-    session_->port = options_.port;
-    session_->timeout = options_.timeout_seconds;
+    session_->port = static_cast<std::uint16_t>(options_.port);
+    session_->timeout = static_cast<unsigned long>(options_.timeout_seconds);
 }
 
 Ssh2Channel::~Ssh2Channel() {
@@ -53,11 +56,14 @@ bool Ssh2Channel::authenticate(Session& session, std::string& error) {
 
     // Public key first: it is the only method that works unattended.
     if (!password_only && !options_.private_key_path.empty()) {
-        session.private_key = ssh_pki_import_privkey_file(
-            session.session, options_.private_key_path.c_str(),
+        // libssh 0.11 takes the file name and writes the key through an out-parameter; the
+        // old ssh_pki_import_privkey_file(session, ...) signature is gone.
+        const int imported = ssh_pki_import_privkey_file(
+            options_.private_key_path.c_str(),
             options_.private_key_passphrase.empty() ? nullptr
-                                                    : options_.private_key_passphrase.c_str());
-        if (session.private_key != nullptr) {
+                                                    : options_.private_key_passphrase.c_str(),
+            nullptr, nullptr, &session.private_key);
+        if (imported == SSH_OK && session.private_key != nullptr) {
             if (ssh_userauth_publickey(session.session, nullptr, session.private_key) ==
                 SSH_AUTH_SUCCESS) {
                 return true;
@@ -75,12 +81,23 @@ bool Ssh2Channel::authenticate(Session& session, std::string& error) {
         }
     }
 
-    if (!key_only && !password_only) {
-        // Keyboard-interactive is how most two-factor setups answer; the prompt text is
-        // ignored because the credential comes from options_.
-        if (ssh_userauth_keyboard_interactive(session.session, nullptr, nullptr) ==
-            SSH_AUTH_SUCCESS) {
-            return true;
+    if (!key_only && !password_only && !keyboard_only) {
+        // Keyboard-interactive is how most two-factor setups answer. libssh 0.11 replaced the
+        // one-shot ssh_userauth_keyboard_interactive with a request/answer exchange:
+        // ask for the prompts, fill them in, then send the answers.
+        if (ssh_userauth_kbdint(session.session, nullptr, nullptr) == SSH_AUTH_SUCCESS) {
+            const int prompts = ssh_userauth_kbdint_getnprompts(session.session);
+            for (int index = 0; index < prompts; ++index) {
+                char echo = 0;
+                static_cast<void>(ssh_userauth_kbdint_getprompt(
+                    session.session, static_cast<unsigned int>(index), &echo));
+                ssh_userauth_kbdint_setanswer(session.session, static_cast<unsigned int>(index),
+                                              options_.password.c_str());
+            }
+            // The second call is what actually transmits the answers.
+            if (ssh_userauth_kbdint(session.session, nullptr, nullptr) == SSH_AUTH_SUCCESS) {
+                return true;
+            }
         }
     }
 
@@ -113,14 +130,11 @@ TransportResult Ssh2Channel::connectAsync() {
     ssh_options_set(session.session, SSH_OPTIONS_USER,
                     options_.user.empty() ? nullptr : options_.user.c_str());
     ssh_options_set(session.session, SSH_OPTIONS_PORT, &session.port);
-    // libssh 0.10 changed SSH_OPTIONS_TIMEOUT from int* to long*.
-#if LIBSSH_VERSION_MAJOR > 0 || LIBSSH_VERSION_MINOR >= 10
     ssh_options_set(session.session, SSH_OPTIONS_TIMEOUT, &session.timeout);
-#else
-    int timeout = static_cast<int>(session.timeout);
-    ssh_options_set(session.session, SSH_OPTIONS_TIMEOUT, &timeout);
-#endif
-    ssh_options_set(session.session, SSH_OPTIONS_STRICTHOSTKEYCHECK, "no");
+    // The host key manager lands in Phase 4 (P4-T8). Until then the host key is not
+    // verified, which is stated here rather than left as a silent default.
+    ssh_options_set(session.session, SSH_OPTIONS_STRICTHOSTKEYCHECK,
+                    &session.strict_host_key_check);
 
     const int connected = ssh_connect(session.session);
     if (connected != SSH_OK) {
@@ -188,29 +202,30 @@ void Ssh2Channel::startReader() {
                     break;
                 }
             }
-            const int count = ssh_channel_read(session.channel, buffer, sizeof(buffer));
-            if (count > 0) {
-                ring_.write(buffer, static_cast<std::size_t>(count));
-                DataCallback callback;
-                {
-                    std::lock_guard<std::mutex> lock(callback_mutex_);
-                    callback = data_callback_;
-                }
-                if (callback) {
-                    callback(buffer, static_cast<std::size_t>(count));
-                }
-                readable_.notify_all();
-                continue;
+            // poll_timeout blocks for a bounded interval, so the reader notices a stop
+            // request without spinning. libssh 0.11 has no SSH_STATUS_* enum; the poll
+            // return value is the only signal.
+            const int ready = ssh_channel_poll_timeout(session.channel, kPollTimeoutMs, 0);
+            if (ready < 0) {
+                break;  // EOF or error: the remote closed the channel.
             }
-            if (count < 0) {
-                const int status = ssh_get_status(session.channel);
-                if (status == SSH_STATUS_TIMEOUT) {
-                    continue;  // No data yet; check the stop flag and try again.
-                }
-                break;  // EOF or error.
+            if (ready == 0) {
+                continue;  // Timed out; check the stop flag and wait again.
             }
-            // count == 0 means the remote closed the channel.
-            break;
+            const int count = ssh_channel_read(session.channel, buffer, sizeof(buffer), 0);
+            if (count <= 0) {
+                break;
+            }
+            ring_.write(buffer, static_cast<std::size_t>(count));
+            DataCallback callback;
+            {
+                std::lock_guard<std::mutex> lock(callback_mutex_);
+                callback = data_callback_;
+            }
+            if (callback) {
+                callback(buffer, static_cast<std::size_t>(count));
+            }
+            readable_.notify_all();
         }
         state_.store(TransportState::kDisconnected);
         readable_.notify_all();
@@ -261,7 +276,7 @@ void Ssh2Channel::send(const std::uint8_t* data, std::size_t size) {
     if (session.channel == nullptr) {
         return;
     }
-    ssh_channel_write(session.channel, data, static_cast<unsigned int>(size));
+    ssh_channel_write(session.channel, data, static_cast<std::uint32_t>(size));
 }
 
 void Ssh2Channel::send(std::string_view text) {
