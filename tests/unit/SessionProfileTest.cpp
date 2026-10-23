@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include <memory>
 #include <string>
 
 #include "config/SessionProfile.h"
