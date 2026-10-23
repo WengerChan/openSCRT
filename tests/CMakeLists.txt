@@ -60,6 +60,11 @@ openscrt_add_test(unit_terminal_renderer
 set_tests_properties(unit_terminal_renderer PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+openscrt_add_test(unit_ssh2_channel
+    LABEL unit
+    SOURCES unit/Ssh2ChannelTest.cpp
+    LIBS openscrt_protocols)
+
 openscrt_add_test(unit_local_pty_channel
     LABEL unit
     SOURCES unit/LocalPtyChannelTest.cpp

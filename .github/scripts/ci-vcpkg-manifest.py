@@ -30,8 +30,10 @@ SKIP = {
     "qtbase": "Qt6 comes from install-qt-action; a vcpkg qtbase build is hours",
     "qtserialport": "same Qt prebuilt package as qtbase",
     "pybind11": "pulls vcpkg's `python3`, a CPython source build worth +20 min (Phase 5)",
-    "libssh": "not linked yet -- the SSH transport lands in Phase 1",
-    "openssl": "not linked yet -- KDBX/crypto lands in Phase 2-3; heaviest MSVC build",
+    # libssh is no longer skipped: P1-T11 links it. vcpkg pulls openssl in as a transitive
+    # dependency of libssh, so openssl still gets built even though nothing links it
+    # directly -- that is the cost the D4 contract accepts when a phase starts using a port.
+    "openssl": "not linked directly -- KDBX/crypto lands in Phase 2-3; built as libssh's dependency",
     "nlohmann-json": "not linked yet -- session config persistence (src/config) lands in Phase 1",
     "pugixml": "not linked yet -- SecureCrtConfigImporter XML parsing lands in Phase 2",
     "zlib": "not linked yet -- transfer compression lands in Phase 3",
