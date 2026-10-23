@@ -19,9 +19,9 @@ Milestones and task breakdown live in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPM
 | macOS | macOS 12 or later (Qt 6.8 requirement) |
 | Linux | glibc 2.34 or later, a Wayland or X11 session |
 
-The 0.1.x releases are **command-line programs with no window**: running the binary prints its
-version and exits. The Qt workspace shell arrives in Phase 1 (P1-T12) and the first release
-with a window is not cut yet.
+The 0.1.0 and 0.1.1 releases are **command-line programs with no window**: running the binary
+prints its version and exits. **0.1.2 is the first release with a window** — it carries the Qt
+workspace shell (P1-T12) and the working local shell channel.
 
 ## Installing
 
@@ -38,17 +38,17 @@ git tag v0.1.0 && git push origin v0.1.0
 | `openSCRT-<version>-windows-x64.msi` | Double-click. Per-machine install to `%ProgramFiles%\openSCRT` with an uninstall entry in Add/Remove Programs. The installer does not touch `PATH` — add `%ProgramFiles%\openSCRT\bin` yourself if you want the command on `PATH`. |
 | `openSCRT-<version>-windows-x64-portable.zip` | Unzip anywhere, run `bin\openscrt.exe`. No installer, no admin rights. |
 
-Both bundle every DLL the binary imports (`libsodium`, the UCRT forwarders, and — once the Qt
-shell lands — the Qt runtime), so neither needs Qt installed. Verify a download against the
+Both bundle every DLL the binary imports (`libsodium`, the UCRT forwarders, and the Qt runtime
+the window needs), so neither needs Qt installed. Verify a download against the
 `SHA256SUMS.txt` attached to the release. Packaging lives in
 [`.github/workflows/release.yml`](.github/workflows/release.yml) and verifies itself before
 uploading: the staged exe must report its version, and the MSI is unpacked with `msiexec /a` and
 the extracted binary is run.
 
-**The 0.1.x binaries are the Phase 0 CLI bootstrap** — `openscrt --version` prints the linked
-module versions. There is no window yet, so double-clicking `openscrt.exe` shows a short message
-explaining that instead of a console that flashes and closes. The Qt workspace shell arrives in
-P1-T12 (DEVELOPMENT_PLAN).
+**0.1.0 and 0.1.1 are the Phase 0 CLI bootstrap** — `openscrt --version` prints the linked
+module versions. There is no window in them, so double-clicking `openscrt.exe` shows a short
+message explaining that instead of a console that flashes and closes. **0.1.2 opens the window**:
+start it, then `File → New Session (Quick Connect)...` to reach a server, or open a local shell.
 
 ## Building
 

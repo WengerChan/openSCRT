@@ -244,6 +244,68 @@ P1-A3、A4、A5 三条判据都长期跑在缩水的规模上：解析 2 万行�
 > 判据里没被任何测试覆盖的那一项（例如"内存增长 ≤256MB"），先问"这一项有人测过吗"。
 > 归档里最容易被漏掉的不是测错的值，而是**根本没测的那一栏**。
 
+## 第三轮：Windows 本地 shell 通道零输出的 4 轮定位（第三轮 · 2026-10-24）
+
+### 8.1 子进程的输出出现在 CI 日志里，是被忽略的关键信号
+
+**症状**：Windows 上本地 shell 通道（P1-T10）从头到尾没有任何输出。`LocalPtyChannelTest`
+的 5 条用例全红，`MainWindowTest.ALocalShellSessionRunsACommandOnTheScreen` 也红；
+POSIX 端全绿。
+
+**定位过程**（每轮只改一处，各跑一轮 CI）：
+
+| 轮次 | 改动 | 结果 |
+| :--- | :--- | :--- |
+| 1 | 加探针：dump ConPTY 输出管道收到的字节 | 只收到 console host 的 63 字节初始帧（`ESC[2J ESC[m ESC[H` + 标题 + `ESC[?25h`），此后永远为空 |
+| 2 | 加探针：子进程是否存活、退出码 | `child alive=0 exit=0`——cmd.exe **立刻**以 0 退出 |
+| 3 | 加探针：输入写是否落地 | 写入成功（`written=11`），但没有任何回显 |
+| 4 | 回头看 CI 日志本身 | **cmd.exe 的横幅和提示符出现在 CI 日志里** |
+
+第 4 条才是根因所在，而且它一直在眼前：**横幅 `Microsoft Windows [Version ...]` 和
+提示符 `D:\a\openSCRT\...\tests>` 都被 CI 日志收走了**。也就是说 cmd.exe 的 stdout 是
+**父进程继承来的标准句柄**（runner 的日志管道），它的 stdin 是父进程的 stdin（早已 EOF），
+于是它打印完横幅、读到一个 EOF、以 0 退出。
+
+**结论**：通道根本没接上，不是"接上了但没数据"。"没有数据"有无穷多种原因，
+"数据去了别处"只有一个原因。
+
+**三次猜错**：
+
+1. 猜"管道句柄要可继承、且要在 `CreateProcess` 之后才释放"——照官方文档改，**症状完全不变**。
+2. 猜"子进程没 attach 上，是 console host 拿不到管道"——同样**症状完全不变**。
+3. 最后一轮去读参考实现（Windows Terminal 的 `src/cascadia/TerminalConnection/ConptyConnection.cpp`），
+   答案就一行：
+
+   ```cpp
+   STARTUPINFOEX siEx{ 0 };
+   siEx.StartupInfo.cb = sizeof(STARTUPINFOEX);
+   siEx.StartupInfo.dwFlags = STARTF_USESTDHANDLES;   // ← 关键
+   ```
+
+   不设 `STARTF_USESTDHANDLES`，子进程就**继承父进程的标准句柄**；设了它且三个句柄留空，
+   子进程才会去用伪控制台的句柄。
+
+**验证**：加上这一行之后，run `#39995159095` 的 `unit_local_pty_channel` 从"5 条用例各超时
+5 秒全红"变成 **0.33 秒全绿**（命令输出真的回到了通道里），Windows / macOS / Linux 三条
+腿加格式检查，4 个 job 全绿。
+
+### 8.2 Win32 的默认行为不能靠记忆
+
+`CreateProcess` 有七个参数，每个都有"不传时的默认行为"，再乘上 `STARTUPINFO` 的标志位组合，
+凭记忆推断出来的行为**必然出错**。本次连错两轮（句柄继承属性、释放时机），第三轮靠读
+参考实现一次读对。**先找官方 sample 或参考实现，再写代码。**
+
+### 8.3 假设要写成一次能判定的实验，而不是一次一改
+
+前三轮都是"改一处 → 跑一轮 CI → 看日志 → 再猜"，每轮 10 分钟。第四轮改成：
+**四种 spawn 形状并排跑一次**（不设标志 / 设 `STARTF_USESTDHANDLES` 留空 / 用管道直通 /
+临时清空父进程自己的标准句柄），每种形状报告"子进程输出有没有经过控制台"。
+一次 CI 就能把候选空间全部覆盖，代价是写一个临时矩阵测试。
+
+**顺带修正的一条认知**：`CreatePseudoConsole` 成功、`UpdateProcThreadAttribute` 成功、
+`CreateProcess` 成功——**三者都不代表子进程 attach 成功**。这个失败是完全静默的：
+没有错误码，没有对话框，子进程只是安安静静地用继承来的句柄跑起来了。
+
 ---
 
 ## 落到 CI 上的自动化防线

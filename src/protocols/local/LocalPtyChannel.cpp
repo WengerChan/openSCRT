@@ -2,7 +2,6 @@
 
 #include <cerrno>
 #include <chrono>
-#include <cstdio>
 #include <cstdlib>
 #include <memory>
 #include <thread>
@@ -406,15 +405,8 @@ void LocalPtyChannel::startReader() {
             // stopReader() would then never return.
             DWORD available = 0;
             if (!PeekNamedPipe(platform_->output_read, nullptr, 0, nullptr, &available, nullptr)) {
-                std::fprintf(stderr, "[probe] PeekNamedPipe failed: %lu\n",
-                             static_cast<unsigned long>(GetLastError()));
                 break;  // The pipe is gone: the console is closed.
             }
-            if (available > 0) {
-                std::fprintf(stderr, "[probe] %lu bytes waiting\n",
-                             static_cast<unsigned long>(available));
-            }
-            (void)0;
             if (available == 0) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
                 continue;
@@ -422,35 +414,9 @@ void LocalPtyChannel::startReader() {
             DWORD read = 0;
             if (!ReadFile(platform_->output_read, buffer, sizeof(buffer), &read, nullptr) ||
                 read == 0) {
-                std::fprintf(stderr, "[probe] read failed: %lu\n",
-                             static_cast<unsigned long>(GetLastError()));
                 break;
             }
             size = static_cast<std::size_t>(read);
-            {
-                const BOOL alive =
-                    WaitForSingleObject(platform_->process.hProcess, 0) == WAIT_TIMEOUT;
-                DWORD child_code = 0;
-                if (!alive) {
-                    GetExitCodeProcess(platform_->process.hProcess, &child_code);
-                }
-                std::fprintf(stderr, "[probe] child alive=%d exit=%lu\n", alive ? 1 : 0,
-                             static_cast<unsigned long>(child_code));
-            }
-            {
-                std::fprintf(stderr, "[probe] read %zu bytes: ", size);
-                for (std::size_t i = 0; i < size && i < 80; ++i) {
-                    const unsigned char byte = buffer[i];
-                    if (byte == 0x1B) {
-                        std::fprintf(stderr, "<ESC>");
-                    } else if (byte >= 0x20 && byte < 0x7F) {
-                        std::fprintf(stderr, "%c", byte);
-                    } else {
-                        std::fprintf(stderr, "<%02X>", byte);
-                    }
-                }
-                std::fprintf(stderr, "\n");
-            }
 #else
             pollfd descriptor{platform_->master, POLLIN, 0};
             const int ready = poll(&descriptor, 1, 200);
@@ -514,6 +480,10 @@ TransportResult LocalPtyChannel::disconnect() {
         return TransportResult{true, {}};
     }
 #if defined(_WIN32)
+    // The reader is stopped before its handles are closed. Closing them underneath a
+    // thread that is polling the pipe makes the poll fail with an invalid handle, and
+    // the reader gives up before it has taken the last bytes out of the console.
+    stopReader();
     if (platform_->input_write != INVALID_HANDLE_VALUE) {
         CloseHandle(platform_->input_write);
         platform_->input_write = INVALID_HANDLE_VALUE;
@@ -527,8 +497,8 @@ TransportResult LocalPtyChannel::disconnect() {
         ::close(platform_->master);
         platform_->master = -1;
     }
-#endif
     stopReader();
+#endif
 #if defined(_WIN32)
     if (platform_->pseudo_console != nullptr) {
         conPty().close(platform_->pseudo_console);
@@ -594,10 +564,9 @@ void LocalPtyChannel::send(const std::uint8_t* data, std::size_t size) {
     // The console reads the input as a byte stream of key presses. Microsoft's own ConPTY
     // sample writes plain bytes into this pipe, so that is what the console expects.
     DWORD written = 0;
-    const BOOL sent =
-        WriteFile(platform_->input_write, data, static_cast<DWORD>(size), &written, nullptr);
-    std::fprintf(stderr, "[probe] sent %zu bytes: ok=%d written=%lu err=%lu\n", size, sent ? 1 : 0,
-                 static_cast<unsigned long>(written), static_cast<unsigned long>(GetLastError()));
+    // A short write means the console's input queue was full; the rest of the input is
+    // dropped, the same as any terminal whose input queue is full.
+    WriteFile(platform_->input_write, data, static_cast<DWORD>(size), &written, nullptr);
 #else
     if (platform_->master < 0) {
         return;

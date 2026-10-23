@@ -100,14 +100,6 @@ openscrt_add_test(unit_local_pty_channel
     SOURCES unit/LocalPtyChannelTest.cpp
     LIBS openscrt_protocols)
 
-# Temporary diagnostic (2026-10-24): finds the spawn shape that attaches the child to the
-# pseudoconsole on the Windows runner. Windows only, and deleted once the shape is known.
-if(WIN32)
-openscrt_add_test(unit_conpty_spawn_matrix
-    LABEL unit
-    SOURCES unit/ConPtySpawnMatrixTest.cpp)
-endif()
-
 openscrt_add_test(unit_damage_tracker
     LABEL unit
     SOURCES unit/DamageTrackerTest.cpp
