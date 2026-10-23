@@ -24,6 +24,21 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# The Windows floor, as a compile-time contract.
+#
+# The product's floor is Windows 10 1809 (build 17763): the Qt libraries in the package
+# import kernel32 exports that older systems do not export, so a package built today cannot
+# start on anything older. Declaring the floor here means a call to something newer fails to
+# compile instead of quietly raising the floor for every user of the package -- and CI can
+# never notice that on its own, because the runner is newer than every system we support.
+#
+# Our own code is kept clean down to 1607, so that a Qt with a lower floor would lower the
+# product's floor with it. The import table gate in CI measures that instead of trusting
+# this declaration: a declaration says what we believe, the import table says what we built.
+if(MSVC)
+    add_compile_definitions(WINVER=0x0A04 _WIN32_WINNT=0x0A04)
+endif()
+
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()

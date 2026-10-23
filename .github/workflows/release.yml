@@ -512,6 +512,15 @@ jobs:
           body: |
             Windows build of openSCRT.
 
+            **The 0.1.x releases are command-line programs with no window.** Double-clicking
+            the binary prints a message and exits; there is no GUI to interact with yet. The
+            Qt workspace shell is in development (Phase 1, P1-T12), and the first release
+            that opens a window has not been cut.
+
+            Requires Windows 10 1809 or later: the Qt runtime in the package imports
+            kernel32 exports that older systems do not export, and the loader stops the
+            program before it can say so itself.
+
             | Artifact | Install |
             | --- | --- |
             | `openSCRT-<version>-windows-x64.msi` | Double-click. Installs per-machine to `%ProgramFiles%\openSCRT` with an uninstall entry in Add/Remove Programs. The installer does not touch `PATH`; add `%ProgramFiles%\openSCRT\bin` yourself if you want the command on it. |

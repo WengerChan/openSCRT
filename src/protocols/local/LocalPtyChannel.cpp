@@ -2,6 +2,7 @@
 
 #include <cerrno>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <memory>
 #include <thread>
@@ -92,6 +93,64 @@ bool hasTermEnv() {
 
 #if defined(_WIN32)
 
+namespace {
+
+// The three ConPTY entry points, resolved at run time.
+//
+// CreatePseudoConsole, ResizePseudoConsole and ClosePseudoConsole only exist from
+// Windows 10 1809. Calling them directly puts them in the program's import table, and a
+// machine without them then dies in the loader -- before main(), with a dialog that says
+// "the procedure entry point ... could not be located" and nothing else. Resolving them
+// here keeps the program startable everywhere: on an older system the local shell reports
+// that it needs a newer Windows, and the rest of the application still runs.
+//
+// The floor this leaves behind is not ours to decide alone: the Qt libraries in the
+// package import symbols of their own. See the import table gate in CI, which measures
+// the real floor rather than trusting a documented one.
+struct ConPtyApi {
+    HRESULT (*create)(COORD, HANDLE, HANDLE, DWORD, HPCON*) = nullptr;
+    HRESULT (*resize)(HPCON, COORD) = nullptr;
+    void (*close)(HPCON) = nullptr;
+    bool available{false};
+};
+
+// MSVC warns when a FARPROC is cast to a differently typed function pointer, and the
+// project builds with warnings as errors. Converting through a union says the same thing
+// without the cast the warning is about.
+template <typename Function>
+Function resolve(HMODULE module, const char* name) {
+    union {
+        FARPROC generic;
+        Function specific;
+    } converter;
+    converter.generic = ::GetProcAddress(module, name);
+    return converter.specific;
+}
+
+const ConPtyApi& conPty() {
+    static const ConPtyApi api = [] {
+        ConPtyApi result;
+        // kernel32.dll is a known DLL, so it is always the one in System32; asking for it
+        // by name with the system32 search says so explicitly rather than relying on it.
+        HMODULE kernel32 = ::LoadLibraryExW(L"kernel32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (kernel32 == nullptr) {
+            kernel32 = ::GetModuleHandleW(L"kernel32.dll");
+        }
+        if (kernel32 == nullptr) {
+            return result;
+        }
+        result.create = resolve<decltype(result.create)>(kernel32, "CreatePseudoConsole");
+        result.resize = resolve<decltype(result.resize)>(kernel32, "ResizePseudoConsole");
+        result.close = resolve<decltype(result.close)>(kernel32, "ClosePseudoConsole");
+        result.available =
+            result.create != nullptr && result.resize != nullptr && result.close != nullptr;
+        return result;
+    }();
+    return api;
+}
+
+}  // namespace
+
 struct LocalPtyChannel::Platform {
     // We write to input_write; the child's stdin reads from it.
     HANDLE input_write{INVALID_HANDLE_VALUE};
@@ -149,6 +208,12 @@ TransportResult LocalPtyChannel::connectAsync() {
     // ConPTY: the child attaches to a pseudo console, and the two ends of the pipe are the
     // parent's stdin and stdout. This is what makes PowerShell, cmd and WSL behave like a
     // real console instead of a redirected pipe.
+    if (!conPty().available) {
+        setState(TransportState::kFailed,
+                 "the local shell needs Windows 10 1809 or later: this system has no ConPTY");
+        return TransportResult{
+            false, "the local shell needs Windows 10 1809 or later: this system has no ConPTY"};
+    }
     HANDLE input_read = INVALID_HANDLE_VALUE;
     HANDLE output_write = INVALID_HANDLE_VALUE;
     if (!CreatePipe(&input_read, &platform_->input_write, nullptr, 0) ||
@@ -161,7 +226,7 @@ TransportResult LocalPtyChannel::connectAsync() {
     size.X = static_cast<SHORT>(options_.initial_size.columns);
     size.Y = static_cast<SHORT>(options_.initial_size.rows);
     const HRESULT created =
-        CreatePseudoConsole(size, input_read, output_write, 0, &platform_->pseudo_console);
+        conPty().create(size, input_read, output_write, 0, &platform_->pseudo_console);
     CloseHandle(input_read);
     CloseHandle(output_write);
     if (FAILED(created)) {
@@ -178,7 +243,7 @@ TransportResult LocalPtyChannel::connectAsync() {
     // UpdateProcThreadAttribute fail -- which is exactly what it did here, so the local
     // shell channel never started on Windows at all.
     if (!InitializeProcThreadAttributeList(attributes, 1, 0, &attribute_size)) {
-        ClosePseudoConsole(platform_->pseudo_console);
+        conPty().close(platform_->pseudo_console);
         platform_->pseudo_console = nullptr;
         setState(TransportState::kFailed, "InitializeProcThreadAttributeList failed");
         return TransportResult{false, "InitializeProcThreadAttributeList failed"};
@@ -186,7 +251,7 @@ TransportResult LocalPtyChannel::connectAsync() {
     if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
                                    platform_->pseudo_console, sizeof(HPCON), nullptr, nullptr)) {
         DeleteProcThreadAttributeList(attributes);
-        ClosePseudoConsole(platform_->pseudo_console);
+        conPty().close(platform_->pseudo_console);
         platform_->pseudo_console = nullptr;
         setState(TransportState::kFailed, "UpdateProcThreadAttribute failed");
         return TransportResult{false, "UpdateProcThreadAttribute failed"};
@@ -213,7 +278,7 @@ TransportResult LocalPtyChannel::connectAsync() {
                        &startup.StartupInfo, &platform_->process);
     DeleteProcThreadAttributeList(attributes);
     if (!created_process) {
-        ClosePseudoConsole(platform_->pseudo_console);
+        conPty().close(platform_->pseudo_console);
         platform_->pseudo_console = nullptr;
         setState(TransportState::kFailed, "CreateProcess failed");
         return TransportResult{false, "CreateProcess failed"};
@@ -314,7 +379,13 @@ void LocalPtyChannel::startReader() {
             // stopReader() would then never return.
             DWORD available = 0;
             if (!PeekNamedPipe(platform_->output_read, nullptr, 0, nullptr, &available, nullptr)) {
+                std::fprintf(stderr, "[probe] PeekNamedPipe failed: %lu\n",
+                             static_cast<unsigned long>(GetLastError()));
                 break;  // The pipe is gone: the console is closed.
+            }
+            if (available > 0) {
+                std::fprintf(stderr, "[probe] %lu bytes waiting\n",
+                             static_cast<unsigned long>(available));
             }
             if (available == 0) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -406,7 +477,7 @@ TransportResult LocalPtyChannel::disconnect() {
     stopReader();
 #if defined(_WIN32)
     if (platform_->pseudo_console != nullptr) {
-        ClosePseudoConsole(platform_->pseudo_console);
+        conPty().close(platform_->pseudo_console);
         platform_->pseudo_console = nullptr;
     }
     if (platform_->process.hProcess != nullptr) {
@@ -466,19 +537,10 @@ void LocalPtyChannel::send(const std::uint8_t* data, std::size_t size) {
     if (platform_->input_write == INVALID_HANDLE_VALUE) {
         return;
     }
-    // The ConPTY reads its input as a UTF-16 stream of key presses, not as bytes.
-    // Writing UTF-8 straight into it hands the shell mojibake.
-    const int characters = MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const char*>(data),
-                                               static_cast<int>(size), nullptr, 0);
-    if (characters <= 0) {
-        return;
-    }
-    std::wstring wide(static_cast<std::size_t>(characters), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const char*>(data), static_cast<int>(size),
-                        wide.data(), characters);
+    // The console reads the input as a byte stream of key presses. Microsoft's own ConPTY
+    // sample writes plain bytes into this pipe, so that is what the console expects.
     DWORD written = 0;
-    WriteFile(platform_->input_write, wide.data(),
-              static_cast<DWORD>(wide.size() * sizeof(wchar_t)), &written, nullptr);
+    WriteFile(platform_->input_write, data, static_cast<DWORD>(size), &written, nullptr);
 #else
     if (platform_->master < 0) {
         return;
@@ -509,7 +571,7 @@ bool LocalPtyChannel::resizeWindow(const WindowSize& size) {
     COORD native{};
     native.X = static_cast<SHORT>(size.columns);
     native.Y = static_cast<SHORT>(size.rows);
-    return SUCCEEDED(ResizePseudoConsole(platform_->pseudo_console, native));
+    return SUCCEEDED(conPty().resize(platform_->pseudo_console, native));
 #else
     if (platform_->master < 0) {
         return false;

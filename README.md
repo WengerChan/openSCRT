@@ -11,6 +11,18 @@ A SecureCRT-alike terminal emulator written in C++20 and Qt6.
 
 Milestones and task breakdown live in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md).
 
+## System requirements
+
+| Platform | Requirement |
+| --- | --- |
+| Windows | **Windows 10 1809 (build 17763) or later.** The Qt runtime in the package imports kernel32 exports that older systems do not export, so the program does not start below that — the loader says so before `main()`, with no application message. The floor is measured from the built binaries' import tables by a CI gate, not taken from a document. |
+| macOS | macOS 12 or later (Qt 6.8 requirement) |
+| Linux | glibc 2.34 or later, a Wayland or X11 session |
+
+The 0.1.x releases are **command-line programs with no window**: running the binary prints its
+version and exits. The Qt workspace shell arrives in Phase 1 (P1-T12) and the first release
+with a window is not cut yet.
+
 ## Installing
 
 Releases are **tag-only**: pushes to `main` run tests, a `v*` tag additionally builds the Windows
