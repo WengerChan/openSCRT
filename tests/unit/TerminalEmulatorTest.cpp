@@ -187,6 +187,29 @@ TEST_F(EmulatorTest, SgrBackgroundTrueColourColonForm) {
     EXPECT_EQ(grid.at(0, 0).bg, makeRgba(1, 2, 3));
 }
 
+TEST_F(EmulatorTest, SgrTrueColourColonFormNeedsTheColourSpaceSlot) {
+    // The ITU T.416 spelling is 38:2:<colour-space>:r:g:b -- five components. The
+    // four-component 38:2:255:0:0 has no colour-space slot, so the colour space would
+    // have to eat the "255" and the sequence ends up one component short. xterm and tmux
+    // ignore it; reading it as "red" instead is what the differential test against tmux
+    // caught.
+    emulator.write(
+        "\x1B[38:2:255:0:0m"
+        "X");
+    EXPECT_TRUE(grid.at(0, 0).hasAttribute(cellattr::kDefaultFg));
+    EXPECT_TRUE(grid.at(0, 0).hasAttribute(cellattr::kDefaultBg));
+}
+
+TEST_F(EmulatorTest, SgrMalformedColourLeavesTheCurrentColourAlone) {
+    // The leftovers of a broken colour group must not fall through to the SGR loop: the
+    // "0" of 38;2;10 would otherwise be read as a reset.
+    emulator.write(
+        "\x1B[31m"
+        "\x1B[38;2;10m"
+        "X");
+    EXPECT_EQ(grid.at(0, 0).fg, paletteColor(1));
+}
+
 TEST_F(EmulatorTest, SgrResetRestoresDefaults) {
     emulator.write(
         "\x1B[1;31;44m"

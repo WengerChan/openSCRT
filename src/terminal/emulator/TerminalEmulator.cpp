@@ -466,32 +466,50 @@ void TerminalEmulator::applyGraphicRendition(const CsiSequence& sequence) {
 
             std::size_t components = selector_index + 1;
             if (isSubParam(sequence, selector_index)) {
-                while (components < params.size() && params[components] == kDefaultParam) {
+                if (selector == 2) {
+                    // The colon spelling of a direct colour is
+                    // 38:2:<colour-space>:r:g:b: the colour-space slot is always present
+                    // and may be empty. Consuming it is what makes the four-component
+                    // 38:2:255:0:0 invalid instead of silently meaning "red" -- xterm and
+                    // tmux both reject it, and the differential test against tmux is what
+                    // found the difference.
                     ++components;
+                } else {
+                    while (components < params.size() && params[components] == kDefaultParam) {
+                        ++components;
+                    }
                 }
             }
 
             ColorRgba resolved = 0;
             std::size_t consumed = 0;
+            bool valid = false;
             if (selector == 5 && components < params.size()) {
                 resolved = paletteColor(params[components]);
                 consumed = components - i;
+                valid = true;
             } else if (selector == 2 && components + 2 < params.size()) {
                 resolved =
                     makeRgba(clampToByte(params[components]), clampToByte(params[components + 1]),
                              clampToByte(params[components + 2]));
                 consumed = components + 2 - i;
+                valid = true;
+            } else {
+                // Malformed. The whole colour group is consumed and ignored, the way xterm
+                // ignores a sequence whose parameters do not add up. Letting the leftovers
+                // fall through to the SGR loop would turn the "0" of 38:2:255:0:0 into a
+                // reset, which is a different bug wearing the same costume.
+                consumed = params.size() - i;
             }
 
-            if (consumed == 0) {
-                continue;  // Malformed: leave the colour untouched.
-            }
-            if (foreground) {
-                style_.fg = resolved;
-                style_.setAttribute(cellattr::kDefaultFg, false);
-            } else {
-                style_.bg = resolved;
-                style_.setAttribute(cellattr::kDefaultBg, false);
+            if (valid) {
+                if (foreground) {
+                    style_.fg = resolved;
+                    style_.setAttribute(cellattr::kDefaultFg, false);
+                } else {
+                    style_.bg = resolved;
+                    style_.setAttribute(cellattr::kDefaultBg, false);
+                }
             }
             i += consumed;
         }

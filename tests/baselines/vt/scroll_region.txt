@@ -1,0 +1,25 @@
+grid 24x80 cursor=1,0
+r00 text= attrs=
+r01 text= attrs=
+r02 text=   two attrs=
+r03 text=      three attrs=
+r04 text=           four attrs=
+r05 text= attrs=
+r06 text= attrs=
+r07 text= attrs=
+r08 text= attrs=
+r09 text= attrs=
+r10 text= attrs=
+r11 text= attrs=
+r12 text= attrs=
+r13 text= attrs=
+r14 text= attrs=
+r15 text= attrs=
+r16 text= attrs=
+r17 text= attrs=
+r18 text= attrs=
+r19 text= attrs=
+r20 text= attrs=
+r21 text= attrs=
+r22 text= attrs=
+r23 text= attrs=
