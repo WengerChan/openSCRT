@@ -387,6 +387,7 @@ void LocalPtyChannel::startReader() {
                 std::fprintf(stderr, "[probe] %lu bytes waiting\n",
                              static_cast<unsigned long>(available));
             }
+            (void)0;
             if (available == 0) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
                 continue;
@@ -394,9 +395,25 @@ void LocalPtyChannel::startReader() {
             DWORD read = 0;
             if (!ReadFile(platform_->output_read, buffer, sizeof(buffer), &read, nullptr) ||
                 read == 0) {
+                std::fprintf(stderr, "[probe] read failed: %lu\n",
+                             static_cast<unsigned long>(GetLastError()));
                 break;
             }
             size = static_cast<std::size_t>(read);
+            {
+                std::fprintf(stderr, "[probe] read %zu bytes: ", size);
+                for (std::size_t i = 0; i < size && i < 80; ++i) {
+                    const unsigned char byte = buffer[i];
+                    if (byte == 0x1B) {
+                        std::fprintf(stderr, "<ESC>");
+                    } else if (byte >= 0x20 && byte < 0x7F) {
+                        std::fprintf(stderr, "%c", byte);
+                    } else {
+                        std::fprintf(stderr, "<%02X>", byte);
+                    }
+                }
+                std::fprintf(stderr, "\n");
+            }
 #else
             pollfd descriptor{platform_->master, POLLIN, 0};
             const int ready = poll(&descriptor, 1, 200);
