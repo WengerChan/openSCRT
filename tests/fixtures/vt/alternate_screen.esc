@@ -1,0 +1,1 @@
+\x1b[2J\x1b[Hprimary screen\n\x1b[?1049h\x1b[2J\x1b[Halternate screen\n\x1b[?1049l\x1b[2J\x1b[Hback to primary\n

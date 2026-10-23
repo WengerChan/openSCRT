@@ -6,6 +6,7 @@ add_library(openscrt_terminal STATIC
     buffer/RingScrollbackBuffer.cpp
     buffer/ScreenGrid.cpp
     emulator/ControlSequenceParser.cpp
+    emulator/ScreenSnapshot.cpp
     emulator/TerminalEmulator.cpp
     renderer/DamageTracker.cpp)
 

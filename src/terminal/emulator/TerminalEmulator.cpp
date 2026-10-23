@@ -4,27 +4,11 @@
 #include <string>
 #include <utility>
 
+#include "terminal/emulator/CharWidth.h"
 #include "terminal/emulator/Palette.h"
 
 namespace openscrt::terminal {
 namespace {
-
-// Range-based double-width detection (P1-T2 needs the flag in Cell; deciding it needs a
-// width table, which lands with the renderer). This covers the blocks that actually appear
-// in the CJK output the roadmap targets. Wrong-width classification shows up as a one-column
-// cursor drift, never as data loss, so the heuristic is the right trade for Phase 1.
-constexpr bool isWideCodepoint(std::uint32_t cp) noexcept {
-    return (cp >= 0x1100 && cp <= 0x115F) ||  // Hangul Jamo
-           (cp >= 0x2E80 && cp <= 0x303E) ||  // CJK radicals, Kangxi
-           (cp >= 0x3041 && cp <= 0x33FF) ||  // Hiragana .. CJK Compatibility
-           (cp >= 0x3400 && cp <= 0x4DBF) ||  // CJK Extension A
-           (cp >= 0x4E00 && cp <= 0x9FFF) ||  // CJK Unified Ideographs
-           (cp >= 0xA000 && cp <= 0xA4CF) ||  // Yi
-           (cp >= 0xAC00 && cp <= 0xD7A3) ||  // Hangul syllables
-           (cp >= 0xF900 && cp <= 0xFAFF) ||  // CJK Compatibility Ideographs
-           (cp >= 0xFF00 && cp <= 0xFF60) ||  // Fullwidth forms
-           (cp >= 0xFFE0 && cp <= 0xFFE6);    // Fullwidth signs
-}
 
 std::uint8_t clampToByte(int value) noexcept {
     return static_cast<std::uint8_t>(std::clamp(value, 0, 255));

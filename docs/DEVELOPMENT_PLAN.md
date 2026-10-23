@@ -150,14 +150,15 @@
 
 | # | 偏差 | 证据 | 处置 |
 | :--- | :--- | :--- | :--- |
-| D1 | **`libvterm` 无法经 vcpkg 获取** | microsoft/vcpkg 无 `ports/libvterm`（对 baseline 与 main 分支的 `contents/ports/libvterm` 均返回 404）；上游 libvterm 只提供 autotools 构建，三平台 CI 均无 autotools 工具链 | 已从 `vcpkg.json` 移除。P1-T4 的转义序列前端（`ControlSequenceParser`）与屏幕网格自行实现；若后续确需 libvterm 的字符集处理，则以 `FetchContent` + 固定 commit 引入，并把定制点收敛在 `VtermStateMachine` 单一适配层 |
+| D1 | **`libvterm` 无法经 vcpkg 获取** | microsoft/vcpkg 无 `ports/libvterm`（对 baseline 与 main 分支的 `contents/ports/libvterm` 均返回 404）；上游 libvterm 只提供 autotools 构建，三平台 CI 均无 autotools 工具链 | 已从 `vcpkg.json` 移除。P1-T4 的转义序列前端（`ControlSequenceParser`）与屏幕网格自行实现。**2026-10-23 决策：保持自研，不引入上游 libvterm。** 理由：引入要额外解决 autotools 工具链（CI 三平台都没有），并把定制点收敛到 `VtermStateMachine` 单一适配层，收益却可以用更便宜的手段拿到——用 `vttest` 用例集做**截图基线比对**（P1-A2）直接暴露排版差异。风险是自研状态机可能在上游已覆盖的边界用例上有差异，因此该比对必须做成**机器可判定**的验收项（基线入库 + 差异即红），而不是可选的人工检查 |
 | D2 | **Qt 不经 vcpkg** | qtbase 经 vcpkg 冷构建需数小时，CI 不可接受 | CI 用 `install-qt-action`（预编译包），vcpkg 只管非 Qt 依赖 |
 | D3 | **新增 Phase 0** | 路线图把"三端编译通过"放在 Phase 1 验收，但未建 CI，导致五阶段验收全靠人工 | 拆出 Phase 0 固化门禁 |
 | D4 | **CI 只安装被链接的依赖** | `vcpkg.json` 声明的 10 个 port 里，当前 CMake 树只引用 `libsodium`（`src/core`、`src/credential`）与 `gtest`（`tests/`）；`libssh` / `openssl` / `nlohmann-json` / `pugixml` / `zlib` / `pybind11` / `qtbase` / `qtserialport` 零引用。`ci.yml` 不再安装它们——实测 windows-2022 的 `vcpkg install` 从 **74.6 min**（占该 job 75.6 min 的 98.7%，全部耗在 openssl + libssh 的 MSVC 源码编译上）降到约 3–6 min，P0-A6 的 45 min 冷启动门禁重新可达 | `vcpkg.json` 仍是唯一事实来源；`ci.yml` 从中派生出 CI 清单。**契约**：某阶段开始链接某个 port 时，必须同时删掉它在 `ci.yml` `SKIP` 表里的条目；若漏删，表现为 configure 阶段几分钟内明确报 "not found"，而不是像之前那样默默编译 75 分钟没人用的库 |
 
 ### 4.5 风险
 - **CJK 双宽字符与光标对齐错位**：在 P1-T2 就把双宽位写进 `Cell` 位域，不允许后期加字段（会破坏 16 字节布局）。
-- **若后续引入 libvterm**：定制点必须收敛到**唯一适配层** `VtermStateMachine`，禁止在业务代码里直接调 libvterm API。
+- **若后续引入 libvterm**：定制点必须收敛到**唯一适配层** `VtermStateMachine`，禁止在业务代码里直接调 libvterm API。**当前决策是不引入**（见 D1），因此这条风险暂不激活；一旦改判，它会立即重新生效。
+- **自研 VT 状态机的排版偏差**：不引上游就把"是否与主流终端一致"的责任收回自己身上。缓解手段是 P1-A2 的 `vttest` 截图基线比对——基线入库、差异即红，让偏差在 CI 里暴露，而不是在用户屏幕上暴露。
 
 ### 4.6 任务完成度与验收取证（run #39933913420 / commit `00db09a`）
 
