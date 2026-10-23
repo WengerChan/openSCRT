@@ -466,18 +466,13 @@ void TerminalEmulator::applyGraphicRendition(const CsiSequence& sequence) {
 
             std::size_t components = selector_index + 1;
             if (isSubParam(sequence, selector_index)) {
-                if (selector == 2) {
-                    // The colon spelling of a direct colour is
-                    // 38:2:<colour-space>:r:g:b: the colour-space slot is always present
-                    // and may be empty. Consuming it is what makes the four-component
-                    // 38:2:255:0:0 invalid instead of silently meaning "red" -- xterm and
-                    // tmux both reject it, and the differential test against tmux is what
-                    // found the difference.
+                // The colon spelling of a direct colour is normally written
+                // 38:2:<colour-space>:r:g:b, with the colour-space slot present and
+                // possibly empty. Terminals in the wild also emit the short form
+                // 38:2:r:g:b, and tmux accepts it, so the colour-space slot is consumed
+                // only when it is actually there.
+                while (components < params.size() && params[components] == kDefaultParam) {
                     ++components;
-                } else {
-                    while (components < params.size() && params[components] == kDefaultParam) {
-                        ++components;
-                    }
                 }
             }
 

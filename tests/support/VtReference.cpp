@@ -232,14 +232,8 @@ void applyColonGroup(SgrState& state, const std::string& group) {
         const bool foreground = (values[0] == 38);
         const int selector = values[1];
         std::size_t component = 2;
-        if (selector == 2) {
-            // The direct-colour colon form always carries a colour-space slot, empty or
-            // not. Consuming it keeps the reference in step with the emulator.
+        while (component < values.size() && values[component] < 0) {
             ++component;
-        } else {
-            while (component < values.size() && values[component] < 0) {
-                ++component;
-            }
         }
         if (selector == 5 && component < values.size()) {
             const ColorRgba color = paletteColor(values[component]);

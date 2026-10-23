@@ -187,17 +187,15 @@ TEST_F(EmulatorTest, SgrBackgroundTrueColourColonForm) {
     EXPECT_EQ(grid.at(0, 0).bg, makeRgba(1, 2, 3));
 }
 
-TEST_F(EmulatorTest, SgrTrueColourColonFormNeedsTheColourSpaceSlot) {
-    // The ITU T.416 spelling is 38:2:<colour-space>:r:g:b -- five components. The
-    // four-component 38:2:255:0:0 has no colour-space slot, so the colour space would
-    // have to eat the "255" and the sequence ends up one component short. xterm and tmux
-    // ignore it; reading it as "red" instead is what the differential test against tmux
-    // caught.
+TEST_F(EmulatorTest, SgrTrueColourColonFormAcceptsTheShortForm) {
+    // The ITU T.416 spelling is 38:2:<colour-space>:r:g:b, but the short form
+    // 38:2:r:g:b is what terminals in the wild emit, and tmux accepts it. The reference
+    // implementation is the arbiter here: a terminal has to agree with the terminals it
+    // talks to, not only with the standard.
     emulator.write(
         "\x1B[38:2:255:0:0m"
         "X");
-    EXPECT_TRUE(grid.at(0, 0).hasAttribute(cellattr::kDefaultFg));
-    EXPECT_TRUE(grid.at(0, 0).hasAttribute(cellattr::kDefaultBg));
+    EXPECT_EQ(grid.at(0, 0).fg, makeRgba(255, 0, 0));
 }
 
 TEST_F(EmulatorTest, SgrMalformedColourLeavesTheCurrentColourAlone) {

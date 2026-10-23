@@ -168,9 +168,17 @@ void reportDifference(const std::string& expected, const std::string& actual) {
     int lineNumber = 0;
     int reported = 0;
 
-    while (std::getline(expectedStream, expectedLine) || std::getline(actualStream, actualLine)) {
+    while (true) {
+        // Both streams have to be read every round. Chaining them with || short-circuits
+        // on the first one that still has a line, which leaves the other side stale --
+        // and a diff that shows an empty "ours" column is worse than no diff at all.
+        const bool hasExpected = static_cast<bool>(std::getline(expectedStream, expectedLine));
+        const bool hasActual = static_cast<bool>(std::getline(actualStream, actualLine));
+        if (!hasExpected && !hasActual) {
+            break;
+        }
         ++lineNumber;
-        if (expectedLine == actualLine) {
+        if (hasExpected && hasActual && expectedLine == actualLine) {
             continue;
         }
         if (reported >= 10) {
@@ -178,7 +186,8 @@ void reportDifference(const std::string& expected, const std::string& actual) {
             break;
         }
         std::printf("  line %d:\n    baseline: %s\n    ours:     %s\n", lineNumber,
-                    expectedLine.c_str(), actualLine.c_str());
+                    hasExpected ? expectedLine.c_str() : "<missing>",
+                    hasActual ? actualLine.c_str() : "<missing>");
         ++reported;
     }
 }
