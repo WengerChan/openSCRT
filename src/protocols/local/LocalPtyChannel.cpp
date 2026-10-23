@@ -274,6 +274,13 @@ TransportResult LocalPtyChannel::connectAsync() {
     STARTUPINFOEXW startup{};
     startup.StartupInfo.cb = sizeof(startup);
     startup.lpAttributeList = attributes;
+    // STARTF_USESTDHANDLES with the standard handles left unset is what Windows Terminal
+    // does, and it is what makes the difference between a child that joins the console and
+    // a child that keeps the handles it inherited from this process. Without the flag the
+    // child inherits the parent's standard handles, so its output goes wherever the parent's
+    // output goes -- into the CI log, in the runner's case -- and its input arrives from the
+    // parent's input, which is already at end of file. The console then sees nothing at all.
+    startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
 
     // Build the command line as the shell plus any extra arguments.
     std::wstring command = std::wstring(options_.shell.begin(), options_.shell.end());
