@@ -25,22 +25,24 @@ workspace shell (P1-T12) and the working local shell channel.
 
 ## Installing
 
-Releases are **tag-only**: pushes to `main` run tests, a `v*` tag additionally builds the Windows
-installer and publishes it. The tag must match `VERSION` in [`CMakeLists.txt`](CMakeLists.txt), so
-bump the version first, then tag.
+Releases are **tag-only**: pushes to `main` run tests, a `v*` tag additionally builds the
+packages for all three platforms and publishes them. The tag must match `VERSION` in
+[`CMakeLists.txt`](CMakeLists.txt), so bump the version first, then tag.
 
 ```
-git tag v0.1.0 && git push origin v0.1.0
+git tag v0.1.2 && git push origin v0.1.2
 ```
 
-| Asset | Install |
-| --- | --- |
-| `openSCRT-<version>-windows-x64.msi` | Double-click. Per-machine install to `%ProgramFiles%\openSCRT` with an uninstall entry in Add/Remove Programs. The installer does not touch `PATH` — add `%ProgramFiles%\openSCRT\bin` yourself if you want the command on `PATH`. |
-| `openSCRT-<version>-windows-x64-portable.zip` | Unzip anywhere, run `bin\openscrt.exe`. No installer, no admin rights. |
+| Asset | Platform | Install |
+| --- | --- | --- |
+| `openSCRT-<version>-windows-x64.msi` | Windows x64 | Double-click. Per-machine install to `%ProgramFiles%\openSCRT` with an uninstall entry in Add/Remove Programs. The installer does not touch `PATH` — add `%ProgramFiles%\openSCRT\bin` yourself if you want the command on `PATH`. |
+| `openSCRT-<version>-windows-x64-portable.zip` | Windows x64 | Unzip anywhere, run `bin\openscrt.exe`. No installer, no admin rights. |
+| `openSCRT-<version>-macos-x64.tar.gz` | macOS x64 | Unpack, open `openscrt.app`. On Apple Silicon it runs under Rosetta 2. |
+| `openSCRT-<version>-linux-x86_64.tar.gz` | Linux x86_64 | Unpack, run `bin/openscrt`; the wrapper points the loader and the Qt plugin path at the unpacked tree. |
 
-Both bundle every DLL the binary imports (`libsodium`, the UCRT forwarders, and the Qt runtime
-the window needs), so neither needs Qt installed. Verify a download against the
-`SHA256SUMS.txt` attached to the release. Packaging lives in
+Every archive carries the runtime the binary needs — the Qt libraries, and on Windows
+`libsodium` and the UCRT forwarders — so none of them needs Qt installed. Verify a download
+against the `SHA256SUMS.txt` attached to the release. Packaging lives in
 [`.github/workflows/release.yml`](.github/workflows/release.yml) and verifies itself before
 uploading: the staged exe must report its version, and the MSI is unpacked with `msiexec /a` and
 the extracted binary is run.
