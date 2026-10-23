@@ -40,16 +40,6 @@ bool foregroundCounts(const Cell& cell) {
     return !isPlainBlank(cell);
 }
 
-// Whether a cell contributes anything to the picture: a glyph, or a background that is
-// not the default one. A row ends after its last such cell, which is where tmux's capture
-// ends it too.
-bool cellIsVisible(const Cell& cell) {
-    if (cell.codepoint != 0 && cell.codepoint != ' ') {
-        return true;
-    }
-    return !cell.hasAttribute(cellattr::kDefaultBg);
-}
-
 CellSignature signatureOf(const Cell& cell) {
     CellSignature signature;
     signature.fg = cell.fg;
@@ -112,15 +102,20 @@ std::string flagToken(const CellSignature& signature) {
     return flags.empty() ? std::string("-") : flags;
 }
 
-// The last column of the row that still contributes something, or -1 for an empty row.
-int lastVisibleColumn(const ScreenGrid& grid, int row) {
+// The last column of the row that carries a glyph.
+//
+// tmux's capture trims the trailing spaces, and it trims them even when they carry a
+// background: a row whose tail was erased with the background in force ends at its last
+// glyph there, and so does it here. A background that only exists in that trimmed tail is
+// invisible to the comparison -- tmux cannot see it either.
+int lastContentColumn(const ScreenGrid& grid, int row) {
     const Cell* cells = grid.rowData(row);
     if (cells == nullptr) {
         return -1;
     }
     int last = -1;
     for (int column = 0; column < grid.cols(); ++column) {
-        if (cellIsVisible(cells[column])) {
+        if (cells[column].codepoint != 0 && cells[column].codepoint != ' ') {
             last = column;
         }
     }
@@ -171,7 +166,7 @@ std::string snapshotScreen(const ScreenGrid& grid) {
     out += header;
 
     for (int row = 0; row < grid.rows(); ++row) {
-        const int last = lastVisibleColumn(grid, row);
+        const int last = lastContentColumn(grid, row);
         char prefix[24];
         std::snprintf(prefix, sizeof(prefix), "r%02d text=", row);
         out += prefix;
