@@ -306,27 +306,40 @@ POSIX 端全绿。
 `CreateProcess` 成功——**三者都不代表子进程 attach 成功**。这个失败是完全静默的：
 没有错误码，没有对话框，子进程只是安安静静地用继承来的句柄跑起来了。
 
-### 8.4 「看起来更合理」的顺序调整，让 CI 挂了十分钟
+### 8.4 一个两轮 CI 里出现两次的挂死，和一次错误的归因
 
-修好 ConPTY 之后顺手做了一处清理：把 `disconnect()` 里的顺序从"先关句柄、再 join 读线程"
-改成"先 join 读线程、再关句柄"——理由听上去很正当：读线程不该拿着一个已被关掉的句柄去轮询。
+`unit_local_pty_channel` 在 Windows 上**四轮里挂了两轮**，每次都是 `***Timeout 600.01 sec`，
+每次都停在同一条用例（`cmd.exe /c echo` 那个）之后。
 
-结果：Windows 的 `unit_local_pty_channel` 直接**超时 600 秒**，整条用例卡在析构里。
+**第一轮归因是错的。** 第一轮我改了 `disconnect()` 里的顺序（先 join 读线程、再关句柄），
+第二轮 CI 照样挂——**而且第二轮用的是原来的顺序**。也就是说这个挂死跟我的改动无关，
+它是既有代码里的一个竞态，第一轮只是碰巧撞上了。
 
-原因在 `PeekNamedPipe` 的文档里写着：
+**真正的定位靠的是探针的最后一行。** 给读线程与关闭路径都加了生命周期探针之后，
+日志里挂死前的最后一行是：
 
-> The **PeekNamedPipe** function can block thread execution the same way any I/O function can
-> when called on a **synchronous handle in a multi-threaded application**.
+```
+[probe] closing the pseudo console
+```
 
-也就是说读线程是**停在 Peek 里的**，它根本走不到循环开头去看 `stopping_`。
-旧顺序之所以能用，恰恰是因为**关句柄就是把读线程从 Peek 里踢出来的手段**：挂起的 Peek
-立刻以 `ERROR_INVALID_HANDLE` 失败，读线程退出，join 返回。把顺序一换，join 就永远等下去。
+——测试进程卡在 `ClosePseudoConsole()` 里面。而微软文档早就写了这句：
 
-**教训**：改一个"看起来更合理"的顺序之前，先问**"这一段现在靠什么活着"**。
-旧代码里的怪癖常常是踩过坑之后留下的支撑点，而不是可以顺手抹平的瑕疵。
-POSIX 分支没有这个问题，因为 `poll()` 有 200 ms 超时——读线程每隔 200 ms 就会醒一次看
-`stopping_`，所以那边两种顺序都不会挂。**同一个"等待"，两种实现，一个有超时一个没有，
-语义就不一样。**
+> The act of closing the pseudoconsole session may emit a final frame update to `hOutput`
+> **which should be drained from the communications channel buffer.**
+
+关闭伪控制台时，console host 会往输出管道写最后一帧，`ClosePseudoConsole` **等这一写完成**。
+而这条路径是**先停读线程、再关控制台**——没人再消费那个管道 → 关闭动作永远等不到写完成 →
+**死锁**。
+
+正确的顺序是反过来的：**读线程还在消费的时候关闭伪控制台**，等 console host 退出、
+管道到 EOF，再停读线程。改完之后这条用例连跑二十次都不挂。
+
+**两条教训**：
+
+1. **"我刚改的地方"不等于"根因"。** 第一轮的改动让挂死"看起来"是新引入的，但第二轮
+   用旧顺序复现了它。**同一个症状在两轮里都出现，就说明它不是那一轮改出来的。**
+2. **探针的最后一行比推理可靠。** 前面三轮都在推理"读线程卡在哪"，加了探针之后
+   一行日志就把答案摆出来了。**挂死类问题，先让程序说出它停在哪一步。**
 
 ### 8.5 发布流水线的两个新坑
 
