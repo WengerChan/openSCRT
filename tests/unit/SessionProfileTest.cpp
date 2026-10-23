@@ -37,8 +37,9 @@ class SessionTreeTest : public ::testing::Test {
 };
 
 TEST(SessionTreeTest, UnknownIdDoesNotResolve) {
+    SessionTree tree;
     SessionTree::Resolved resolved;
-    EXPECT_FALSE(tree_->resolve("nope", resolved));
+    EXPECT_FALSE(tree.resolve("nope", resolved));
 }
 
 TEST(SessionTreeTest, ABareSessionInheritsTheDefaultTemplate) {
