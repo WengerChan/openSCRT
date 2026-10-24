@@ -24,6 +24,12 @@ struct Kdbx4ReadResult {
     std::string error;
     // The decrypted and decompressed payload: the inner header, then the XML.
     std::vector<std::uint8_t> payload;
+
+    // The inner header of a KDBX 4 database: which protected stream protects the
+    // individual values, and where the XML starts inside the payload.
+    std::uint32_t protected_stream_id{0};
+    std::vector<std::uint8_t> protected_stream_key;
+    std::size_t xml_offset{0};
 };
 
 // Reads a KDBX 4.x database.

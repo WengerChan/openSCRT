@@ -39,10 +39,9 @@ SKIP = {
     # payload. openssl was already being built as libssh's dependency, so this costs no
     # extra build time; zlib is a small build of its own.
     #
-    # nlohmann-json and pugixml stay skipped until something links them: the KeePassHTTP
-    # client is P2-T8 and the XML inside the database is P2-T6.
+    # pugixml is no longer skipped either: P2-T6 links it for the XML inside a KeePass
+    # database. nlohmann-json stays skipped until the KeePassHTTP client (P2-T8) links it.
     "nlohmann-json": "not linked yet -- the KeePassHTTP client lands in P2-T8",
-    "pugixml": "not linked yet -- the XML inside the KDBX database lands in P2-T6",
 }
 
 # Only linked by the test tree. A packaging/release build configures with

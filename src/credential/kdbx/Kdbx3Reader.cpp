@@ -131,6 +131,13 @@ Kdbx3ReadResult readKdbx3(const std::uint8_t* data, std::size_t size, const std:
         result.payload = std::move(content);
     }
 
+    // In KDBX 3.1 the protected stream is in the header, and the payload is the XML
+    // itself -- there is no inner header.
+    result.protected_stream_id = header.inner_random_stream_id;
+    result.protected_stream_key.assign(header.inner_random_stream_key.begin(),
+                                       header.inner_random_stream_key.end());
+    result.xml_offset = 0;
+
     sodium_memzero(composite.data(), composite.size());
     return result;
 }

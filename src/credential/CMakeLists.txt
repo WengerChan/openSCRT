@@ -10,16 +10,22 @@
 find_package(OpenSSL REQUIRED)
 find_package(ZLIB REQUIRED)
 
+# pugixml for the XML inside a KeePass database (P2-T6). It is no longer skipped in
+# .github/scripts/ci-vcpkg-manifest.py.
+find_package(pugixml REQUIRED)
+
 add_library(openscrt_credential STATIC
     ModuleInfo.cpp
     ICredentialProvider.cpp
     kdbx/KdbxHeaderParser.cpp
     kdbx/KdbxCrypto.cpp
     kdbx/Kdbx3Reader.cpp
-    kdbx/Kdbx4Reader.cpp)
+    kdbx/Kdbx4Reader.cpp
+    kdbx/KdbxProtectedStream.cpp
+    kdbx/KdbxXmlIndex.cpp)
 
 target_include_directories(openscrt_credential PUBLIC ${PROJECT_SOURCE_DIR}/src)
 
 target_link_libraries(openscrt_credential
     PUBLIC openscrt_warnings
-    PRIVATE openscrt_core openscrt_sodium OpenSSL::Crypto ZLIB::ZLIB)
+    PRIVATE openscrt_core openscrt_sodium OpenSSL::Crypto ZLIB::ZLIB pugixml::pugixml)

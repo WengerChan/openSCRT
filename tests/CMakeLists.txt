@@ -112,6 +112,14 @@ openscrt_add_test(unit_kdbx3_reader
 target_compile_definitions(unit_kdbx3_reader PRIVATE
     OPENCRT_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
+# The XML index and the protected stream (P2-T6).
+openscrt_add_test(unit_kdbx_xml_index
+    LABEL unit
+    SOURCES unit/KdbxXmlIndexTest.cpp
+    LIBS openscrt_credential)
+target_compile_definitions(unit_kdbx_xml_index PRIVATE
+    OPENCRT_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+
 # The window shell needs a QApplication; the offscreen platform plugin makes that work in CI
 # without a display server.
 openscrt_add_test(unit_main_window

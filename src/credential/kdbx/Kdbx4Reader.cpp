@@ -112,6 +112,51 @@ bool readBlockStream(const std::uint8_t* data, std::size_t size, std::size_t off
     }
 }
 
+// Reads the KDBX 4 inner header: the header that sits in front of the XML and says
+// which protected stream protects the individual values.
+//
+// The fields are type(1) || length(UInt32 LE) || value, and the type 0 ends the list.
+bool readInnerHeader(const std::uint8_t* data, std::size_t size, std::uint32_t& stream_id,
+                     std::vector<std::uint8_t>& stream_key, std::size_t& xml_offset,
+                     std::string& error) {
+    stream_id = 0;
+    stream_key.clear();
+    std::size_t offset = 0;
+    while (true) {
+        if (offset + 5 > size) {
+            error = "the inner header ends in the middle of a field";
+            return false;
+        }
+        const std::uint8_t type = data[offset];
+        const std::uint32_t length = static_cast<std::uint32_t>(data[offset + 1]) |
+                                     (static_cast<std::uint32_t>(data[offset + 2]) << 8) |
+                                     (static_cast<std::uint32_t>(data[offset + 3]) << 16) |
+                                     (static_cast<std::uint32_t>(data[offset + 4]) << 24);
+        offset += 5;
+        if (length > size - offset) {
+            error = "an inner header field runs past the end of the payload";
+            return false;
+        }
+        if (type == 0) {
+            xml_offset = offset;
+            return true;
+        }
+        if (type == 1) {
+            if (length != 4) {
+                error = "the protected stream id is not four bytes long";
+                return false;
+            }
+            stream_id = static_cast<std::uint32_t>(data[offset]) |
+                        (static_cast<std::uint32_t>(data[offset + 1]) << 8) |
+                        (static_cast<std::uint32_t>(data[offset + 2]) << 16) |
+                        (static_cast<std::uint32_t>(data[offset + 3]) << 24);
+        } else if (type == 2) {
+            stream_key.assign(data + offset, data + offset + length);
+        }
+        offset += length;
+    }
+}
+
 }  // namespace
 
 Kdbx4ReadResult readKdbx4(const std::uint8_t* data, std::size_t size, const std::string& password,
@@ -210,6 +255,14 @@ Kdbx4ReadResult readKdbx4(const std::uint8_t* data, std::size_t size, const std:
         result.payload = std::move(decompressed);
     } else {
         result.payload = std::move(plain);
+    }
+
+    // The inner header says which protected stream protects the values, and where the
+    // XML starts.
+    if (!readInnerHeader(result.payload.data(), result.payload.size(), result.protected_stream_id,
+                         result.protected_stream_key, result.xml_offset, result.error)) {
+        result.payload.clear();
+        return result;
     }
 
     sodium_memzero(composite.data(), composite.size());

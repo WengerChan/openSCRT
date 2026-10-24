@@ -28,6 +28,12 @@ struct Kdbx3ReadResult {
     std::string error;
     // The decrypted and decompressed XML.
     std::vector<std::uint8_t> payload;
+
+    // The protected stream of the database. In KDBX 3.1 it is in the header (fields 8
+    // and 10) rather than in an inner header.
+    std::uint32_t protected_stream_id{0};
+    std::vector<std::uint8_t> protected_stream_key;
+    std::size_t xml_offset{0};
 };
 
 // Reads a KDBX 3.1 database.
