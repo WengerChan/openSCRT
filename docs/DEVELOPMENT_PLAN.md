@@ -368,6 +368,9 @@ Windows / macOS / Linux 各做一遍，逐项打勾并留下记录。
 （Windows 0.20 s、Linux 0.26 s 通过）——本地 shell 会话真的连上并回显了，
 **ConPTY 的修复因此有了每轮 CI 的回归护栏**。
 
+**包用 v0.1.5**（run #40108273795）：它带着 `--acceptance-check`，下载下来解压就能在
+自己的机器上跑那一半验收。
+
 | # | 操作 | 期望结果 | 结论 |
 | :--- | :--- | :--- | :--- |
 | M1 | 启动程序 | 主窗口出现，含 File / Edit / View / Options / Transfer / Script / Tools / Window / Help 菜单栏，以及 `Session Manager` 与 `Active Sessions` 两个 dock | |
