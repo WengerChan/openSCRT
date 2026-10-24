@@ -34,7 +34,11 @@ using Sha512Digest = std::array<std::uint8_t, 64>;
 //
 // The outer hash is the part that is easy to miss: without it the derived key is wrong
 // and the symptom is "the payload decrypts to nonsense" rather than an error.
-[[nodiscard]] Digest compositeKey(const std::string& password,
+//
+// The password comes in as bytes rather than as a std::string on purpose: a string keeps
+// its copy on the heap, and a heap copy of a master password is exactly the thing this
+// phase is about not having.
+[[nodiscard]] Digest compositeKey(const std::uint8_t* password, std::size_t password_size,
                                   const std::vector<std::uint8_t>& key_file);
 
 // The AES-KDF, the way KeePass does it.

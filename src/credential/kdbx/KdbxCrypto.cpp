@@ -68,7 +68,8 @@ Digest hmacSha256(const std::uint8_t* key, std::size_t key_size, const std::uint
     return digest;
 }
 
-Digest compositeKey(const std::string& password, const std::vector<std::uint8_t>& key_file) {
+Digest compositeKey(const std::uint8_t* password, std::size_t password_size,
+                    const std::vector<std::uint8_t>& key_file) {
     // The password half is hashed on its own, and the key file half is the file's own
     // 32 bytes; the two are then hashed together. The outer hash is what the format
     // specifies -- leaving it out gives a wrong key and a payload of nonsense rather

@@ -11,6 +11,7 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "credential/kdbx/Kdbx3Reader.h"
@@ -21,7 +22,21 @@
 namespace openscrt::credential::kdbx {
 namespace {
 
-constexpr const char* kFixturePassword = "correct horse battery staple";
+// The password travels as bytes: a std::string would leave a copy on the heap.
+constexpr std::string_view kPasswordText = "correct horse battery staple";
+const std::uint8_t* kPasswordBytes() {
+    return reinterpret_cast<const std::uint8_t*>(kPasswordText.data());
+}
+std::size_t kPasswordSize() {
+    return kPasswordText.size();
+}
+constexpr std::string_view kWrongPasswordText = "wrong";
+const std::uint8_t* kWrongPasswordBytes() {
+    return reinterpret_cast<const std::uint8_t*>(kWrongPasswordText.data());
+}
+std::size_t kWrongPasswordSize() {
+    return kWrongPasswordText.size();
+}
 
 std::vector<std::uint8_t> readFile(const std::string& path) {
     std::ifstream stream(path, std::ios::binary);
@@ -42,7 +57,7 @@ TEST(KdbxXmlIndexTest, TheIndexKeepsThePasswordProtected) {
     ASSERT_FALSE(database.empty());
 
     const Kdbx3ReadResult read =
-        readKdbx3(database.data(), database.size(), kFixturePassword, key_file);
+        readKdbx3(database.data(), database.size(), kPasswordBytes(), kPasswordSize(), key_file);
     ASSERT_TRUE(read.ok()) << read.error;
 
     const KdbxIndexResult indexed =
@@ -67,7 +82,7 @@ TEST(KdbxXmlIndexTest, ThePasswordIsRevealedOnRequest) {
     ASSERT_FALSE(database.empty());
 
     const Kdbx3ReadResult read =
-        readKdbx3(database.data(), database.size(), kFixturePassword, key_file);
+        readKdbx3(database.data(), database.size(), kPasswordBytes(), kPasswordSize(), key_file);
     ASSERT_TRUE(read.ok()) << read.error;
 
     const KdbxIndexResult indexed =
@@ -93,7 +108,8 @@ TEST(KdbxXmlIndexTest, TheKdbx4InnerHeaderCarriesTheProtectedStream) {
     const std::vector<std::uint8_t> database = readFile(fixturePath("blank_database.kdbx"));
     ASSERT_FALSE(database.empty());
 
-    const Kdbx4ReadResult read = readKdbx4(database.data(), database.size(), "password", {});
+    const Kdbx4ReadResult read =
+        readKdbx4(database.data(), database.size(), kPasswordBytes(), kPasswordSize(), {});
     ASSERT_TRUE(read.ok()) << read.error;
     // The inner header sits in front of the XML.
     EXPECT_GT(read.xml_offset, 0u);

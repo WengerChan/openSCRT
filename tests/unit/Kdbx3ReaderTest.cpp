@@ -15,6 +15,7 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "credential/kdbx/Kdbx3Reader.h"
@@ -22,7 +23,21 @@
 namespace openscrt::credential::kdbx {
 namespace {
 
-constexpr const char* kFixturePassword = "correct horse battery staple";
+// The password travels as bytes: a std::string would leave a copy on the heap.
+constexpr std::string_view kPasswordText = "correct horse battery staple";
+const std::uint8_t* kPasswordBytes() {
+    return reinterpret_cast<const std::uint8_t*>(kPasswordText.data());
+}
+std::size_t kPasswordSize() {
+    return kPasswordText.size();
+}
+constexpr std::string_view kWrongPasswordText = "wrong";
+const std::uint8_t* kWrongPasswordBytes() {
+    return reinterpret_cast<const std::uint8_t*>(kWrongPasswordText.data());
+}
+std::size_t kWrongPasswordSize() {
+    return kWrongPasswordText.size();
+}
 
 std::vector<std::uint8_t> readFile(const std::string& path) {
     std::ifstream stream(path, std::ios::binary);
@@ -48,7 +63,7 @@ TEST(Kdbx3ReaderTest, TheDatabaseWithAKeyFileOpens) {
     ASSERT_EQ(key_file.size(), 32u);
 
     const Kdbx3ReadResult result =
-        readKdbx3(database.data(), database.size(), kFixturePassword, key_file);
+        readKdbx3(database.data(), database.size(), kPasswordBytes(), kPasswordSize(), key_file);
     ASSERT_TRUE(result.ok()) << result.error;
 
     const std::string text = asText(result.payload);
@@ -68,7 +83,8 @@ TEST(Kdbx3ReaderTest, AWrongPasswordIsReported) {
     const std::vector<std::uint8_t> key_file = readFile(fixturePath("kdbx31_with_keyfile.key"));
     ASSERT_FALSE(database.empty());
 
-    const Kdbx3ReadResult result = readKdbx3(database.data(), database.size(), "wrong", key_file);
+    const Kdbx3ReadResult result = readKdbx3(database.data(), database.size(),
+                                             kWrongPasswordBytes(), kWrongPasswordSize(), key_file);
     EXPECT_FALSE(result.ok());
     // The reason has to be named. With a wrong password the padding check usually
     // fails first, so the message is about the payload not decrypting; when the
@@ -81,8 +97,8 @@ TEST(Kdbx3ReaderTest, AWrongKeyFileIsReported) {
     ASSERT_FALSE(database.empty());
 
     const std::vector<std::uint8_t> wrong_key_file(32, 0x42);
-    const Kdbx3ReadResult result =
-        readKdbx3(database.data(), database.size(), kFixturePassword, wrong_key_file);
+    const Kdbx3ReadResult result = readKdbx3(database.data(), database.size(), kPasswordBytes(),
+                                             kPasswordSize(), wrong_key_file);
     EXPECT_FALSE(result.ok());
 }
 
@@ -91,7 +107,7 @@ TEST(Kdbx3ReaderTest, AMissingKeyFileIsReported) {
     ASSERT_FALSE(database.empty());
 
     const Kdbx3ReadResult result =
-        readKdbx3(database.data(), database.size(), kFixturePassword, {});
+        readKdbx3(database.data(), database.size(), kPasswordBytes(), kPasswordSize(), {});
     EXPECT_FALSE(result.ok());
 }
 
@@ -104,7 +120,7 @@ TEST(Kdbx3ReaderTest, ADamagedFileIsReported) {
     damaged[damaged.size() / 2] = static_cast<std::uint8_t>(damaged[damaged.size() / 2] ^ 0xFF);
 
     const Kdbx3ReadResult result =
-        readKdbx3(damaged.data(), damaged.size(), kFixturePassword, key_file);
+        readKdbx3(damaged.data(), damaged.size(), kPasswordBytes(), kPasswordSize(), key_file);
     EXPECT_FALSE(result.ok());
 }
 
@@ -112,7 +128,8 @@ TEST(Kdbx3ReaderTest, AKdbx4FileIsNotReadByThisReader) {
     const std::vector<std::uint8_t> database = readFile(fixturePath("blank_database.kdbx"));
     ASSERT_FALSE(database.empty());
 
-    const Kdbx3ReadResult result = readKdbx3(database.data(), database.size(), "password", {});
+    const Kdbx3ReadResult result =
+        readKdbx3(database.data(), database.size(), kPasswordBytes(), kPasswordSize(), {});
     EXPECT_FALSE(result.ok());
     EXPECT_NE(result.error.find("3.1"), std::string::npos) << result.error;
 }

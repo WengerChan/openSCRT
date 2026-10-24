@@ -63,8 +63,8 @@ bool readBlockStream(const std::uint8_t* data, std::size_t size, std::size_t off
 
 }  // namespace
 
-Kdbx3ReadResult readKdbx3(const std::uint8_t* data, std::size_t size, const std::string& password,
-                          const std::vector<std::uint8_t>& key_file) {
+Kdbx3ReadResult readKdbx3(const std::uint8_t* data, std::size_t size, const std::uint8_t* password,
+                          std::size_t password_size, const std::vector<std::uint8_t>& key_file) {
     Kdbx3ReadResult result;
 
     const KdbxHeaderParseResult header_result = parseKdbxHeader(data, size);
@@ -86,7 +86,7 @@ Kdbx3ReadResult readKdbx3(const std::uint8_t* data, std::size_t size, const std:
         return result;
     }
 
-    Digest composite = compositeKey(password, key_file);
+    Digest composite = compositeKey(password, password_size, key_file);
     const Digest transformed = aesKdf(header.kdf.aes_salt.data(), header.kdf.aes_salt.size(),
                                       header.kdf.aes_rounds, composite.data(), composite.size());
 

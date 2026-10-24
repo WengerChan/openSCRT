@@ -14,6 +14,11 @@ find_package(ZLIB REQUIRED)
 # .github/scripts/ci-vcpkg-manifest.py.
 find_package(pugixml REQUIRED)
 
+# The vault watches the database file and times out on its own, so it needs QtCore --
+# QtCore and not QtWidgets: a file watcher and a timer need no display, and the
+# credential layer stays testable headless.
+set(CMAKE_AUTOMOC ON)
+
 add_library(openscrt_credential STATIC
     ModuleInfo.cpp
     ICredentialProvider.cpp
@@ -22,10 +27,11 @@ add_library(openscrt_credential STATIC
     kdbx/Kdbx3Reader.cpp
     kdbx/Kdbx4Reader.cpp
     kdbx/KdbxProtectedStream.cpp
+    kdbx/KdbxVault.cpp
     kdbx/KdbxXmlIndex.cpp)
 
 target_include_directories(openscrt_credential PUBLIC ${PROJECT_SOURCE_DIR}/src)
 
 target_link_libraries(openscrt_credential
-    PUBLIC openscrt_warnings
+    PUBLIC openscrt_warnings Qt6::Core
     PRIVATE openscrt_core openscrt_sodium OpenSSL::Crypto ZLIB::ZLIB pugixml::pugixml)

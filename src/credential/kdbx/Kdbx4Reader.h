@@ -35,9 +35,10 @@ struct Kdbx4ReadResult {
 // Reads a KDBX 4.x database.
 //
 // `key_file` is the raw content of the key file, or empty when there is none. The
-// password may be empty for a database that is unlocked by a key file alone.
+// password may be empty for a database that is unlocked by a key file alone, and it
+// comes in as bytes rather than as a string: a string leaves a copy on the heap.
 [[nodiscard]] Kdbx4ReadResult readKdbx4(const std::uint8_t* data, std::size_t size,
-                                        const std::string& password,
+                                        const std::uint8_t* password, std::size_t password_size,
                                         const std::vector<std::uint8_t>& key_file);
 
 }  // namespace openscrt::credential::kdbx

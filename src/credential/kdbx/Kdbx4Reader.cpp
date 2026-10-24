@@ -159,8 +159,8 @@ bool readInnerHeader(const std::uint8_t* data, std::size_t size, std::uint32_t& 
 
 }  // namespace
 
-Kdbx4ReadResult readKdbx4(const std::uint8_t* data, std::size_t size, const std::string& password,
-                          const std::vector<std::uint8_t>& key_file) {
+Kdbx4ReadResult readKdbx4(const std::uint8_t* data, std::size_t size, const std::uint8_t* password,
+                          std::size_t password_size, const std::vector<std::uint8_t>& key_file) {
     Kdbx4ReadResult result;
 
     const KdbxHeaderParseResult header_result = parseKdbxHeader(data, size);
@@ -174,7 +174,7 @@ Kdbx4ReadResult readKdbx4(const std::uint8_t* data, std::size_t size, const std:
         return result;
     }
 
-    Digest composite = compositeKey(password, key_file);
+    Digest composite = compositeKey(password, password_size, key_file);
 
     Digest transformed{};
     if (header.kdf.kdf == KdbxKdf::kArgon2d || header.kdf.kdf == KdbxKdf::kArgon2id) {

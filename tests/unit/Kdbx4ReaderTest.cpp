@@ -14,12 +14,30 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "credential/kdbx/Kdbx4Reader.h"
 
 namespace openscrt::credential::kdbx {
 namespace {
+
+// The password travels as bytes: a std::string would leave a copy on the heap.
+// The blank database's password is public; it is a public test fixture.
+constexpr std::string_view kPasswordText = "password";
+const std::uint8_t* kPasswordBytes() {
+    return reinterpret_cast<const std::uint8_t*>(kPasswordText.data());
+}
+std::size_t kPasswordSize() {
+    return kPasswordText.size();
+}
+constexpr std::string_view kWrongPasswordText = "wrong";
+const std::uint8_t* kWrongPasswordBytes() {
+    return reinterpret_cast<const std::uint8_t*>(kWrongPasswordText.data());
+}
+std::size_t kWrongPasswordSize() {
+    return kWrongPasswordText.size();
+}
 
 std::vector<std::uint8_t> readFile(const std::string& path) {
     std::ifstream stream(path, std::ios::binary);
@@ -42,7 +60,8 @@ TEST(Kdbx4ReaderTest, TheRealDatabaseDecrypts) {
     const std::vector<std::uint8_t> database = readFile(fixturePath());
     ASSERT_FALSE(database.empty()) << "the fixture is missing: " << fixturePath();
 
-    const Kdbx4ReadResult result = readKdbx4(database.data(), database.size(), "password", {});
+    const Kdbx4ReadResult result =
+        readKdbx4(database.data(), database.size(), kPasswordBytes(), kPasswordSize(), {});
     ASSERT_TRUE(result.ok()) << result.error;
 
     // The payload is the inner header followed by the XML. The values inside the XML
@@ -58,8 +77,8 @@ TEST(Kdbx4ReaderTest, AWrongPasswordIsReported) {
     const std::vector<std::uint8_t> database = readFile(fixturePath());
     ASSERT_FALSE(database.empty());
 
-    const Kdbx4ReadResult result =
-        readKdbx4(database.data(), database.size(), "not-the-password", {});
+    const Kdbx4ReadResult result = readKdbx4(database.data(), database.size(),
+                                             kWrongPasswordBytes(), kWrongPasswordSize(), {});
     EXPECT_FALSE(result.ok());
     EXPECT_FALSE(result.error.empty());
     // The failure has to name the reason, not just "it did not work".
@@ -71,8 +90,8 @@ TEST(Kdbx4ReadResultTest, AWrongKeyFileIsReported) {
     ASSERT_FALSE(database.empty());
 
     const std::vector<std::uint8_t> wrong_key_file(32, 0x42);
-    const Kdbx4ReadResult result =
-        readKdbx4(database.data(), database.size(), "password", wrong_key_file);
+    const Kdbx4ReadResult result = readKdbx4(database.data(), database.size(), kPasswordBytes(),
+                                             kPasswordSize(), wrong_key_file);
     EXPECT_FALSE(result.ok());
     EXPECT_FALSE(result.error.empty());
 }
@@ -85,7 +104,8 @@ TEST(Kdbx4ReaderTest, ADamagedFileIsReported) {
     std::vector<std::uint8_t> damaged = database;
     damaged[damaged.size() / 2] = static_cast<std::uint8_t>(damaged[damaged.size() / 2] ^ 0xFF);
 
-    const Kdbx4ReadResult result = readKdbx4(damaged.data(), damaged.size(), "password", {});
+    const Kdbx4ReadResult result =
+        readKdbx4(damaged.data(), damaged.size(), kPasswordBytes(), kPasswordSize(), {});
     EXPECT_FALSE(result.ok());
 }
 
@@ -95,7 +115,8 @@ TEST(Kdbx4ReaderTest, ATruncatedFileIsReported) {
 
     for (std::size_t length : {std::size_t{0}, std::size_t{10}, std::size_t{200},
                                database.size() / 2, database.size() - 1}) {
-        const Kdbx4ReadResult result = readKdbx4(database.data(), length, "password", {});
+        const Kdbx4ReadResult result =
+            readKdbx4(database.data(), length, kPasswordBytes(), kPasswordSize(), {});
         EXPECT_FALSE(result.ok()) << "a file truncated to " << length << " bytes was read";
     }
 }
@@ -116,7 +137,8 @@ TEST(Kdbx4ReaderTest, AKdbx31FileIsNotReadByThisReader) {
     fake[6] = 0x4b;
     fake[7] = 0xb6;
 
-    const Kdbx4ReadResult result = readKdbx4(fake.data(), fake.size(), "password", {});
+    const Kdbx4ReadResult result =
+        readKdbx4(fake.data(), fake.size(), kPasswordBytes(), kPasswordSize(), {});
     EXPECT_FALSE(result.ok());
 }
 
