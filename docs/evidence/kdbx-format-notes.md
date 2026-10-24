@@ -256,18 +256,15 @@ KDF 参数（规范页的表）：
 出处：`CryptoRandomStream.cs` 的构造函数（`CrsAlgorithm.ChaCha20` / `Salsa20` 分支）与
 `pykeepass/kdbx_parsing/common.py` 的 `Salsa20Stream` / `ChaCha20Stream`。
 
-> **Salsa20 不能用 libsodium 的 `crypto_stream_salsa20`**——它的状态布局和 KeePass 的不是同一个 Salsa20。
+> **保护流直接用 libsodium 就行**——这一条是**对真实 KDBX 3.1 文件量出来的**，不是读代码读出来的：
+> 文件的保护流 id 是 2（Salsa20），用 Salsa20 + 标准状态布局（`σ0..σ3 ‖ key(8) ‖ nonce(2) ‖ counter(2)`，
+> 密钥 = `SHA-256(保护流密钥)`，nonce = 固定的 `E8 30 09 4B 97 20 5D 2A`）能解出 pykeepass 报出的密码；
+> 而按 KeePass 的 C# 代码推出来的另一种布局（`σ0 k0 k1 k2 k3 σ1 nonce(2) counter(2) σ2 k4..k7 σ3`）
+> **解不开**。libsodium 的 `crypto_stream_salsa20` 与前者一致。
 >
-> KeePass（`KeePassLib/Cryptography/Cipher/Salsa20Cipher.cs` 的构造函数）把 16 个字排成：
-> `σ0 | key[0..15] | σ1 | nonce(2 字) | counter(2 字) | σ2 | key[16..31] | σ3`。
+> 教训又是一次：**同一个格式问题，从"读源码"和"量真实文件"得到的答案可以相反**。而真实文件
+> 是仲裁者。
 >
-> libsodium（`crypto_stream/salsa20/ref/salsa20_ref.c` + 它的 core）用的是
-> `σ0..σ3 | key(8 字) | nonce(2 字) ‖ counter(2 字)`——nonce 和 counter 放在字 12–15。
-> **同样的密钥和 nonce，两种布局给出的密钥流不同。**
->
-> 所以 P2-T6 自己实现 Salsa20（照 KeePass 的状态布局），不用 libsodium 的。
-> ChaCha20 没有这个问题：KDBX 4 用的是 IETF 变体（12 字节 nonce + 32 位计数器），
-> 与 libsodium 的 `crypto_stream_chacha20_ietf` 一致。
->
-> **教训**：第三方库的"Salsa20"和"ChaCha20"在名字上不保证布局相同。这跟"读它的头文件、
-> 别凭记忆"是同一条纪律，只是这次要读的是**状态布局**而不是函数签名。
+> ChaCha20（id 3）是 IETF 变体（12 字节 nonce + 32 位计数器），与 libsodium 的
+> `crypto_stream_chacha20_ietf` 一致；密钥是 `SHA-512(保护流密钥)` 的前 32 字节，
+> nonce 是同一次 SHA-512 的第 32..43 字节。

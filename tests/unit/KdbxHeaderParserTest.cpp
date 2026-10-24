@@ -227,12 +227,14 @@ TEST(KdbxHeaderParserTest, ATruncatedHeaderIsRejected) {
     }
 }
 
-TEST(KdbxHeaderParserTest, AVersionAndSignatureThatDisagreeAreRejected) {
-    // The 4.x signature with the 3.1 version is a real combination -- the second
-    // signature is the same for both -- so the version number is what has to decide.
-    const std::vector<std::uint8_t> bytes = buildKdbx31Header(false, 0xB54BFB67, 0x00030001);
+TEST(KdbxHeaderParserTest, ASignatureThatIsNotKdbxIsRejected) {
+    // The second signature is the same for KDBX 3.1 and 4.x -- the version number is
+    // what tells them apart -- so the signature only rules out the formats that are
+    // not KDBX at all: 0xB54BFB65 is the KeePass 1.x format.
+    const std::vector<std::uint8_t> bytes = buildKdbx31Header(false, 0xB54BFB65, 0x00030001);
     const KdbxHeaderParseResult result = parseKdbxHeader(bytes.data(), bytes.size());
     EXPECT_FALSE(result.ok());
+    EXPECT_NE(result.error.find("signature"), std::string::npos) << result.error;
 }
 
 TEST(KdbxHeaderParserTest, AnUnsupportedVersionIsRejected) {

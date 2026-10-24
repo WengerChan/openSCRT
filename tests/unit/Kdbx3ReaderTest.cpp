@@ -65,9 +65,10 @@ TEST(Kdbx3ReaderTest, AWrongPasswordIsReported) {
 
     const Kdbx3ReadResult result = readKdbx3(database.data(), database.size(), "wrong", key_file);
     EXPECT_FALSE(result.ok());
-    // The reason has to be named: the bytes decrypted into something, it just was not
-    // the right thing.
-    EXPECT_NE(result.error.find("stream start bytes"), std::string::npos) << result.error;
+    // The reason has to be named. With a wrong password the padding check usually
+    // fails first, so the message is about the payload not decrypting; when the
+    // padding happens to be valid, it is the stream start bytes that catch it.
+    EXPECT_NE(result.error.find("password"), std::string::npos) << result.error;
 }
 
 TEST(Kdbx3ReaderTest, AWrongKeyFileIsReported) {
