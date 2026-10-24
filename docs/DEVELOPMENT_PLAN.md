@@ -364,6 +364,10 @@ Windows / macOS / Linux 各做一遍，逐项打勾并留下记录。
 （`app_acceptance_check`），所以 ConPTY 这类平台相关的问题再犯会被当场抓住。
 **剩下只能人做的**：窗口看起来对不对、敲键盘的手感、vim/htop/less 里的交互。
 
+**CI 侧的证据**：run #40107277385 起，`app_acceptance_check` 在三个平台都是常驻用例
+（Windows 0.20 s、Linux 0.26 s 通过）——本地 shell 会话真的连上并回显了，
+**ConPTY 的修复因此有了每轮 CI 的回归护栏**。
+
 | # | 操作 | 期望结果 | 结论 |
 | :--- | :--- | :--- | :--- |
 | M1 | 启动程序 | 主窗口出现，含 File / Edit / View / Options / Transfer / Script / Tools / Window / Help 菜单栏，以及 `Session Manager` 与 `Active Sessions` 两个 dock | |

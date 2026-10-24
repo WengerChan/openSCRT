@@ -12,10 +12,12 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDockWidget>
+#include <QFile>
 #include <QMenuBar>
 #include <QTemporaryDir>
 #include <QTimer>
 
+#include "config/ConfigManager.h"
 #include "config/ModuleInfo.h"
 #include "config/SessionProfile.h"
 #include "core/BuildInfo.h"
@@ -257,12 +259,32 @@ int runAcceptanceCheck(QApplication& app) {
         check("the shell echoes a command onto the screen", echoed);
     }
 
-    // 4. A session survives a save and a reload.
-    if (window.saveSessions()) {
-        window.loadSessions();
-        check("a saved session comes back after a reload", window.sessionManager() != nullptr);
-    } else {
-        check("a saved session comes back after a reload", false);
+    // 4. A session survives a save and a reload. The file is written first, so the window
+    //    has something to load: the check is that the id comes back.
+    {
+        openscrt::config::SessionTree tree;
+        openscrt::config::SessionProfile stored;
+        stored.id = "acceptance-stored";
+        stored.name = stored.id;
+        stored.host = "acceptance.example";
+        std::string add_error;
+        if (!tree.add(std::move(stored), &add_error)) {
+            std::fprintf(stderr, "acceptance: the tree refused a session: %s\n", add_error.c_str());
+        }
+        if (!openscrt::config::ConfigManager::saveTree(
+                tree, std::string(scratch.path().toStdString()) + "/sessions.ini")) {
+            check("the session file is written", false);
+        } else {
+            window.loadSessions();
+            const bool saved = window.saveSessions();
+            check("the session file is written", saved);
+            QFile file(QString::fromStdString(std::string(scratch.path().toStdString()) +
+                                              "/sessions.ini"));
+            const bool readable = file.open(QIODevice::ReadOnly | QIODevice::Text);
+            const QString contents = readable ? QString::fromUtf8(file.readAll()) : QString();
+            check("a saved session comes back after a reload",
+                  readable && contents.contains(QStringLiteral("acceptance-stored")));
+        }
     }
 
     // 5. Closing the tab leaves nothing behind.
