@@ -21,6 +21,7 @@ class QListWidget;
 
 namespace openscrt::ui {
 
+class CommandWindow;
 class SessionManagerWidget;
 class WorkspaceTabs;
 
@@ -51,6 +52,7 @@ class MainWindow : public QMainWindow {
     void applyDefaultSessionToAll();
 
     [[nodiscard]] WorkspaceTabs* workspace() const noexcept { return workspace_; }
+    [[nodiscard]] CommandWindow* commandWindow() const noexcept { return command_window_; }
     [[nodiscard]] SessionManagerWidget* sessionManager() const noexcept { return session_manager_; }
     [[nodiscard]] QString statusText() const;
 
@@ -79,12 +81,15 @@ class MainWindow : public QMainWindow {
     void buildStatusBar();
     void setStatus(const QString& text);
     void refreshActiveSessions();
+    // Points the command window at the sessions that are open, and at the one in front.
+    void rebuildCommandTargets();
 
     std::string config_path_;
     config::SessionTree tree_;
     bool tree_loaded_{false};
 
     WorkspaceTabs* workspace_{nullptr};
+    CommandWindow* command_window_{nullptr};
     SessionManagerWidget* session_manager_{nullptr};
     QListWidget* active_sessions_{nullptr};
     QLabel* status_label_{nullptr};

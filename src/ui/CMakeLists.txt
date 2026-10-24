@@ -16,6 +16,7 @@ add_library(openscrt_ui STATIC
     renderer/GlyphAtlas.cpp
     renderer/TerminalRenderer.cpp
     workspace/MainWindow.cpp
+    workspace/CommandWindow.cpp
     workspace/KeePassSelectorDialog.cpp
     workspace/QuickConnectDialog.cpp
     workspace/SessionManagerWidget.cpp

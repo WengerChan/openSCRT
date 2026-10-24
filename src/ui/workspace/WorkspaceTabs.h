@@ -37,6 +37,14 @@ class WorkspaceTabs : public QTabWidget {
     [[nodiscard]] QString activeSessionId() const;
     [[nodiscard]] TerminalSession* sessionById(const QString& id) const;
 
+    // Every session, in the order they were opened.
+    //
+    // The broadcast goes through them in that order, so twenty machines get the same
+    // command in the same order -- which is what makes a broadcast reproducible.
+    [[nodiscard]] const std::vector<std::unique_ptr<TerminalSession>>& sessions() const noexcept {
+        return sessions_;
+    }
+
     bool closeSession(const QString& id);
     void closeAll();
 

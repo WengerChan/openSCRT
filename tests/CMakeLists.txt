@@ -112,6 +112,14 @@ openscrt_add_test(unit_kdbx3_reader
 target_compile_definitions(unit_kdbx3_reader PRIVATE
     OPENCRT_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
+# The command window and its broadcast (P2-T10).
+openscrt_add_test(unit_command_window
+    LABEL unit
+    SOURCES unit/CommandWindowTest.cpp
+    LIBS openscrt_ui Qt6::Gui Qt6::Widgets)
+set_tests_properties(unit_command_window PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # The credential binding of a session (P2-T9).
 openscrt_add_test(unit_kdbx_credential_resolver
     LABEL unit

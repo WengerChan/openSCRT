@@ -14,12 +14,14 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QStatusBar>
+#include <QVBoxLayout>
 #include <string>
 #include <utility>
 
 #include "config/ConfigManager.h"
 #include "core/BuildInfo.h"
 #include "protocols/ITransportChannel.h"
+#include "ui/workspace/CommandWindow.h"
 #include "ui/workspace/QuickConnectDialog.h"
 #include "ui/workspace/SessionManagerWidget.h"
 #include "ui/workspace/TerminalSession.h"
@@ -54,7 +56,15 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     config_path_ = defaultConfigPath().toStdString();
 
     workspace_ = new WorkspaceTabs(this);
-    setCentralWidget(workspace_);
+    command_window_ = new CommandWindow(this);
+
+    // The command window sits under the tabs, the way SecureCRT puts it at the bottom.
+    auto* central = new QWidget(this);
+    auto* layout = new QVBoxLayout(central);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(workspace_, 1);
+    layout->addWidget(command_window_);
+    setCentralWidget(central);
 
     buildDocks();
     buildMenus();
@@ -64,9 +74,12 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
             [this](const QString&, const QString& title) {
                 setStatus(tr("Opened %1").arg(title));
                 refreshActiveSessions();
+                rebuildCommandTargets();
             });
-    connect(workspace_, &WorkspaceTabs::sessionClosed, this,
-            [this](const QString&) { refreshActiveSessions(); });
+    connect(workspace_, &WorkspaceTabs::sessionClosed, this, [this](const QString&) {
+        refreshActiveSessions();
+        rebuildCommandTargets();
+    });
     connect(workspace_, &WorkspaceTabs::sessionStateChanged, this,
             [this](const QString& id, int state, const QString& detail) {
                 const auto transport_state = static_cast<protocols::TransportState>(state);
@@ -295,6 +308,33 @@ void MainWindow::closeCurrentTab() {
         return;
     }
     workspace_->closeSession(id);
+}
+
+void MainWindow::rebuildCommandTargets() {
+    // The sinks look their session up by id when the command is sent, not when the
+    // target is set: a session that is closed in between must not leave a dangling
+    // pointer behind.
+    std::vector<CommandWindow::Sink> sinks;
+    for (const auto& session : workspace_->sessions()) {
+        if (!session) {
+            continue;
+        }
+        const QString id = session->id();
+        sinks.push_back([this, id](const std::vector<std::uint8_t>& bytes) {
+            TerminalSession* target = workspace_->sessionById(id);
+            if (target != nullptr) {
+                target->sendInput(bytes);
+            }
+        });
+    }
+    command_window_->setBroadcastSinks(std::move(sinks));
+
+    command_window_->setCurrentSink([this](const std::vector<std::uint8_t>& bytes) {
+        TerminalSession* target = workspace_->sessionById(workspace_->activeSessionId());
+        if (target != nullptr) {
+            target->sendInput(bytes);
+        }
+    });
 }
 
 void MainWindow::refreshActiveSessions() {
