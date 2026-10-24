@@ -433,6 +433,7 @@ Windows / macOS / Linux 各做一遍，逐项打勾并留下记录。
 | # | 偏差 | 证据 | 处置 |
 | :--- | :--- | :--- | :--- |
 | D8 | **P2-T2 的安全内存容器留在 `src/core/SecureByteArray`，没有迁到计划书写的 `src/credential/memory/`** | Phase 1 的 P1-T14（密码认证）已经需要它，于是它落在 `src/core/`，并被 `protocols`（`SshConnectionOptions::password`）、`ui`（`QuickConnectDialog` / `TerminalSession` / `WorkspaceTabs`）共同依赖。而 `credential` 是**依赖** `core` 的一层（`openscrt_credential` 链 `openscrt_core`）：把基元搬到上层，会让 `core` 反过来依赖 `credential`，也逼 `protocols` / `ui` 改依赖方向 | **复用，不复制。** `src/credential/` 只放 KeePass 专有的东西（KDBX 解析、HTTP 客户端、条目选择器）。P2-A7 的两条断言落在 `tests/unit/SecureByteArrayTest.cpp`：① 析构后 `VmLck` 页计数回到基线（**只有 Linux 有这个观测手段**——`/proc/self/status`；macOS / Windows 无对应计数器，测试显式 skip 并说明原因，不假装验过）；② `mlock` 失败时走降级路径而不是崩溃（`locked()` 诚实性） |
+| D9 | **Argon2 派生走 OpenSSL 的 ARGON2 KDF，而不是路线图写的 libsodium** | 路线图 §3.5 写的是"libsodium（`crypto_pwhash_argon2id`）"。但 **libsodium 没有 Argon2d**：它的常量只有 `crypto_pwhash_ALG_ARGON2I13` 与 `crypto_pwhash_ALG_ARGON2ID13`，`crypto_pwhash_ALG_ARGON2D13` 不存在。而 **KeePass 默认写的就是 Argon2d**（真实样本的 `$UUID` = `EF636DDF…`），所以"用 libsodium"这条路在 KDBX 4 上根本走不通 | 改用 **OpenSSL 3.2+ 自带的 ARGON2 KDF**（`EVP_KDF_fetch` 的 "ARGON2D" / "ARGON2I" / "ARGON2ID" 三个变体都有）。参数：`pass`（复合密钥）、`salt`、`iter`、`lanes`、`version`，以及 `memcost`——**它的单位是 1 KiB 块**，所以文件里的 `M`（字节）要 ÷ 1024（`67108864` → `65536`）。CI 装的是 **OpenSSL 3.5.2** ✔。libsodium 仍用于 `sodium_memzero` 与 ChaCha20 |
 
 ### 5.6 任务完成度与验收取证
 

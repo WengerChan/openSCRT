@@ -113,7 +113,7 @@ Kdbx4ReadResult readKdbx4(const std::uint8_t* data, std::size_t size, const std:
         return result;
     }
 
-    const Digest composite = compositeKey(password, key_file);
+    Digest composite = compositeKey(password, key_file);
 
     Digest transformed{};
     if (header.kdf.kdf == KdbxKdf::kArgon2d || header.kdf.kdf == KdbxKdf::kArgon2id) {

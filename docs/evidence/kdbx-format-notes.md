@@ -164,6 +164,10 @@ KDF 参数（规范页的表）：
 - **AES-KDF**：`transformed = SHA-256(AES-128-ECB 迭代 R 轮(composite))`，密钥是 `S`（32 字节，
   但 AES-128 只用前 16 字节）。
 - **Argon2**：输出 32 字节；`M` 字节要换算成 KiB；版本取 `V`（0x10 或 0x13）。
+  **但 libsodium 没有 Argon2d**（只有 `ARGON2I13` / `ARGON2ID13`），而 KeePass 默认写的就是
+  Argon2d —— 所以实际派生走 **OpenSSL 3.2+ 的 ARGON2 KDF**（"ARGON2D" / "ARGON2I" /
+  "ARGON2ID" 三个名字），参数为 `pass` / `salt` / `iter` / `size` / `memcost` / `lanes` /
+  `version`，其中 `memcost` 的单位是 **1 KiB 块**（= 文件里的 `M` ÷ 1024）。
 - 载荷解密用 `master` 作 AES-256-CBC 的密钥，用字段 7 的 IV。
 
 ## 块流与 HMAC
@@ -217,8 +221,18 @@ data = 块序号(UInt64 LE) ‖ 块长度(UInt32 LE) ‖ 块数据
 出处：`CryptoRandomStream.cs` 的构造函数（`CrsAlgorithm.ChaCha20` / `Salsa20` 分支）与
 `pykeepass/kdbx_parsing/common.py` 的 `Salsa20Stream` / `ChaCha20Stream`。
 
-> Salsa20 的**状态布局**（nonce 与 counter 谁在前）各家实现不同，libsodium 与 PyCryptodome
-> 不一定一致。所以 Salsa20 分支**不能凭"是 Salsa20"就调 libsodium**：实现时必须用
-> `pykeepass` 产出的向量交叉校验（基线要由**独立实现**产生，见 POSTMORTEM 的"基线/差分测试"那条）。
-> ChaCha20 用的是 IETF 变体（12 字节 nonce、32 位计数器），与 libsodium 的
-> `crypto_stream_chacha20_ietf` 一致。
+> **Salsa20 不能用 libsodium 的 `crypto_stream_salsa20`**——它的状态布局和 KeePass 的不是同一个 Salsa20。
+>
+> KeePass（`KeePassLib/Cryptography/Cipher/Salsa20Cipher.cs` 的构造函数）把 16 个字排成：
+> `σ0 | key[0..15] | σ1 | nonce(2 字) | counter(2 字) | σ2 | key[16..31] | σ3`。
+>
+> libsodium（`crypto_stream/salsa20/ref/salsa20_ref.c` + 它的 core）用的是
+> `σ0..σ3 | key(8 字) | nonce(2 字) ‖ counter(2 字)`——nonce 和 counter 放在字 12–15。
+> **同样的密钥和 nonce，两种布局给出的密钥流不同。**
+>
+> 所以 P2-T6 自己实现 Salsa20（照 KeePass 的状态布局），不用 libsodium 的。
+> ChaCha20 没有这个问题：KDBX 4 用的是 IETF 变体（12 字节 nonce + 32 位计数器），
+> 与 libsodium 的 `crypto_stream_chacha20_ietf` 一致。
+>
+> **教训**：第三方库的"Salsa20"和"ChaCha20"在名字上不保证布局相同。这跟"读它的头文件、
+> 别凭记忆"是同一条纪律，只是这次要读的是**状态布局**而不是函数签名。

@@ -1,6 +1,9 @@
 #include "credential/kdbx/KdbxCrypto.h"
 
+#include <openssl/core_names.h>
 #include <openssl/evp.h>
+#include <openssl/hmac.h>
+#include <openssl/params.h>
 #include <sodium.h>
 #include <zlib.h>
 
@@ -134,36 +137,69 @@ Digest aesKdf(const std::uint8_t* seed, std::size_t seed_size, std::uint64_t rou
 
 bool argon2Derive(const KdbxKdfParameters& parameters, const std::uint8_t* composite,
                   std::size_t composite_size, Digest& out, std::string& error) {
-    if (sodium_init() < 0) {
-        error = "libsodium could not be initialised";
-        return false;
-    }
-    if (parameters.kdf != KdbxKdf::kArgon2d && parameters.kdf != KdbxKdf::kArgon2id) {
+    // libsodium has Argon2i and Argon2id but **no Argon2d**, and KeePass writes
+    // Argon2d by default -- so the derivation goes through OpenSSL, whose ARGON2 KDF
+    // has all three variants.
+    const char* algorithm = nullptr;
+    if (parameters.kdf == KdbxKdf::kArgon2d) {
+        algorithm = "ARGON2D";
+    } else if (parameters.kdf == KdbxKdf::kArgon2id) {
+        algorithm = "ARGON2ID";
+    } else {
         error = "the key derivation function is not Argon2";
         return false;
     }
-    // libsodium implements Argon2 1.3. A database that asks for 1.0 would derive a
-    // different key, and quietly deriving the wrong one is worse than refusing.
-    if (parameters.argon2_version != 0x13) {
-        error = "the database uses Argon2 1.0, which this build does not implement";
+    if (parameters.argon2_salt.size() < 8) {
+        error = "the database has no usable Argon2 salt";
         return false;
     }
-    if (parameters.argon2_salt.empty()) {
-        error = "the database has no Argon2 salt";
+    if (parameters.argon2_memory_bytes < 8192) {
+        error = "the database asks for less memory than Argon2 allows";
         return false;
     }
 
-    const int algorithm = parameters.kdf == KdbxKdf::kArgon2id ? crypto_pwhash_ALG_ARGON2ID13
-                                                               : crypto_pwhash_ALG_ARGON2D13;
-    // The memory limit of libsodium is in bytes, the same unit the file uses.
-    const std::size_t memory_limit = static_cast<std::size_t>(parameters.argon2_memory_bytes);
-    if (crypto_pwhash(out.data(), out.size(), reinterpret_cast<const char*>(composite),
-                      composite_size, parameters.argon2_salt.data(), parameters.argon2_salt.size(),
-                      static_cast<unsigned long long>(parameters.argon2_iterations), memory_limit,
-                      algorithm) != 0) {
+    EVP_KDF* kdf = EVP_KDF_fetch(nullptr, algorithm, nullptr);
+    if (kdf == nullptr) {
+        error = "this build of OpenSSL has no Argon2 key derivation";
+        return false;
+    }
+    EVP_KDF_CTX* context = EVP_KDF_CTX_new(kdf);
+    EVP_KDF_free(kdf);
+    if (context == nullptr) {
+        error = "the Argon2 context could not be created";
+        return false;
+    }
+
+    // The memory cost of Argon2 is a number of 1 KiB blocks, while the KDBX file
+    // stores the same thing in bytes.
+    std::uint32_t iterations = static_cast<std::uint32_t>(parameters.argon2_iterations);
+    std::uint32_t lanes = parameters.argon2_parallelism;
+    std::uint32_t memory_kib = static_cast<std::uint32_t>(parameters.argon2_memory_bytes / 1024);
+    std::uint32_t version = parameters.argon2_version;
+    std::uint32_t size = static_cast<std::uint32_t>(out.size());
+
+    // The parameter names are the strings OpenSSL documents; the argon2-specific ones
+    // are spelled out because their macros are not in every OpenSSL header.
+    OSSL_PARAM params[] = {
+        OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_PASSWORD,
+                                          const_cast<std::uint8_t*>(composite), composite_size),
+        OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SALT,
+                                          const_cast<std::uint8_t*>(parameters.argon2_salt.data()),
+                                          parameters.argon2_salt.size()),
+        OSSL_PARAM_construct_uint(OSSL_KDF_PARAM_ITER, &iterations),
+        OSSL_PARAM_construct_uint("memcost", &memory_kib),
+        OSSL_PARAM_construct_uint("lanes", &lanes),
+        OSSL_PARAM_construct_uint("version", &version),
+        OSSL_PARAM_construct_uint(OSSL_KDF_PARAM_SIZE, &size),
+        OSSL_PARAM_construct_end(),
+    };
+
+    const int derived = EVP_KDF_derive(context, out.data(), out.size(), params);
+    EVP_KDF_CTX_free(context);
+    if (derived != 1) {
         error =
-            "the Argon2 parameters were rejected by the library (they may be below "
-            "the minimum rounds or memory it accepts)";
+            "the Argon2 parameters were rejected (they may be outside the range the "
+            "library accepts)";
         return false;
     }
     return true;
@@ -210,7 +246,11 @@ bool chacha20Decrypt(const std::uint8_t* key, const std::uint8_t* nonce, const s
         return false;
     }
     out.assign(size, 0);
-    crypto_stream_chacha20_ietf(out.data(), static_cast<unsigned long long>(size), data, nonce);
+    // Decryption of a stream cipher is the ciphertext XORed with the keystream, which
+    // is what the _xor variant does. The arguments are (output, input, length, nonce,
+    // key): the nonce comes third and the key fourth.
+    crypto_stream_chacha20_ietf_xor(out.data(), data, static_cast<unsigned long long>(size), nonce,
+                                    key);
     return true;
 }
 
