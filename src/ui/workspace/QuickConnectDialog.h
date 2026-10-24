@@ -39,6 +39,11 @@ class QuickConnectDialog : public QDialog {
     // Why the dialog refuses to accept, or an empty string when the input is usable.
     [[nodiscard]] QString validationError() const;
 
+    // What to say when neither a password nor a private key was given: the server will
+    // ask for the password itself. A hint, not an error -- an agent or a
+    // keyboard-interactive setup is a legitimate way to connect.
+    [[nodiscard]] QString authenticationHint() const;
+
     void setHost(const QString& host);
     void setPort(int port);
     void setUser(const QString& user);
@@ -66,6 +71,7 @@ class QuickConnectDialog : public QDialog {
     QLineEdit* key_edit_{nullptr};
     QLineEdit* password_edit_{nullptr};
     QLabel* error_label_{nullptr};
+    QLabel* hint_label_{nullptr};
 };
 
 }  // namespace openscrt::ui

@@ -50,6 +50,13 @@ QuickConnectDialog::QuickConnectDialog(QWidget* parent) : QDialog(parent) {
     error_label_->setWordWrap(true);
     error_label_->hide();
 
+    // The hint is not an error: connecting without a password is legitimate when the
+    // server asks for it itself.
+    hint_label_ = new QLabel(this);
+    hint_label_->setStyleSheet(QStringLiteral("color: #666666;"));
+    hint_label_->setWordWrap(true);
+    hint_label_->hide();
+
     auto* form = new QFormLayout;
     form->addRow(tr("Host:"), host_edit_);
     form->addRow(tr("Port:"), port_spin_);
@@ -64,8 +71,20 @@ QuickConnectDialog::QuickConnectDialog(QWidget* parent) : QDialog(parent) {
 
     auto* layout = new QVBoxLayout(this);
     layout->addLayout(form);
+    layout->addWidget(hint_label_);
     layout->addWidget(error_label_);
     layout->addWidget(buttons);
+
+    // The hint follows the fields: it is only true while neither a password nor a key
+    // has been given.
+    const auto refresh_hint = [this] {
+        const QString hint = authenticationHint();
+        hint_label_->setText(hint);
+        hint_label_->setVisible(!hint.isEmpty());
+    };
+    connect(key_edit_, &QLineEdit::textChanged, this, refresh_hint);
+    connect(password_edit_, &QLineEdit::textChanged, this, refresh_hint);
+    refresh_hint();
 
     resize(420, sizeHint().height());
 }
@@ -80,6 +99,16 @@ QString QuickConnectDialog::validationError() const {
         return tr("A host name is required.");
     }
     return {};
+}
+
+QString QuickConnectDialog::authenticationHint() const {
+    if (selectedProtocol() != config::Protocol::kSsh2) {
+        return {};
+    }
+    if (!key_edit_->text().trimmed().isEmpty() || !password_edit_->text().isEmpty()) {
+        return {};
+    }
+    return tr("No password and no private key: the server will ask for the password itself.");
 }
 
 config::SessionProfile QuickConnectDialog::profile() const {

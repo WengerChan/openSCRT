@@ -155,6 +155,17 @@
 | P1-A13 | 启动即弹连接框 | ① 无参数启动时主窗口与连接框都出现（CI 用 offscreen 断言对话框被构造/显示；offscreen 下模态 `exec()` 会阻塞，测试里要能自动关闭或改成非模态断言）；② `File` 菜单手动触发仍然可用；③ 取消对话框不报错、不留空标签页 |
 | P1-A14 | `Quick Connect` 密码认证 | ① 填密码能连上真实 sshd（复用 CI 内那条真实 sshd：端口 2222、`UsePAM yes`，这次用密码认证再跑一遍端到端）；② 保存/加载会话后 INI 里**不含**密码（需要一条 `ConfigManager` 回归用例守这条）；③ 密码缓冲区用完被擦除 |
 
+**P1-A13 / P1-A14 取证**
+
+| # | 判据 | 证据 | 结论 |
+| :--- | :--- | :--- | :--- |
+| P1-A13① | 无参数启动时主窗口与连接框都出现 | `MainWindowTest.TheStartupQuickConnectDialogAppearsAndCancellingLeavesNoTab`：offscreen 下监听 `quickConnectDialogShown` 信号断言"对话框被构造"，并在模态 `exec()` 的事件循环里自动关掉它 | ✅ |
+| P1-A13② | `File` 菜单仍可用 | `MainWindowTest.TheWindowCarriesTheClassicMenuBar` + 菜单项 `New Session (Quick Connect)...` 与启动路径复用同一个 `openQuickConnect()` | ✅ |
+| P1-A13③ | 取消不报错、不留空标签页 | 同上用例：取消后 `workspace()->sessionCount() == 0` | ✅ |
+| P1-A14① | 密码认证连真实 sshd | CI 的 Linux leg 起 sshd 时**多建一个一次性账号**（密码在 workflow 里随机生成，经环境变量交给测试，不入库），`Ssh2ChannelTest.ConnectsWithAPasswordToARealServer` 用密码登录并在远端跑命令，校验回显 | ✅ |
+| P1-A14② | INI 里不含密码 | `MainWindowTest.TheQuickConnectPasswordNeverReachesTheProfile`：密码不进 `SessionProfile`，保存后的 INI 里既没有明文，也没有任何名为 password 的字段 | ✅ |
+| P1-A14③ | 密码缓冲区用完被擦除 | `MainWindowTest.TheQuickConnectPasswordIsHandedOverInAWipeableBuffer`（擦除后读出来全是零字节）+ `SecureByteArray::withCString` 交给 C API 的副本用 `sodium_memzero` 擦掉、缓冲区析构时再擦一次 | ✅ |
+
 ### 4.4 已识别的路线图技术偏差
 
 | # | 偏差 | 证据 | 处置 |
@@ -189,6 +200,8 @@
 | P1-T10 本地 Shell | ✅ | POSIX `forkpty` 与 Windows ConPTY 均已实现（ConPTY 仅由 Windows leg 编译验证，运行时待人工） |
 | P1-T11 SSH2 通道 | ✅ | libssh 0.11 真实 API；公钥→密码→keyboard-interactive；**D4 契约已在同 PR 从 SKIP 表删除 `libssh`**；密钥类型由 libssh 覆盖 RSA / ECDSA / Ed25519；**VanDyke（ssh.com）私钥格式已实现**（`src/protocols/ssh/SshComKey`：3DES-CBC 解密 + MD5 派生密钥 + 转成 OpenSSH 容器交给 libssh）。用**真实密钥**验证：SSH.NET 测试数据里同一把 RSA 私钥的明文与 3DES 加密两版，解析后逐字段相等；期望公钥由**独立的 Python 实现**导出；CI 的 sshd 被授予该公钥，**加密私钥端到端登录成功** |
 | P1-T12 主窗口与工作区 | ✅ | **完整落地**：会话继承树 + Default Session 模板（纯逻辑、无 Qt 依赖）+ `ConfigManager`（QSettings INI，**只写被覆盖字段**）+ `MainWindow`（经典菜单栏 File/Edit/View/Options/Transfer/Script/Tools/Window/Help；`Session Manager` 与 `Active Sessions` 两个 dock；状态栏）+ `WorkspaceTabs` 多标签工作区 + `QuickConnectDialog`；`--self-test` 在 offscreen 平台自检窗口装配，CI 可判定 |
+| P1-T13 启动即弹连接框 | ✅ | `MainWindow::openStartupQuickConnect()`：无参数启动时在**事件循环里**弹 `Quick Connect`（`QTimer::singleShot`，不阻塞 `show()` 前的 `exec()`）；`File` 菜单路径复用同一个对话框；CI 用 offscreen 断言"对话框被构造"（`quickConnectDialogShown` 信号）且**取消后不留空标签页** |
+| P1-T14 `Quick Connect` 密码认证 | ✅ | 密码字段在 `QuickConnectDialog`，**不进 `SessionProfile`**（那会被 `ConfigManager` 写进 INI）：走 `core::SecureByteArray` 内存通道 → `WorkspaceTabs::openSession` → `TerminalSession` → `SshConnectionOptions::password` → libssh `ssh_userauth_password`；**用完即擦**（`SecureByteArray::withCString` 把明文交给 C API 后用 `sodium_memzero` 擦掉副本，缓冲区析构时再擦一次）；密码与私钥都为空时对话框**当场给提示**而不是等连接失败 |
 
 **验收取证**
 
@@ -317,7 +330,7 @@
 
 **覆盖率（run #39933913420）**：lines **75.8%**（1371/1808）、functions 91.5%（204/223）、branches 62.1%（754/1215）。**16 个单测/自检目标 + 2 个性能基准 + 1 个 TSan 目标全绿。**
 
-**结论：Phase 1 尚未达成阶段出口。** T1–T12 全部完成（含配置持久化与工作区外壳）。验收项：P1-A4 / P1-A5 / P1-A6 / P1-A8 / P1-A3b / P1-A3c **满足**；P1-A3 的机器判定部分**满足**（100 万行工作集、内存增长 4.0 MB、1,847 行/帧），端到端 Widget FPS 待人工；P1-A1 的 CI 侧 SSH 端到端**满足**（真实 sshd + 公钥 + 远端命令执行；OpenSSH 与 ssh.com 两种私钥格式都能登录）；P1-A2 的基线比对**满足**（基线由 tmux 独立参考实现产生，三平台 8/8 逐格一致；**vim / htop / less 的真机抓包差分也全部逐格一致**，并因此抓到并修掉一个"擦除丢背景色"的产品 bug），但用例集非 vttest 原版、且无截图级比对；P1-A7 三端真机验证未做，是阶段出口的硬阻塞——Phase 2 的代码可以并行开工，但阶段出口不得签收。
+**结论：Phase 1 尚未达成阶段出口。** T1–T14 全部完成（含配置持久化、工作区外壳、启动即弹连接框、密码认证）。验收项：P1-A4 / P1-A5 / P1-A6 / P1-A8 / P1-A3b / P1-A3c **满足**；P1-A3 的机器判定部分**满足**（100 万行工作集、内存增长 4.0 MB、1,847 行/帧），端到端 Widget FPS 待人工；P1-A1 的 CI 侧 SSH 端到端**满足**（真实 sshd + 公钥 + 远端命令执行；OpenSSH 与 ssh.com 两种私钥格式都能登录；**密码认证也在同一条真实 sshd 上端到端跑通**）；P1-A13 / P1-A14 **满足**（启动即弹连接框有 offscreen 断言；密码不进 INI 有回归用例；密码缓冲区用完即擦有断言）；P1-A2 的基线比对**满足**（基线由 tmux 独立参考实现产生，三平台 8/8 逐格一致；**vim / htop / less 的真机抓包差分也全部逐格一致**，并因此抓到并修掉一个"擦除丢背景色"的产品 bug），但用例集非 vttest 原版、且无截图级比对；**P1-A7 三端真机验证未做，是阶段出口唯一的硬阻塞**——Phase 2 的代码可以并行开工，但阶段出口不得签收。
 
 **遗留问题登记（Phase 1）**
 

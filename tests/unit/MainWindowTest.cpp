@@ -209,7 +209,7 @@ TEST_F(MainWindowTest, TheQuickConnectPasswordNeverReachesTheProfile) {
 
     // And the session file the profile ends up in has no trace of it.
     config::SessionProfile saved = value;
-    saved.id = "quick-password";
+    saved.id = "quick-secret-check";
     saved.name = saved.id;
     config::SessionTree tree;
     ASSERT_TRUE(tree.add(std::move(saved)));
@@ -219,8 +219,13 @@ TEST_F(MainWindowTest, TheQuickConnectPasswordNeverReachesTheProfile) {
     ASSERT_TRUE(file.open(QIODevice::ReadOnly | QIODevice::Text));
     const QString contents = QString::fromUtf8(file.readAll());
     EXPECT_FALSE(contents.contains(QStringLiteral("s3cret-not-to-be-saved")));
-    EXPECT_FALSE(contents.contains(QStringLiteral("password"), Qt::CaseInsensitive))
-        << "the session file must not grow a password field";
+    // A password in the file would look like a field: "password=...". The check is on the
+    // key, not on the whole text, because a session id may legitimately contain any word.
+    for (const QString& line : contents.split('\n')) {
+        const QString key = line.section('=', 0, 0).trimmed();
+        EXPECT_FALSE(key.contains(QStringLiteral("password"), Qt::CaseInsensitive))
+            << "the session file must not grow a password field";
+    }
 }
 
 TEST_F(MainWindowTest, TheQuickConnectPasswordIsHandedOverInAWipeableBuffer) {
@@ -241,6 +246,26 @@ TEST_F(MainWindowTest, TheQuickConnectPasswordIsHandedOverInAWipeableBuffer) {
     for (const char byte : cleared) {
         EXPECT_EQ(byte, '\0') << "the buffer has to be zero after it is wiped";
     }
+}
+
+TEST_F(MainWindowTest, TheQuickConnectDialogSaysSoWhenThereIsNoPasswordAndNoKey) {
+    // P1-T14: connecting without a password is legitimate when the server asks for it
+    // itself, so this is a hint and not a refusal.
+    QuickConnectDialog dialog;
+    dialog.setHost(QStringLiteral("host.example"));
+    dialog.setProtocol(config::Protocol::kSsh2);
+    EXPECT_FALSE(dialog.authenticationHint().isEmpty());
+    EXPECT_TRUE(dialog.validationError().isEmpty())
+        << "a missing password must not block the dialog";
+
+    dialog.setPassword(QStringLiteral("s3cret"));
+    EXPECT_TRUE(dialog.authenticationHint().isEmpty())
+        << "the hint has to go away once a password is given";
+
+    dialog.setPassword(QString());
+    dialog.setPrivateKeyPath(QStringLiteral("/home/operator/.ssh/id_ed25519"));
+    EXPECT_TRUE(dialog.authenticationHint().isEmpty())
+        << "the hint has to go away once a key is given";
 }
 
 TEST_F(MainWindowTest, ApplyingTheDefaultSessionToAllReachesEverySession) {
