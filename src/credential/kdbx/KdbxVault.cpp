@@ -1,6 +1,7 @@
 #include "credential/kdbx/KdbxVault.h"
 
 #include <QFile>
+#include <QFileInfo>
 #include <algorithm>
 
 #include "credential/kdbx/Kdbx3Reader.h"
@@ -90,6 +91,25 @@ void KdbxVault::setIdleTimeout(std::chrono::milliseconds timeout) {
 
 void KdbxVault::touch() {
     restartIdleTimer();
+    // Using the vault is a good moment to notice a change the watcher missed.
+    checkFileChanged();
+}
+
+void KdbxVault::checkFileChanged() {
+    if (!open_ || path_.isEmpty()) {
+        return;
+    }
+    const QFileInfo info(path_);
+    if (!info.exists() || info.lastModified() == read_at_) {
+        return;
+    }
+    std::string error;
+    if (readDatabase(error)) {
+        restartIdleTimer();
+        emit reloaded(true, QString());
+    } else {
+        emit reloaded(false, QString::fromStdString(error));
+    }
 }
 
 void KdbxVault::restartIdleTimer() {
@@ -155,6 +175,7 @@ bool KdbxVault::readDatabase(std::string& error) {
 
     index_ = std::move(new_index);
     protected_stream_ = new_stream;
+    read_at_ = QFileInfo(path_).lastModified();
     return true;
 }
 

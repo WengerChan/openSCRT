@@ -20,6 +20,7 @@
 #ifndef OPENCRT_CREDENTIAL_KDBX_KDBX_VAULT_H_
 #define OPENCRT_CREDENTIAL_KDBX_KDBX_VAULT_H_
 
+#include <QDateTime>
 #include <QFileSystemWatcher>
 #include <QObject>
 #include <QString>
@@ -86,6 +87,8 @@ class KdbxVault final : public QObject {
     bool readDatabase(std::string& error);
     void onFileChanged(const QString& changed);
     void onIdleTimeout();
+    // Re-reads the file when it changed on disk without the watcher noticing.
+    void checkFileChanged();
     void restartIdleTimer();
     // Drops the key material without telling anyone. The destructor uses it: a signal
     // emitted from a destructor reaches slots that may already be gone.
@@ -96,6 +99,10 @@ class KdbxVault final : public QObject {
     std::vector<std::uint8_t> key_file_;
     KdbxIndex index_;
     KdbxProtectedStream protected_stream_;
+    // When the database was read. The file watcher is registered on a helper thread on
+    // Windows, so a change in the first moments after opening can slip past it; the
+    // timestamp is the backstop.
+    QDateTime read_at_;
     bool open_{false};
     std::chrono::milliseconds idle_timeout_{0};
     QFileSystemWatcher watcher_;

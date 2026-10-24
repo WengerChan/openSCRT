@@ -191,8 +191,50 @@ TEST_F(VaultFixture, AChangedFileIsReadAgain) {
         ok = success;
     });
 
-    // Write the same bytes again: the file changed on disk even though its content did
-    // not, and the vault has to notice.
+    // On Windows the watch is registered on a helper thread, so a change in the first
+    // moments after opening can slip past it. Let the watch settle, and write twice.
+    spin(300);
+    for (int attempt = 0; attempt < 2 && !reloaded; ++attempt) {
+        {
+            QFile file(path);
+            ASSERT_TRUE(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+            ASSERT_EQ(file.write(reinterpret_cast<const char*>(bytes.data()),
+                                 static_cast<qint64>(bytes.size())),
+                      static_cast<qint64>(bytes.size()));
+        }
+        spin(700);
+    }
+    EXPECT_TRUE(reloaded) << "the vault did not notice that the file changed";
+    EXPECT_TRUE(ok) << "the re-read of an unchanged database failed";
+    EXPECT_TRUE(vault.isOpen());
+}
+
+TEST_F(VaultFixture, UsingTheVaultNoticesAChangeTheWatcherMissed) {
+    QTemporaryDir directory;
+    ASSERT_TRUE(directory.isValid());
+    const QString path = directory.filePath("vault.kdbx");
+
+    const std::vector<std::uint8_t> bytes = readFile(kFixturePath.toStdString());
+    ASSERT_FALSE(bytes.empty());
+    {
+        QFile file(path);
+        ASSERT_TRUE(file.open(QIODevice::WriteOnly));
+        ASSERT_EQ(file.write(reinterpret_cast<const char*>(bytes.data()),
+                             static_cast<qint64>(bytes.size())),
+                  static_cast<qint64>(bytes.size()));
+    }
+    const std::vector<std::uint8_t> key_file = readFile(kKeyFilePath.toStdString());
+
+    KdbxVault vault;
+    std::string error;
+    ASSERT_TRUE(vault.open(path, kPasswordBytes(), kPasswordSize(), key_file, error)) << error;
+
+    bool reloaded = false;
+    QObject::connect(&vault, &KdbxVault::reloaded,
+                     [&reloaded](bool, const QString&) { reloaded = true; });
+
+    // Change the file and then use the vault. The watch may or may not have seen it;
+    // the timestamp check is what makes the outcome the same on every platform.
     {
         QFile file(path);
         ASSERT_TRUE(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
@@ -200,10 +242,10 @@ TEST_F(VaultFixture, AChangedFileIsReadAgain) {
                              static_cast<qint64>(bytes.size())),
                   static_cast<qint64>(bytes.size()));
     }
-
-    spin(1500);
-    EXPECT_TRUE(reloaded) << "the vault did not notice that the file changed";
-    EXPECT_TRUE(ok) << "the re-read of an unchanged database failed";
+    spin(50);
+    vault.touch();
+    spin(100);
+    EXPECT_TRUE(reloaded) << "the vault did not notice the change when it was used";
     EXPECT_TRUE(vault.isOpen());
 }
 
