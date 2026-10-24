@@ -10,26 +10,41 @@
 namespace openscrt::credential::kdbx {
 namespace {
 
-// The key that authenticates the header and every block.
+// The inner key: SHA-512( master seed || transformed key || 0x01 ).
 //
-// SHA-512( 0xFF * 8 || SHA-512( master seed || transformed key || 0x01 ) )
-Sha512Digest blockHmacKey(const std::array<std::uint8_t, 32>& master_seed,
-                          const std::array<std::uint8_t, 32>& transformed_key) {
+// Both the header and the blocks are authenticated with a key derived from it, but
+// they do it differently, and the difference is not cosmetic: the header's key is
+// SHA-512( 0xFF * 8 || inner ) while **every block has its own key**,
+// SHA-512( block index || inner ). Using the header's key for the blocks produces a
+// block stream that fails its first integrity check.
+Sha512Digest innerKey(const std::array<std::uint8_t, 32>& master_seed,
+                      const std::array<std::uint8_t, 32>& transformed_key) {
     std::vector<std::uint8_t> inner;
     inner.reserve(master_seed.size() + transformed_key.size() + 1);
     inner.insert(inner.end(), master_seed.begin(), master_seed.end());
     inner.insert(inner.end(), transformed_key.begin(), transformed_key.end());
     inner.push_back(0x01);
+    return sha512(inner.data(), inner.size());
+}
 
-    const Sha512Digest inner_hash = sha512(inner.data(), inner.size());
-
+// The key that authenticates the header.
+Sha512Digest headerHmacKey(const Sha512Digest& inner) {
     std::vector<std::uint8_t> outer;
-    outer.reserve(8 + inner_hash.size());
+    outer.reserve(8 + inner.size());
     for (int i = 0; i < 8; ++i) {
         outer.push_back(0xFF);
     }
-    outer.insert(outer.end(), inner_hash.begin(), inner_hash.end());
+    outer.insert(outer.end(), inner.begin(), inner.end());
     return sha512(outer.data(), outer.size());
+}
+
+// The key of one block.
+Sha512Digest blockHmacKey(std::uint64_t index, const Sha512Digest& inner) {
+    std::vector<std::uint8_t> material;
+    material.reserve(8 + inner.size());
+    appendU64(material, index);
+    material.insert(material.end(), inner.begin(), inner.end());
+    return sha512(material.data(), material.size());
 }
 
 void appendU64(std::vector<std::uint8_t>& out, std::uint64_t value) {
@@ -55,7 +70,7 @@ void appendU32(std::vector<std::uint8_t>& out, std::uint32_t value) {
 // Every block is HMAC(32) || length(UInt32) || data, and the stream ends with a block
 // of length zero. Each block's HMAC covers the block index, the length and the data.
 bool readBlockStream(const std::uint8_t* data, std::size_t size, std::size_t offset,
-                     const Sha512Digest& hmac_key, std::vector<std::uint8_t>& out,
+                     const Sha512Digest& inner_key, std::vector<std::uint8_t>& out,
                      std::string& error) {
     out.clear();
     std::uint64_t block_index = 0;
@@ -78,6 +93,7 @@ bool readBlockStream(const std::uint8_t* data, std::size_t size, std::size_t off
         appendU32(authenticated, length);
         authenticated.insert(authenticated.end(), data + offset, data + offset + length);
 
+        const Sha512Digest hmac_key = blockHmacKey(block_index, inner_key);
         const Digest computed = hmacSha256(hmac_key.data(), hmac_key.size(), authenticated.data(),
                                            authenticated.size());
         if (std::memcmp(computed.data(), stored_hmac, computed.size()) != 0) {
@@ -136,7 +152,8 @@ Kdbx4ReadResult readKdbx4(const std::uint8_t* data, std::size_t size, const std:
     master_input.insert(master_input.end(), transformed.begin(), transformed.end());
     const Digest master_key = sha256(master_input.data(), master_input.size());
 
-    const Sha512Digest hmac_key = blockHmacKey(header.master_seed, transformed);
+    const Sha512Digest inner_key = innerKey(header.master_seed, transformed);
+    const Sha512Digest header_key = headerHmacKey(inner_key);
 
     // The header hash and the header HMAC follow the header itself.
     const std::size_t header_end = header.payload_offset;
@@ -149,15 +166,15 @@ Kdbx4ReadResult readKdbx4(const std::uint8_t* data, std::size_t size, const std:
         result.error = "the header hash does not match (the file is damaged)";
         return result;
     }
-    const Digest header_hmac = hmacSha256(hmac_key.data(), hmac_key.size(), header.raw_bytes.data(),
-                                          header.raw_bytes.size());
+    const Digest header_hmac = hmacSha256(header_key.data(), header_key.size(),
+                                          header.raw_bytes.data(), header.raw_bytes.size());
     if (std::memcmp(header_hmac.data(), data + header_end + 32, header_hmac.size()) != 0) {
         result.error = "the header authentication failed (wrong password or wrong key file)";
         return result;
     }
 
     std::vector<std::uint8_t> encrypted;
-    if (!readBlockStream(data, size, header_end + 64, hmac_key, encrypted, result.error)) {
+    if (!readBlockStream(data, size, header_end + 64, inner_key, encrypted, result.error)) {
         return result;
     }
 

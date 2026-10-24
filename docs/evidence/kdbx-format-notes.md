@@ -182,11 +182,21 @@ KDF 参数（规范页的表）：
 块的 HMAC-SHA256：
 
 ```
-key  = SHA-512( 0xFF×8 ‖ SHA-512(MasterSeed ‖ transformed ‖ 0x01) )
-data = 块序号(UInt64 LE) ‖ 块长度(UInt32 LE) ‖ 块数据
+内层密钥 inner = SHA-512( MasterSeed ‖ transformed ‖ 0x01 )
+
+头部的 HMAC： key  = SHA-512( 0xFF×8 ‖ inner )
+              data = 头部字节
+
+块的 HMAC：   key  = SHA-512( 块序号(UInt64 LE) ‖ inner )      ← 每块一个键
+              data = 块序号(UInt64 LE) ‖ 块长度(UInt32 LE) ‖ 块数据
 ```
 
-头部的 HMAC-SHA256 用同一个 key，覆盖头部字节。
+> **头部和块的键不是同一个**，而且这不是笔误：把头部的键（`0xFF×8 ‖ inner`）用到块上，
+> 第一块就过不了完整性检查，而头部那一步却已经通过了——症状是"密钥肯定是对的，可就是读不出来"。
+> 块序号既进键也进被签名的数据。
+>
+> 出处：`pykeepass/kdbx_parsing/kdbx4.py` 的 `compute_payload_block_hash`（块的键与数据）与
+> `compute_header_hmac_hash`（头部的键与数据）。
 
 3.1 没有块流：整个载荷是**一个**加密流（`HashedBlockStream`），密钥正确性靠解密后前 32 字节
 与字段 9 `StreamStartBytes` 比较来判断。
