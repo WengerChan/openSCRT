@@ -29,6 +29,19 @@ openSCRT — C++20 + Qt 6 的 SecureCRT 对标终端。读代码前先读
    （`killall`/`pgrep`/`osascript` 都被沙箱拒），只能让用户自己收尾。要验证"程序在这台机器
    上能不能起来"，用 CI 的 runner，或让用户自己跑。
 
+## 纪律的自查（规则 0 / 2 / 3 都被违反过，所以写成检查）
+
+2026-10-24 这一轮，规则 0、2、3 三条**同时被违反**：CI 还红着就推了两次 main、用系统
+`python3` 改文档、外网请求（改 release body）没走代理。三条规则都写在上面，违反了也没有
+任何东西拦下来——**写下来的纪律如果没有检查点，就只是愿望**。所以每条都配一个能做的动作：
+
+| 规则 | 提交前/发版前实际要做的 |
+| --- | --- |
+| 0（红着不推） | 推之前先查上一个提交的 run 结论：`curl -s -H "Authorization: Bearer $TOKEN" "https://api.github.com/repos/WengerChan/openSCRT/actions/runs?per_page=1" \| jq -r '.workflow_runs[0] \| "\(.head_sha[0:7]) \(.status) \(.conclusion)"'`。**红或还在跑，就先等**；实在要推，提交信息里写明为什么安全。 |
+| 2（Python 走 uv） | 要跑 Python 就 `uv run python ...`（`UV_CACHE_DIR=$PWD/.cache/uv`），不要 `python3`；改文件优先用编辑工具而不是脚本。 |
+| 3（外网走代理） | 每一条访问外网的命令都 `source ./.proxy.sh`——**包括 `api.github.com`**，哪怕它直连也能通。 |
+| 8（不动用户机器） | 验证一律走 CI runner；不要在用户的桌面启动应用。 |
+
 ## 排障纪律（来自 21 轮 CI 排障的复盘）
 
 - **先分类**：环境 / 编译期契约 / 运行时逻辑。分错类，后面全是浪费。
