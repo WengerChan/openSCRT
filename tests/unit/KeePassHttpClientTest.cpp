@@ -10,10 +10,13 @@
 
 #include <QCoreApplication>
 #include <QHostAddress>
+#include <QSemaphore>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QThread>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -28,25 +31,49 @@ using nlohmann::json;
 
 // A mock of the KeePassHttp plugin: it answers the three requests of the protocol,
 // with the entries encrypted the way the plugin encrypts them.
-class MockKeePassHttpServer final : public QTcpServer {
+//
+// It runs on its own thread. The client is synchronous -- it blocks in
+// waitForReadyRead -- and that only pumps the events of *its* socket: without a thread
+// of its own the mock would never see the request, and the test would fail for a
+// reason that has nothing to do with the protocol.
+class MockKeePassHttpServer final {
  public:
     MockKeePassHttpServer() {
-        listen(QHostAddress::LocalHost, 0);
-        connect(this, &QTcpServer::newConnection, this, &MockKeePassHttpServer::onNewConnection);
+        worker_ = std::make_unique<QThread>();
+        QObject::connect(worker_.get(), &QThread::started, [this]() { start(); });
+        worker_->start();
+        listening_.acquire();  // wait until the server is listening
     }
 
-    [[nodiscard]] quint16 port() const { return serverPort(); }
+    ~MockKeePassHttpServer() {
+        worker_->quit();
+        worker_->wait();
+    }
+
+    [[nodiscard]] quint16 port() const { return port_; }
 
     // The url the client asked for, decrypted by the mock.
-    std::string asked_url;
+    [[nodiscard]] std::string askedUrl() const {
+        const std::lock_guard<std::mutex> guard(mutex_);
+        return asked_url;
+    }
+
     // The login the plugin answers with.
     std::string login = "netops";
     std::string password = "s3cret";
 
  private:
+    void start() {
+        server_ = new QTcpServer();
+        server_->listen(QHostAddress::LocalHost, 0);
+        port_ = server_->serverPort();
+        QObject::connect(server_, &QTcpServer::newConnection, [this]() { onNewConnection(); });
+        listening_.release();
+    }
+
     void onNewConnection() {
-        QTcpSocket* socket = nextPendingConnection();
-        connect(socket, &QTcpSocket::readyRead, this, [this, socket]() { handle(socket); });
+        QTcpSocket* socket = server_->nextPendingConnection();
+        QObject::connect(socket, &QTcpSocket::readyRead, [this, socket]() { handle(socket); });
     }
 
     void handle(QTcpSocket* socket) {
@@ -122,6 +149,12 @@ class MockKeePassHttpServer final : public QTcpServer {
 
     std::string key_;
     QByteArray buffer_;
+    std::string asked_url;
+    std::mutex mutex_;
+    std::unique_ptr<QThread> worker_;
+    QTcpServer* server_{nullptr};
+    quint16 port_{0};
+    QSemaphore listening_;
 };
 
 class KeePassHttpFixture : public ::testing::Test {
@@ -171,7 +204,7 @@ TEST_F(KeePassHttpFixture, TheEntriesComeBackDecrypted) {
         << error;
 
     // The mock decrypted what the client sent, so the request carried a real url.
-    EXPECT_EQ(server_->asked_url, "ssh://10.20.30.40:22");
+    EXPECT_EQ(server_->askedUrl(), "ssh://10.20.30.40:22");
 
     ASSERT_EQ(entries.size(), 1u);
     EXPECT_EQ(entries.front().name, "router");
