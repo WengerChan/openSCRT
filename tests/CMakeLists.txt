@@ -136,6 +136,12 @@ openscrt_add_test(unit_button_bar
 set_tests_properties(unit_button_bar PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+# The SecureCRT importer (P2-T11): the session files and the folder tree.
+openscrt_add_test(unit_securecrt_importer
+    LABEL unit
+    SOURCES unit/SecureCrtConfigImporterTest.cpp
+    LIBS openscrt_config)
+
 # The credential binding of a session (P2-T9).
 openscrt_add_test(unit_kdbx_credential_resolver
     LABEL unit

@@ -4,7 +4,8 @@ add_library(openscrt_config STATIC
     ModuleInfo.cpp
     ButtonBarModel.cpp
     ConfigManager.cpp
-    SessionProfile.cpp)
+    SessionProfile.cpp
+    importers/SecureCrtConfigImporter.cpp)
 
 target_include_directories(openscrt_config PUBLIC ${PROJECT_SOURCE_DIR}/src)
 

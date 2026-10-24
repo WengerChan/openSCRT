@@ -18,6 +18,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QStatusBar>
+#include <QStringList>
 #include <QVBoxLayout>
 #include <cstdint>
 #include <optional>
@@ -25,6 +26,7 @@
 #include <utility>
 
 #include "config/ConfigManager.h"
+#include "config/importers/SecureCrtConfigImporter.h"
 #include "core/BuildInfo.h"
 #include "credential/kdbx/KdbxCredentialResolver.h"
 #include "protocols/ITransportChannel.h"
@@ -168,6 +170,9 @@ void MainWindow::buildMenus() {
     file_menu->addAction(tr("Save Sessions"), QKeySequence(Qt::CTRL | Qt::Key_S), this,
                          [this]() { saveSessions(); });
     file_menu->addSeparator();
+    file_menu->addAction(tr("Import SecureCRT Sessions..."), this,
+                         &MainWindow::importSecureCrtSessions);
+    file_menu->addSeparator();
     file_menu->addAction(tr("Exit"), QKeySequence(Qt::CTRL | Qt::Key_Q), this, &QWidget::close);
 
     QMenu* edit_menu = menuBar()->addMenu(tr("Edit"));
@@ -273,6 +278,48 @@ bool MainWindow::saveButtonBar() {
         return false;
     }
     return config::ConfigManager::saveButtonBar(button_bar_->model(), config_path_);
+}
+
+void MainWindow::importSecureCrtSessions() {
+    const QString directory = QFileDialog::getExistingDirectory(
+        this, tr("Open the SecureCRT Sessions Folder"), QString(), QFileDialog::ShowDirsOnly);
+    if (directory.isEmpty()) {
+        return;
+    }
+
+    const config::SecureCrtImportResult result =
+        config::SecureCrtConfigImporter::importTree(directory.toStdString());
+    if (!result.ok) {
+        QMessageBox::warning(this, tr("SecureCRT"), QString::fromStdString(result.error));
+        return;
+    }
+
+    // The parents come before their children, so the sessions can be added one after
+    // another. A session whose id is already taken is left out and said so.
+    int imported = 0;
+    QStringList problems;
+    for (const config::SessionProfile& profile : result.sessions) {
+        if (tree_.add(profile)) {
+            ++imported;
+            continue;
+        }
+        problems << tr("%1: a session with that id is already there")
+                        .arg(QString::fromStdString(profile.name));
+    }
+    for (const config::SecureCrtSkipped& skipped : result.skipped) {
+        problems << tr("%1: %2").arg(QString::fromStdString(skipped.name),
+                                     QString::fromStdString(skipped.reason));
+    }
+    for (const std::string& note : result.notes) {
+        problems << QString::fromStdString(note);
+    }
+
+    session_manager_->setTree(tree_);
+    saveSessions();
+    setStatus(tr("Imported %1 sessions from SecureCRT").arg(imported));
+    if (!problems.isEmpty()) {
+        QMessageBox::information(this, tr("SecureCRT"), problems.join(QLatin1Char('\n')));
+    }
 }
 
 void MainWindow::openCredentialStore() {

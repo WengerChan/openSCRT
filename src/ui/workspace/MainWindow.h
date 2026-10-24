@@ -66,6 +66,9 @@ class MainWindow : public QMainWindow {
     // be driven without a human in front of the screen.
     bool bindSessionToKeePassEntry(const std::string& session_id, const QString& entry_uuid);
 
+    // Imports the sessions of a SecureCRT Sessions folder into the session tree.
+    void importSecureCrtSessions();
+
     [[nodiscard]] WorkspacePanes* workspace() const noexcept { return workspace_; }
     [[nodiscard]] ButtonBar* buttonBar() const noexcept { return button_bar_; }
     [[nodiscard]] CommandWindow* commandWindow() const noexcept { return command_window_; }
