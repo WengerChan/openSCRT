@@ -68,7 +68,7 @@ class MockKeePassHttpServer final : public QTcpServer {
         buffer_.remove(0, separator + 4 + length);
 
         json response = answer(json::parse(body.toStdString()));
-        const QByteArray payload = response.dump();
+        const QByteArray payload = QByteArray::fromStdString(response.dump());
         QByteArray reply = "HTTP/1.1 200 OK\r\n";
         reply += "Content-Type: application/json\r\n";
         reply += "Content-Length: " + QByteArray::number(payload.size()) + "\r\n";
