@@ -498,11 +498,14 @@ KdbxHeaderParseResult parseKdbxHeader(const std::uint8_t* data, std::size_t size
     // against the whole constant.
     const std::uint32_t major = version & kVersionCriticalMask;
     const std::uint32_t minor = version & ~kVersionCriticalMask;
-    if (major == (kVersion3_1 & kVersionCriticalMask) && minor == 0x0001) {
+    if (major == (kVersion3_1 & kVersionCriticalMask) &&
+        minor == (kVersion3_1 & ~kVersionCriticalMask)) {
         result.header.version = KdbxVersion::kV3_1;
-    } else if (major == (kVersion4_0 & kVersionCriticalMask) && minor == 0x0000) {
+    } else if (major == (kVersion4_0 & kVersionCriticalMask) &&
+               minor == (kVersion4_0 & ~kVersionCriticalMask)) {
         result.header.version = KdbxVersion::kV4_0;
-    } else if (major == (kVersion4_0 & kVersionCriticalMask) && minor == 0x0001) {
+    } else if (major == (kVersion4_1 & kVersionCriticalMask) &&
+               minor == (kVersion4_1 & ~kVersionCriticalMask)) {
         result.header.version = KdbxVersion::kV4_1;
     } else {
         result.error = "unsupported KDBX version";
