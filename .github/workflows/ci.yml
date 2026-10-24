@@ -334,6 +334,21 @@ jobs:
         # perf tier would silently execute on Windows and macOS too.
         run: ctest --test-dir out/build/${{ matrix.preset }} -C Release -L unit --output-on-failure --timeout 600
 
+      # P2-A7: the locked page count has to come back to zero when the buffer dies.
+      #
+      # ctest hides the output of a passing test, so this case runs by name: the log
+      # has to show the page counts before, during and after -- otherwise the evidence
+      # is a green tick and the reader has to take it on faith. If the runner's
+      # RLIMIT_MEMLOCK is too small, the case skips and says so in the log, which is
+      # the honest outcome: the criterion was not observed.
+      - name: Locked page accounting (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          out/build/linux-ci/bin/unit_secure_byte_array \
+            --gtest_filter='*TheDestructorGivesTheLockedPagesBack*'
+
       # The connect dialog against a real server is the part of P1-A7 that CI can judge:
       # the dialog's fields go through the window, into a transport, and the output has
       # to land on the screen. It runs the case by name so the log shows what was proven

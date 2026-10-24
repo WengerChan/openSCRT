@@ -5,6 +5,7 @@
 
 #include <cstring>
 #include <fstream>
+#include <iostream>
 #include <optional>
 #include <string>
 #include <utility>
@@ -168,6 +169,13 @@ TEST(SecureByteArrayTest, TheDestructorGivesTheLockedPagesBack) {
     ASSERT_TRUE(during.has_value());
     const std::optional<long> after = lockedKilobytes();
     ASSERT_TRUE(after.has_value());
+
+    // The numbers go to the log on purpose: ctest hides the output of a passing test,
+    // so without this line the evidence would be a green tick and nothing else. And if
+    // the case skips, the log has to say so out loud rather than let the reader infer
+    // that the criterion was checked.
+    std::cout << "VmLck before=" << *before << " kB, during=" << *during << " kB, after=" << *after
+              << " kB, mlock succeeded=" << (was_locked ? "yes" : "no") << '\n';
 
     if (!was_locked) {
         GTEST_SKIP() << "mlock is unavailable here (RLIMIT_MEMLOCK); the unlock path cannot "
