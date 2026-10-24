@@ -89,7 +89,8 @@ void KdbxVault::openAsync(const QString& path, const std::uint8_t* password,
     open_worker_ = std::thread([this, path, secret = std::move(secret), keys]() mutable {
         PendingOpen result;
         std::string error;
-        result.ok = readDatabaseInto(path, secret, keys, result.index, result.stream, error);
+        result.ok =
+            readDatabaseInto(path, secret, keys, result.index, result.stream, &derivations_, error);
         result.error = std::move(error);
         result.path = path;
         // The password is kept: the file may change, and the vault has to read it again
@@ -197,7 +198,8 @@ void KdbxVault::restartIdleTimer() {
 
 bool KdbxVault::readDatabaseInto(const QString& path, const core::SecureByteArray& password,
                                  const std::vector<std::uint8_t>& key_file, KdbxIndex& index,
-                                 KdbxProtectedStream& stream, std::string& error) {
+                                 KdbxProtectedStream& stream, std::atomic<std::size_t>* derivations,
+                                 std::string& error) {
     const std::vector<std::uint8_t> bytes = readWholeFile(path);
     if (bytes.empty()) {
         error = "the database file could not be read";
@@ -215,6 +217,9 @@ bool KdbxVault::readDatabaseInto(const QString& path, const core::SecureByteArra
     std::size_t xml_offset = 0;
 
     if (header.header.version == KdbxVersion::kV3_1) {
+        if (derivations != nullptr) {
+            derivations->fetch_add(1, std::memory_order_relaxed);
+        }
         const Kdbx3ReadResult read =
             readKdbx3(bytes.data(), bytes.size(), password.data(), password.size(), key_file);
         if (!read.ok()) {
@@ -232,6 +237,9 @@ bool KdbxVault::readDatabaseInto(const QString& path, const core::SecureByteArra
         }
         new_index = indexed.index;
     } else {
+        if (derivations != nullptr) {
+            derivations->fetch_add(1, std::memory_order_relaxed);
+        }
         const Kdbx4ReadResult read =
             readKdbx4(bytes.data(), bytes.size(), password.data(), password.size(), key_file);
         if (!read.ok()) {
@@ -258,7 +266,8 @@ bool KdbxVault::readDatabaseInto(const QString& path, const core::SecureByteArra
 bool KdbxVault::readDatabase(std::string& error) {
     KdbxIndex new_index;
     KdbxProtectedStream new_stream;
-    if (!readDatabaseInto(path_, password_, key_file_, new_index, new_stream, error)) {
+    if (!readDatabaseInto(path_, password_, key_file_, new_index, new_stream, &derivations_,
+                          error)) {
         return false;
     }
     index_ = std::move(new_index);

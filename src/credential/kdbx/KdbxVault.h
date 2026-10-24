@@ -25,6 +25,7 @@
 #include <QObject>
 #include <QString>
 #include <QTimer>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <mutex>
@@ -78,6 +79,16 @@ class KdbxVault final : public QObject {
     // Called when the vault is used, so the idle timer starts over.
     void touch();
 
+    // How many times the key of the database was derived.
+    //
+    // The derivation happens when the database is opened, and it is the slow part of it:
+    // the key of a KDBX 4 file takes a second or more to come out of Argon2. Opening
+    // sessions must not derive it again -- ten sessions have to cost one derivation,
+    // not ten. The counter is what makes that checkable.
+    [[nodiscard]] std::size_t derivationCount() const noexcept {
+        return derivations_.load(std::memory_order_relaxed);
+    }
+
     // The lookups the session layer needs.
     [[nodiscard]] const KdbxEntry* findByUuid(const std::string& uuid) const noexcept;
     [[nodiscard]] const KdbxEntry* findByHost(const std::string& host) const noexcept;
@@ -113,10 +124,14 @@ class KdbxVault final : public QObject {
     // Reads a database file into an index and a protected stream. This is the whole of
     // the work of opening a database, and it does not touch the members of the vault, so
     // it can run on a worker thread.
+    //
+    // `derivations` counts the derivations the read needed. It is null when nobody is
+    // counting.
     [[nodiscard]] static bool readDatabaseInto(const QString& path,
                                                const core::SecureByteArray& password,
                                                const std::vector<std::uint8_t>& key_file,
                                                KdbxIndex& index, KdbxProtectedStream& stream,
+                                               std::atomic<std::size_t>* derivations,
                                                std::string& error);
 
     // Picks the result of the worker up and puts it into the vault. Runs on the thread
@@ -153,6 +168,8 @@ class KdbxVault final : public QObject {
     std::thread open_worker_;
     std::mutex open_mutex_;
     std::optional<PendingOpen> pending_open_;
+    // How many times the key was derived. The worker writes it, the window reads it.
+    std::atomic<std::size_t> derivations_{0};
 };
 
 }  // namespace openscrt::credential::kdbx

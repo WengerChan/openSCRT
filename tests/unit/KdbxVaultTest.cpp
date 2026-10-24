@@ -73,6 +73,29 @@ class VaultFixture : public ::testing::Test {
     std::unique_ptr<QCoreApplication> application_;
 };
 
+TEST_F(VaultFixture, TenSessionsDoNotDeriveTheKeyAgain) {
+    // The derivation of the key is the slow part of opening a database: a second or more
+    // for a KDBX 4 file. It happens once, when the database is opened, and the sessions
+    // that follow take the key that is already there.
+    const std::vector<std::uint8_t> key_file = readFile(kKeyFilePath.toStdString());
+
+    KdbxVault vault;
+    std::string error;
+    ASSERT_TRUE(vault.open(kFixturePath, kPasswordBytes(), kPasswordSize(), key_file, error))
+        << error;
+    ASSERT_EQ(vault.derivationCount(), 1u) << "the key is derived when the database opens";
+    ASSERT_EQ(vault.index().entries.size(), 1u);
+
+    // Ten sessions, each asking for the password of the entry.
+    for (int session = 0; session < 10; ++session) {
+        core::SecureByteArray password;
+        ASSERT_TRUE(vault.revealPassword(vault.index().entries.front(), password, error)) << error;
+        ASSERT_EQ(password.size(), 6u);
+    }
+
+    EXPECT_EQ(vault.derivationCount(), 1u) << "ten sessions must not derive the key again";
+}
+
 TEST_F(VaultFixture, TheDatabaseCanBeUnlockedOnAWorkerThread) {
     // The derivation of the key is deliberately slow, so it happens on a worker thread
     // and the answer comes back through the event loop. This is what keeps the window
