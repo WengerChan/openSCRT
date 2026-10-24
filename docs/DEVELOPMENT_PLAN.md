@@ -434,6 +434,18 @@ Windows / macOS / Linux 各做一遍，逐项打勾并留下记录。
 | :--- | :--- | :--- | :--- |
 | D8 | **P2-T2 的安全内存容器留在 `src/core/SecureByteArray`，没有迁到计划书写的 `src/credential/memory/`** | Phase 1 的 P1-T14（密码认证）已经需要它，于是它落在 `src/core/`，并被 `protocols`（`SshConnectionOptions::password`）、`ui`（`QuickConnectDialog` / `TerminalSession` / `WorkspaceTabs`）共同依赖。而 `credential` 是**依赖** `core` 的一层（`openscrt_credential` 链 `openscrt_core`）：把基元搬到上层，会让 `core` 反过来依赖 `credential`，也逼 `protocols` / `ui` 改依赖方向 | **复用，不复制。** `src/credential/` 只放 KeePass 专有的东西（KDBX 解析、HTTP 客户端、条目选择器）。P2-A7 的两条断言落在 `tests/unit/SecureByteArrayTest.cpp`：① 析构后 `VmLck` 页计数回到基线（**只有 Linux 有这个观测手段**——`/proc/self/status`；macOS / Windows 无对应计数器，测试显式 skip 并说明原因，不假装验过）；② `mlock` 失败时走降级路径而不是崩溃（`locked()` 诚实性） |
 
+### 5.6 任务完成度与验收取证
+
+每一条都指到一次真实的 CI run 或一次可复现的观测；**没有证据的那一格是空的**。
+
+| 任务 / 验收 | 状态 | 证据 |
+| :--- | :--- | :--- |
+| P2-T1 凭据提供者抽象 | ✅ | `src/credential/ICredentialProvider.h`：明文只走 `core::SecureByteArray`；`takeSecret()` 把字节移交给调用方并清空来源；查不到就说查不到（not-found / cancelled / unavailable / error），不返回"空密码冒充成功"；`lock()` 在接口上，自动锁定（P2-T7）才不用向下转型。10 个用例，run **#40122964427** 三平台全绿 |
+| P2-T2 安全内存容器 | ✅ | 复用 `src/core/SecureByteArray`（见 D8）：`sodium_malloc` + `sodium_mlock`，析构时 `sodium_memzero` + 解锁。run **#40123563712** |
+| P2-A7 安全回归 | ✅ **观测到的** | run **#40123563712** 的 Linux leg 日志（CI 单独跑这一条用例，数字进日志）：`VmLck before=0 kB, during=4 kB, after=0 kB, mlock succeeded=yes` —— 锁的页在缓冲活着时确实被锁上，析构后**回到 0**。macOS / Windows 无此观测手段，那两个平台只验降级路径（`locked()` 诚实性），**不假装验过** |
+| P2-T3 KDBX 文件头解析 | ✅ | `src/credential/kdbx/KdbxHeaderParser.cpp`：魔数（3.1 的第二签名是 `0xB54BFB66`、4.x 是 `0xB54BFB67`）、TLV 字段、VariantDictionary、算法 UUID、压缩标志、KDF 参数。**字段长度宽度随版本变**（3.1 是 UInt16，4.x 是 Int32）——这是最容易写错且不报错的一处。夹具是**真实 KeePass 数据库的头 253 字节**（逐字节照抄），不是本项目自己产出的 |
+| KDBX 字节级事实 | ✅ | `docs/evidence/kdbx-format-notes.md`：每条事实带出处（官方规范 / KeePass 参考实现 / 独立实现 pykeepass / 真实样本十六进制）。**记错的两次**（版本号 `0x03040000`、3.1 的第二签名）都记在那份文件里，作为"格式跟 Win32 默认行为一样，凭记忆必错"的证据 |
+
 ---
 
 ## 6. Phase 3 — 多协议栈扩展与 SFTP / Zmodem 传输（第 12–16 周）

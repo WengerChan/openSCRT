@@ -161,7 +161,10 @@ bool parseVariantDictionary(const std::uint8_t* data, std::size_t size,
             return false;
         }
         std::string key(reinterpret_cast<const char*>(reader.current()), key_size);
-        reader.skip(key_size);
+        if (!reader.skip(key_size)) {
+            error = "a variant dictionary key runs past the end of the buffer";
+            return false;
+        }
 
         std::uint32_t value_size = 0;
         if (!reader.readU32(value_size)) {
@@ -173,7 +176,10 @@ bool parseVariantDictionary(const std::uint8_t* data, std::size_t size,
             return false;
         }
         const std::uint8_t* value_bytes = reader.current();
-        reader.skip(value_size);
+        if (!reader.skip(value_size)) {
+            error = "a variant dictionary value runs past the end of the buffer";
+            return false;
+        }
 
         switch (type) {
             case 0x04: {  // UInt32
@@ -477,9 +483,10 @@ KdbxHeaderParseResult parseKdbxHeader(const std::uint8_t* data, std::size_t size
     std::uint32_t signature1 = 0;
     std::uint32_t signature2 = 0;
     std::uint32_t version = 0;
-    reader.readU32(signature1);
-    reader.readU32(signature2);
-    reader.readU32(version);
+    if (!reader.readU32(signature1) || !reader.readU32(signature2) || !reader.readU32(version)) {
+        result.error = "the file is too short to be a KDBX database";
+        return result;
+    }
 
     if (signature1 != kSignature1) {
         result.error = "not a KDBX file: the first signature does not match";
@@ -592,7 +599,7 @@ KdbxHeaderParseResult parseKdbxHeader(const std::uint8_t* data, std::size_t size
                 }
                 std::uint32_t flags = 0;
                 ByteReader flags_reader(field_data, field_size);
-                flags_reader.readU32(flags);
+                (void)flags_reader.readU32(flags);  // the length was checked above
                 if (flags == 0) {
                     result.header.compression = KdbxCompression::kNone;
                 } else if (flags == 1) {
@@ -628,7 +635,7 @@ KdbxHeaderParseResult parseKdbxHeader(const std::uint8_t* data, std::size_t size
                 }
                 std::uint64_t rounds = 0;
                 ByteReader rounds_reader(field_data, field_size);
-                rounds_reader.readU64(rounds);
+                (void)rounds_reader.readU64(rounds);  // the length was checked above
                 result.header.kdf.aes_rounds = rounds;
                 break;
             }
@@ -660,7 +667,7 @@ KdbxHeaderParseResult parseKdbxHeader(const std::uint8_t* data, std::size_t size
                 }
                 std::uint32_t stream_id = 0;
                 ByteReader stream_reader(field_data, field_size);
-                stream_reader.readU32(stream_id);
+                (void)stream_reader.readU32(stream_id);  // the length was checked above
                 result.header.inner_random_stream_id = stream_id;
                 break;
             }

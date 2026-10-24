@@ -146,18 +146,25 @@ KDF 参数（规范页的表）：
 ## 密钥链
 
 ```
-复合密钥 composite = SHA-256(密码的 UTF-8) ‖ 密钥文件内容(32 字节)
+复合密钥 composite = SHA-256( SHA-256(密码的 UTF-8) ‖ 密钥文件内容(32 字节) )
 派生密钥 transformed = Argon2d/Argon2id(composite) 或 AES-KDF(composite)
 主密钥   master     = SHA-256(MasterSeed ‖ transformed)
 ```
 
+> **这里我第一遍也写错了**：复合密钥是**外面还要再哈希一次**的
+> `SHA-256(password_composite ‖ keyfile_composite)`，不是把两段直接拼起来当复合密钥。
+> 出处：`pykeepass/kdbx_parsing/common.py` 的 `compute_key_composite` 最后一行的
+> `hashlib.sha256(password_composite + keyfile_composite).digest()`。
+> 差这一层哈希，派生出的密钥就全错，而症状是"解出来的是乱码"——不报错，只是读不出内容。
+
+- 密码段：`SHA-256(密码的 UTF-8)`；没有密码时是空。
+- 密钥文件段：二进制密钥文件取其 32 字节；64 字节的十六进制文本解成 32 字节；
+  XML 密钥文件按 `Meta/Version` 取 `Key/Data`（1.0 是 Base64，2.0 是十六进制，2.0 还要
+  对 `Hash` 属性做前 4 字节校验）；其他长度的文件取 `SHA-256(文件内容)`。没有密钥文件时是空。
 - **AES-KDF**：`transformed = SHA-256(AES-128-ECB 迭代 R 轮(composite))`，密钥是 `S`（32 字节，
   但 AES-128 只用前 16 字节）。
 - **Argon2**：输出 32 字节；`M` 字节要换算成 KiB；版本取 `V`（0x10 或 0x13）。
-- 密钥文件可以是二进制（取前 32 字节）或 XML 格式（`Meta/Version` + `Key/Data`，
-  1.0 是 Base64、2.0 是十六进制）。
-
-载荷解密用 `master` 作 AES-256-CBC 的密钥，用字段 7 的 IV。
+- 载荷解密用 `master` 作 AES-256-CBC 的密钥，用字段 7 的 IV。
 
 ## 块流与 HMAC
 
