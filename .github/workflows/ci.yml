@@ -3,6 +3,23 @@ name: CI
 on:
   push:
     branches: [main]
+    # A documentation-only push does not need a three-platform matrix. The patterns
+    # below are the ones that cannot reach the build graph: every tracked `.md` is
+    # documentation, `docs/` holds nothing else, and `.proxy.sh` is a local helper
+    # that no CI job reads. Everything that can change a build stays outside the
+    # list on purpose -- `.gitattributes` decides line endings after checkout,
+    # `.gitignore` decides what the packaging steps pick up, and `.github/` is the
+    # CI itself.
+    #
+    # `'**.md'` is the pattern that matches a markdown file at any depth, the
+    # repository root included; `'**/*.md'` would not, because its slash is a
+    # literal. `pull_request` deliberately has no path filter: a workflow skipped
+    # by path filtering never reports its required status check, so a future
+    # branch protection rule would sit pending forever.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.proxy.sh'
   pull_request:
   workflow_dispatch:
 
