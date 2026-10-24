@@ -70,6 +70,16 @@ openscrt_add_test(unit_config_manager
     SOURCES unit/ConfigManagerTest.cpp
     LIBS openscrt_config Qt6::Core)
 
+# The credential provider abstraction (P2-T1).
+#
+# No Qt and no display: the credential layer is deliberately free of both, so the memory
+# guarantees it makes (the plaintext lives in a locked buffer and nowhere else) can be
+# tested in CI on every platform.
+openscrt_add_test(unit_credential_provider
+    LABEL unit
+    SOURCES unit/ICredentialProviderTest.cpp
+    LIBS openscrt_credential openscrt_core)
+
 # The window shell needs a QApplication; the offscreen platform plugin makes that work in CI
 # without a display server.
 openscrt_add_test(unit_main_window
