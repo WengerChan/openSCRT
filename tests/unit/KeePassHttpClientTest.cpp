@@ -92,7 +92,7 @@ class MockKeePassHttpServer final : public QTcpServer {
             const std::string nonce = request.value("Nonce", "");
             std::string error;
             std::string url;
-            decryptField(key_, nonce, request.value("Url", ""), url, error);
+            (void)decryptField(key_, nonce, request.value("Url", ""), url, error);
             asked_url = url;
 
             // The answer is encrypted with a nonce of the plugin's own.
@@ -103,12 +103,12 @@ class MockKeePassHttpServer final : public QTcpServer {
             std::string encrypted_password;
             std::string encrypted_login;
             std::string encrypted_name;
-            encryptField(key_, response_nonce, password, encrypted_password, error);
-            encryptField(key_, response_nonce, login, encrypted_login, error);
-            encryptField(key_, response_nonce, "router", encrypted_name, error);
+            (void)encryptField(key_, response_nonce, password, encrypted_password, error);
+            (void)encryptField(key_, response_nonce, login, encrypted_login, error);
+            (void)encryptField(key_, response_nonce, "router", encrypted_name, error);
 
             std::string encrypted_field;
-            encryptField(key_, response_nonce, "the value", encrypted_field, error);
+            (void)encryptField(key_, response_nonce, "the value", encrypted_field, error);
 
             json entries = json::array();
             entries.push_back({{"Name", encrypted_name},
