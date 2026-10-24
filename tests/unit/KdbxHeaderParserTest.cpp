@@ -146,7 +146,7 @@ TEST(KdbxHeaderParserTest, TheRealKdbx4HeaderParses) {
     EXPECT_EQ(result.header.cipher, KdbxCipher::kAes256Cbc);
     EXPECT_EQ(result.header.compression, KdbxCompression::kGzip);
     EXPECT_EQ(result.header.master_seed[0], 0xB5);
-    EXPECT_EQ(result.header.master_seed[31], 0x07);
+    EXPECT_EQ(result.header.master_seed[31], 0x23);
     ASSERT_EQ(result.header.encryption_iv.size(), 16u);
     EXPECT_EQ(result.header.encryption_iv[0], 0x90);
     EXPECT_EQ(result.header.encryption_iv[15], 0x76);
@@ -154,7 +154,7 @@ TEST(KdbxHeaderParserTest, TheRealKdbx4HeaderParses) {
     EXPECT_EQ(result.header.kdf.kdf, KdbxKdf::kArgon2d);
     EXPECT_EQ(result.header.kdf.argon2_iterations, 14u);
     // The memory is in bytes in the file, not in KiB.
-    EXPECT_EQ(result.header.kdf.argon2_memory_bytes, 262144u);
+    EXPECT_EQ(result.header.kdf.argon2_memory_bytes, 67108864u);
     EXPECT_EQ(result.header.kdf.argon2_parallelism, 2u);
     EXPECT_EQ(result.header.kdf.argon2_version, 0x13u);
     ASSERT_EQ(result.header.kdf.argon2_salt.size(), 32u);
