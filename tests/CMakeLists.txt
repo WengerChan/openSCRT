@@ -175,6 +175,15 @@ set_tests_properties(app_gui_self_test PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     TIMEOUT 120)
 
+# The acceptance check: the same checks the user runs on their own machine, so the CI can
+# keep them from regressing. It opens a real local shell session -- forkpty on POSIX,
+# ConPTY on Windows -- so it is also the check that the platform's pty still works.
+add_test(NAME app_acceptance_check COMMAND openscrt --acceptance-check)
+set_tests_properties(app_acceptance_check PROPERTIES
+    LABELS "unit"
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 180)
+
 # P1-A4: the SPSC ring buffer under ThreadSanitizer.
 #
 # The sanitizer has to instrument the code under test, and the ring buffer is header-only,

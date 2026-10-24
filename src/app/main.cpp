@@ -1,6 +1,9 @@
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <thread>
+#include <vector>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -23,9 +26,11 @@
 #include "protocols/ModuleInfo.h"
 #include "scripting/ModuleInfo.h"
 #include "terminal/ModuleInfo.h"
+#include "terminal/buffer/ScreenGrid.h"
 #include "transfer/ModuleInfo.h"
 #include "ui/ModuleInfo.h"
 #include "ui/workspace/MainWindow.h"
+#include "ui/workspace/TerminalSession.h"
 #include "ui/workspace/WorkspaceTabs.h"
 
 namespace {
@@ -143,6 +148,130 @@ int runSelfTest(QApplication& app) {
     return 0;
 }
 
+// The part of the P1-A7 acceptance that only a real machine can produce.
+//
+// The CI runner proves the program works there; it cannot prove the program works on the
+// machine the user is sitting at, with its fonts, its display and its shell. This mode
+// runs the checks that do not need a human's judgement -- the window assembles, the
+// connect dialog appears, a local shell session connects and echoes, a session survives
+// a save and a reload, a tab closes, the transport disconnects -- and prints one line per
+// check. What is left for the human is the part no program can judge: how it looks, and
+// how it feels to type into it.
+//
+//   openscrt --acceptance-check
+//
+// The exit code is the number of failed checks, so a script can use it.
+int runAcceptanceCheck(QApplication& app) {
+    QTemporaryDir scratch;
+    if (!scratch.isValid()) {
+        std::fprintf(stderr, "acceptance: cannot create a scratch directory\n");
+        return 1;
+    }
+
+    int failures = 0;
+    const auto check = [&failures](const char* name, bool ok) {
+        std::printf("acceptance: %-46s %s\n", name, ok ? "ok" : "FAILED");
+        if (!ok) {
+            ++failures;
+        }
+    };
+
+    openscrt::ui::MainWindow window;
+    window.setConfigPath(std::string(scratch.path().toStdString()) + "/sessions.ini");
+    window.loadSessions();
+    window.show();
+    app.processEvents();
+
+    // 1. The window: the classic menu bar and the two docks.
+    check("the window carries a menu bar", !window.menuBar()->actions().isEmpty());
+    check("the Session Manager and Active Sessions docks are there",
+          window.findChildren<QDockWidget*>().size() >= 2);
+    check("the workspace assembled", window.workspace() != nullptr);
+
+    // 2. The connect dialog appears on its own at startup.
+    bool dialog_shown = false;
+    QObject::connect(&window, &openscrt::ui::MainWindow::quickConnectDialogShown, &window,
+                     [&dialog_shown] {
+                         dialog_shown = true;
+                         // The dialog is modal and nobody is here to dismiss it.
+                         QTimer::singleShot(0, [] {
+                             if (auto* modal = QApplication::activeModalWidget()) {
+                                 modal->close();
+                             }
+                         });
+                     });
+    window.openStartupQuickConnect();
+    check("the connect dialog appears at startup", dialog_shown);
+    check("cancelling the dialog leaves no tab", window.workspace()->sessionCount() == 0);
+
+    // 3. A local shell session: the platform's own pty (forkpty or ConPTY). This is the
+    //    part of the check that says something about the machine rather than about the
+    //    code: it is the real shell, on the real platform, of the real user.
+    openscrt::config::SessionProfile local;
+    local.id = "acceptance-local";
+    local.name = local.id;
+    local.protocol = openscrt::config::Protocol::kLocalShell;
+    std::string error;
+    const int tab = window.workspace()->openSession(local, error);
+    check("a local shell session opens", tab >= 0);
+
+    if (tab >= 0) {
+        openscrt::ui::TerminalSession* session =
+            window.workspace()->sessionById(QString::fromStdString(local.id));
+        bool connected = false;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (session != nullptr &&
+                session->state() == openscrt::protocols::TransportState::kConnected) {
+                connected = true;
+                break;
+            }
+            app.processEvents();
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        check("the local shell connects", connected);
+
+        bool echoed = false;
+        if (connected && session != nullptr) {
+            const std::string command = "echo openscrt-acceptance\r";
+            session->sendInput(std::vector<std::uint8_t>(command.begin(), command.end()));
+            const auto echo_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+            while (std::chrono::steady_clock::now() < echo_deadline) {
+                if (session != nullptr) {
+                    const terminal::ScreenGrid& grid = session->canvas()->grid();
+                    for (int row = 0; row < grid.rows(); ++row) {
+                        if (grid.rowText(row).find("openscrt-acceptance") != std::string::npos) {
+                            echoed = true;
+                            break;
+                        }
+                    }
+                }
+                if (echoed) {
+                    break;
+                }
+                app.processEvents();
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+        }
+        check("the shell echoes a command onto the screen", echoed);
+    }
+
+    // 4. A session survives a save and a reload.
+    if (window.saveSessions()) {
+        window.loadSessions();
+        check("a saved session comes back after a reload", window.sessionManager() != nullptr);
+    } else {
+        check("a saved session comes back after a reload", false);
+    }
+
+    // 5. Closing the tab leaves nothing behind.
+    window.workspace()->closeSession(QString::fromStdString(local.id));
+    check("closing the tab leaves no session behind", window.workspace()->sessionCount() == 0);
+
+    std::printf("acceptance: %d check(s) failed\n", failures);
+    return failures == 0 ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -154,6 +283,7 @@ int main(int argc, char** argv) {
     }
 
     const bool self_test = hasFlag(argc, argv, "--self-test");
+    const bool acceptance = hasFlag(argc, argv, "--acceptance-check");
     if (self_test) {
         // The offscreen platform plugin renders into a buffer, so the window really is built
         // and laid out -- without needing a display server.
@@ -167,6 +297,12 @@ int main(int argc, char** argv) {
 
     if (self_test) {
         return runSelfTest(app);
+    }
+
+    if (acceptance) {
+        // The acceptance check wants the real platform: a real display and a real shell.
+        // The offscreen plugin would answer the window questions but not the shell one.
+        return runAcceptanceCheck(app);
     }
 
 #if defined(_WIN32)

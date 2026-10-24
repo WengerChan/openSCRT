@@ -357,6 +357,13 @@ Windows / macOS / Linux 各做一遍，逐项打勾并留下记录。
 主机、端口、用户名、密钥路径和密码直接打印出来；CI 的 Linux leg 跑的是**同一个脚本**，
 所以这里看到的参数和 CI 里的一模一样。收工用 `tools/local_sshd.sh --stop`。
 
+**先跑一遍程序自己的自检**：`openscrt --acceptance-check` 会在**你这台机器上**逐项检查
+窗口装配、启动弹出的连接框、本地 shell 会话连上并回显、会话存盘再读回、关标签无残留，
+每项打一行 `ok`/`FAILED`，最后给出失败项数（退出码即失败数）。这一份是"真机"那一半的
+记录（CI 证明的是 runner 那一半）；它同时也是 CI 里的常驻回归项
+（`app_acceptance_check`），所以 ConPTY 这类平台相关的问题再犯会被当场抓住。
+**剩下只能人做的**：窗口看起来对不对、敲键盘的手感、vim/htop/less 里的交互。
+
 | # | 操作 | 期望结果 | 结论 |
 | :--- | :--- | :--- | :--- |
 | M1 | 启动程序 | 主窗口出现，含 File / Edit / View / Options / Transfer / Script / Tools / Window / Help 菜单栏，以及 `Session Manager` 与 `Active Sessions` 两个 dock | |
