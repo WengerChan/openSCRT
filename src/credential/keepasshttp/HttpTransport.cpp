@@ -56,7 +56,7 @@ bool QtHttpTransport::post(const std::string& body, std::string& response, std::
                 headers.left(headers.indexOf('\r')).toStdString();
         return false;
     }
-    if (headers.contains("Transfer-Encoding: chunked", Qt::CaseInsensitive)) {
+    if (headers.contains(QByteArrayLiteral("Transfer-Encoding: chunked"), Qt::CaseInsensitive)) {
         error =
             "the KeePassHttp plugin answered with a chunked body, which this transport "
             "does not read";
