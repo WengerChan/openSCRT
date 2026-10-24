@@ -10,6 +10,18 @@
 namespace openscrt::credential::kdbx {
 namespace {
 
+void appendU64(std::vector<std::uint8_t>& out, std::uint64_t value) {
+    for (int i = 0; i < 8; ++i) {
+        out.push_back(static_cast<std::uint8_t>((value >> (i * 8)) & 0xFF));
+    }
+}
+
+void appendU32(std::vector<std::uint8_t>& out, std::uint32_t value) {
+    for (int i = 0; i < 4; ++i) {
+        out.push_back(static_cast<std::uint8_t>((value >> (i * 8)) & 0xFF));
+    }
+}
+
 // The inner key: SHA-512( master seed || transformed key || 0x01 ).
 //
 // Both the header and the blocks are authenticated with a key derived from it, but
@@ -45,18 +57,6 @@ Sha512Digest blockHmacKey(std::uint64_t index, const Sha512Digest& inner) {
     appendU64(material, index);
     material.insert(material.end(), inner.begin(), inner.end());
     return sha512(material.data(), material.size());
-}
-
-void appendU64(std::vector<std::uint8_t>& out, std::uint64_t value) {
-    for (int i = 0; i < 8; ++i) {
-        out.push_back(static_cast<std::uint8_t>((value >> (i * 8)) & 0xFF));
-    }
-}
-
-void appendU32(std::vector<std::uint8_t>& out, std::uint32_t value) {
-    for (int i = 0; i < 4; ++i) {
-        out.push_back(static_cast<std::uint8_t>((value >> (i * 8)) & 0xFF));
-    }
 }
 
 [[nodiscard]] std::uint32_t readU32(const std::uint8_t* data) {
