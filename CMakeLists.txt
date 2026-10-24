@@ -77,10 +77,11 @@ endif()
 # become non-empty (Phase 1+).
 # --------------------------------------------------------------------------------------
 find_package(Qt6 REQUIRED COMPONENTS Core)
-find_package(Qt6 QUIET COMPONENTS Gui Widgets SerialPort)
+find_package(Qt6 QUIET COMPONENTS Gui Widgets SerialPort Network)
 set(OPENCRT_QT_GUI_AVAILABLE ${Qt6Gui_FOUND})
 set(OPENCRT_QT_WIDGETS_AVAILABLE ${Qt6Widgets_FOUND})
 set(OPENCRT_QT_SERIALPORT_AVAILABLE ${Qt6SerialPort_FOUND})
+set(OPENCRT_QT_NETWORK_AVAILABLE ${Qt6Network_FOUND})
 
 # --------------------------------------------------------------------------------------
 # libsodium (pkg-config keeps us working across vcpkg / distro layouts)
@@ -120,4 +121,5 @@ message(STATUS "  warnings-as-err : ${OPENCRT_WARNINGS_AS_ERRORS}")
 message(STATUS "  Qt6 config      : ${Qt6_DIR}")
 message(STATUS "  Qt widgets      : ${OPENCRT_QT_WIDGETS_AVAILABLE}")
 message(STATUS "  Qt serialport   : ${OPENCRT_QT_SERIALPORT_AVAILABLE}")
+message(STATUS "  Qt network      : ${OPENCRT_QT_NETWORK_AVAILABLE}")
 message(STATUS "  tests           : ${OPENCRT_BUILD_TESTS}")

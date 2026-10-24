@@ -112,6 +112,12 @@ openscrt_add_test(unit_kdbx3_reader
 target_compile_definitions(unit_kdbx3_reader PRIVATE
     OPENCRT_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
+# The KeePassHTTP client (P2-T8). The test talks to a mock plugin over a real socket.
+openscrt_add_test(unit_keepasshttp_client
+    LABEL unit
+    SOURCES unit/KeePassHttpClientTest.cpp
+    LIBS openscrt_credential)
+
 # The vault: the open database, the file watcher and the idle lock (P2-T7).
 openscrt_add_test(unit_kdbx_vault
     LABEL unit

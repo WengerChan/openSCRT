@@ -41,7 +41,6 @@ SKIP = {
     #
     # pugixml is no longer skipped either: P2-T6 links it for the XML inside a KeePass
     # database. nlohmann-json stays skipped until the KeePassHTTP client (P2-T8) links it.
-    "nlohmann-json": "not linked yet -- the KeePassHTTP client lands in P2-T8",
 }
 
 # Only linked by the test tree. A packaging/release build configures with
