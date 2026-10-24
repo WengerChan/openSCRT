@@ -28,12 +28,13 @@
 #include "core/BuildInfo.h"
 #include "credential/kdbx/KdbxCredentialResolver.h"
 #include "protocols/ITransportChannel.h"
+#include "ui/workspace/ButtonBar.h"
 #include "ui/workspace/CommandWindow.h"
 #include "ui/workspace/KeePassSelectorDialog.h"
 #include "ui/workspace/QuickConnectDialog.h"
 #include "ui/workspace/SessionManagerWidget.h"
 #include "ui/workspace/TerminalSession.h"
-#include "ui/workspace/WorkspaceTabs.h"
+#include "ui/workspace/WorkspacePanes.h"
 
 namespace openscrt::ui {
 namespace {
@@ -63,14 +64,17 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     resize(1100, 720);
     config_path_ = defaultConfigPath().toStdString();
 
-    workspace_ = new WorkspaceTabs(this);
+    workspace_ = new WorkspacePanes(this);
+    button_bar_ = new ButtonBar(this);
     command_window_ = new CommandWindow(this);
 
-    // The command window sits under the tabs, the way SecureCRT puts it at the bottom.
+    // The button bar sits under the workspace and the command window under that, the way
+    // SecureCRT puts them at the bottom.
     auto* central = new QWidget(this);
     auto* layout = new QVBoxLayout(central);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(workspace_, 1);
+    layout->addWidget(button_bar_);
     layout->addWidget(command_window_);
     setCentralWidget(central);
 
@@ -78,17 +82,17 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     buildMenus();
     buildStatusBar();
 
-    connect(workspace_, &WorkspaceTabs::sessionOpened, this,
+    connect(workspace_, &WorkspacePanes::sessionOpened, this,
             [this](const QString&, const QString& title) {
                 setStatus(tr("Opened %1").arg(title));
                 refreshActiveSessions();
                 rebuildCommandTargets();
             });
-    connect(workspace_, &WorkspaceTabs::sessionClosed, this, [this](const QString&) {
+    connect(workspace_, &WorkspacePanes::sessionClosed, this, [this](const QString&) {
         refreshActiveSessions();
         rebuildCommandTargets();
     });
-    connect(workspace_, &WorkspaceTabs::sessionStateChanged, this,
+    connect(workspace_, &WorkspacePanes::sessionStateChanged, this,
             [this](const QString& id, int state, const QString& detail) {
                 const auto transport_state = static_cast<protocols::TransportState>(state);
                 QString text =
@@ -106,6 +110,25 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
                     setStatus(tr("Selected session %1").arg(id));
                 }
             });
+
+    // A button sends to the session that is in front when it is pressed. The session is
+    // looked up at that moment and not when the button was built, so a button follows
+    // the user from one session to the next.
+    button_bar_->setSender([this](const std::uint8_t* data, std::size_t size) {
+        TerminalSession* target = workspace_->sessionById(workspace_->activeSessionId());
+        if (target != nullptr) {
+            target->sendInput(std::vector<std::uint8_t>(data, data + size));
+        }
+    });
+    connect(button_bar_, &ButtonBar::openSessionRequested, this,
+            [this](const QString& id) { openSession(id.toStdString()); });
+    connect(button_bar_, &ButtonBar::scriptRequested, this, [this](const QString& path) {
+        setStatus(tr("Running scripts arrives with the scripting phase (%1)").arg(path));
+    });
+    connect(button_bar_, &ButtonBar::menuFunctionRequested, this, [this](const QString& path) {
+        setStatus(tr("Menu functions arrive with the scripting phase (%1)").arg(path));
+    });
+    connect(button_bar_, &ButtonBar::modelChanged, this, [this]() { saveButtonBar(); });
 
     setStatus(tr("Ready"));
 }
@@ -167,22 +190,18 @@ void MainWindow::buildMenus() {
     tools_menu->addAction(tr("Open KeePass Database..."), this, &MainWindow::openCredentialStore);
     tools_menu->addAction(tr("Bind Session to KeePass Entry..."), this,
                           [this]() { chooseKeePassEntry(); });
-    addPlaceholder(tools_menu, tr("Button Bar"), tr("the workspace phase"));
 
     QMenu* window_menu = menuBar()->addMenu(tr("Window"));
-    window_menu->addAction(tr("Next Tab"), QKeySequence(Qt::CTRL | Qt::Key_Tab), this, [this]() {
-        const int index = workspace_->currentIndex() + 1;
-        if (index < workspace_->count()) {
-            workspace_->setCurrentIndex(index);
-        }
-    });
+    window_menu->addAction(tr("Next Tab"), QKeySequence(Qt::CTRL | Qt::Key_Tab), this,
+                           [this]() { workspace_->nextTab(); });
     window_menu->addAction(tr("Previous Tab"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Tab),
-                           this, [this]() {
-                               const int index = workspace_->currentIndex() - 1;
-                               if (index >= 0) {
-                                   workspace_->setCurrentIndex(index);
-                               }
-                           });
+                           this, [this]() { workspace_->previousTab(); });
+    window_menu->addSeparator();
+    window_menu->addAction(tr("Split Right"), this,
+                           [this]() { workspace_->split(Qt::Horizontal); });
+    window_menu->addAction(tr("Split Down"), this, [this]() { workspace_->split(Qt::Vertical); });
+    window_menu->addAction(tr("Tile Panes"), this, [this]() { workspace_->tile(); });
+    window_menu->addAction(tr("Close Pane"), this, [this]() { workspace_->closeActivePane(); });
     window_menu->addSeparator();
     window_menu->addAction(tr("Close All Tabs"), this, [this]() { workspace_->closeAll(); });
 
@@ -214,6 +233,9 @@ void MainWindow::loadSessions() {
     tree_ = config::ConfigManager::loadTree(config_path_);
     tree_loaded_ = true;
     session_manager_->setTree(tree_);
+    // The buttons the user built are part of the same file, so they come back with the
+    // sessions.
+    button_bar_->setModel(config::ConfigManager::loadButtonBar(config_path_));
 
     QSettings settings(QString::fromStdString(config_path_), QSettings::IniFormat);
     const std::string geometry = config::ConfigManager::loadWindowGeometry(settings);
@@ -240,6 +262,14 @@ bool MainWindow::saveSessions() {
         setStatus(tr("Could not write %1").arg(QString::fromStdString(config_path_)));
     }
     return ok;
+}
+
+bool MainWindow::saveButtonBar() {
+    if (!tree_loaded_) {
+        // The file was never read, so it is not ours to write.
+        return false;
+    }
+    return config::ConfigManager::saveButtonBar(button_bar_->model(), config_path_);
 }
 
 void MainWindow::openCredentialStore() {
@@ -482,11 +512,11 @@ void MainWindow::rebuildCommandTargets() {
     // target is set: a session that is closed in between must not leave a dangling
     // pointer behind.
     std::vector<CommandWindow::Sink> sinks;
-    for (const auto& session : workspace_->sessions()) {
-        if (!session) {
+    for (const WorkspacePanes::SessionRef& ref : workspace_->sessions()) {
+        if (ref.session == nullptr) {
             continue;
         }
-        const QString id = session->id();
+        const QString id = ref.id;
         sinks.push_back([this, id](const std::vector<std::uint8_t>& bytes) {
             TerminalSession* target = workspace_->sessionById(id);
             if (target != nullptr) {
@@ -509,8 +539,9 @@ void MainWindow::refreshActiveSessions() {
         return;
     }
     active_sessions_->clear();
-    for (int index = 0; index < workspace_->count(); ++index) {
-        active_sessions_->addItem(workspace_->tabText(index));
+    // Every session of every pane, in the order they were opened.
+    for (const QString& title : workspace_->sessionTitles()) {
+        active_sessions_->addItem(title);
     }
 }
 
@@ -520,6 +551,7 @@ QString MainWindow::statusText() const {
 
 void MainWindow::closeEvent(QCloseEvent* event) {
     saveSessions();
+    saveButtonBar();
     QMainWindow::closeEvent(event);
 }
 

@@ -13,6 +13,7 @@ namespace {
 constexpr const char* kSessionsGroup = "sessions";
 constexpr const char* kTemplateGroup = "defaultSession";
 constexpr const char* kGeometryGroup = "window";
+constexpr const char* kButtonBarGroup = "buttonbar";
 
 QString sessionKey(const std::string& id, const char* field) {
     return QString::fromUtf8(kSessionsGroup) + QLatin1Char('/') + QString::fromStdString(id) +
@@ -188,6 +189,63 @@ bool ConfigManager::saveTree(const SessionTree& tree, const std::string& ini_pat
     }
     settings.sync();
     return settings.status() == QSettings::NoError;
+}
+
+bool ConfigManager::saveButtonBar(const ButtonBarModel& model, const std::string& ini_path) {
+    QSettings settings(QString::fromStdString(ini_path), QSettings::IniFormat);
+    // The whole group goes, so a button the user removed does not linger in the file.
+    settings.remove(QString::fromUtf8(kButtonBarGroup));
+
+    settings.beginGroup(QString::fromUtf8(kButtonBarGroup));
+    settings.setValue(QStringLiteral("group-count"), static_cast<int>(model.groups.size()));
+    for (std::size_t g = 0; g < model.groups.size(); ++g) {
+        const ButtonGroup& group = model.groups[g];
+        settings.beginGroup(QStringLiteral("group%1").arg(static_cast<qulonglong>(g)));
+        settings.setValue(QStringLiteral("name"), QString::fromStdString(group.name));
+        settings.setValue(QStringLiteral("button-count"), static_cast<int>(group.buttons.size()));
+        for (std::size_t b = 0; b < group.buttons.size(); ++b) {
+            const ButtonAction& action = group.buttons[b];
+            settings.beginGroup(QStringLiteral("button%1").arg(static_cast<qulonglong>(b)));
+            settings.setValue(QStringLiteral("type"), QString::fromUtf8(toString(action.type)));
+            settings.setValue(QStringLiteral("label"), QString::fromStdString(action.label));
+            settings.setValue(QStringLiteral("value"), QString::fromStdString(action.value));
+            settings.endGroup();
+        }
+        settings.endGroup();
+    }
+    settings.endGroup();
+    settings.sync();
+    return settings.status() == QSettings::NoError;
+}
+
+ButtonBarModel ConfigManager::loadButtonBar(const std::string& ini_path) {
+    QSettings settings(QString::fromStdString(ini_path), QSettings::IniFormat);
+    ButtonBarModel model;
+    settings.beginGroup(QString::fromUtf8(kButtonBarGroup));
+    const int group_count = settings.value(QStringLiteral("group-count"), 0).toInt();
+    for (int g = 0; g < group_count; ++g) {
+        settings.beginGroup(QStringLiteral("group%1").arg(g));
+        ButtonGroup group;
+        group.name = readString(settings, QStringLiteral("name"));
+        const int button_count = settings.value(QStringLiteral("button-count"), 0).toInt();
+        for (int b = 0; b < button_count; ++b) {
+            settings.beginGroup(QStringLiteral("button%1").arg(b));
+            ButtonAction action;
+            const std::optional<ButtonActionType> type =
+                buttonActionTypeFromString(readString(settings, QStringLiteral("type")));
+            if (type.has_value()) {
+                action.type = *type;
+            }
+            action.label = readString(settings, QStringLiteral("label"));
+            action.value = readString(settings, QStringLiteral("value"));
+            group.buttons.push_back(std::move(action));
+            settings.endGroup();
+        }
+        settings.endGroup();
+        model.groups.push_back(std::move(group));
+    }
+    settings.endGroup();
+    return model;
 }
 
 void ConfigManager::saveWindowGeometry(QSettings& settings, const std::string& blob) {

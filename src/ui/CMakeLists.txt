@@ -15,6 +15,7 @@ add_library(openscrt_ui STATIC
     ModuleInfo.cpp
     renderer/GlyphAtlas.cpp
     renderer/TerminalRenderer.cpp
+    workspace/ButtonBar.cpp
     workspace/MainWindow.cpp
     workspace/CommandWindow.cpp
     workspace/KeePassSelectorDialog.cpp
@@ -22,6 +23,7 @@ add_library(openscrt_ui STATIC
     workspace/SessionManagerWidget.cpp
     workspace/TerminalCanvasWidget.cpp
     workspace/TerminalSession.cpp
+    workspace/WorkspacePanes.cpp
     workspace/WorkspaceTabs.cpp)
 
 target_include_directories(openscrt_ui PUBLIC ${PROJECT_SOURCE_DIR}/src)

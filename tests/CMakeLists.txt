@@ -120,6 +120,22 @@ openscrt_add_test(unit_command_window
 set_tests_properties(unit_command_window PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+# The split workspace (P2-T10): panes, tiles, and the order the sessions keep.
+openscrt_add_test(unit_workspace_panes
+    LABEL unit
+    SOURCES unit/WorkspacePanesTest.cpp
+    LIBS openscrt_ui Qt6::Gui Qt6::Widgets)
+set_tests_properties(unit_workspace_panes PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# The button bar (P2-T10): the groups, the send escapes, and the trip through the file.
+openscrt_add_test(unit_button_bar
+    LABEL unit
+    SOURCES unit/ButtonBarTest.cpp
+    LIBS openscrt_ui openscrt_config Qt6::Gui Qt6::Widgets)
+set_tests_properties(unit_button_bar PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # The credential binding of a session (P2-T9).
 openscrt_add_test(unit_kdbx_credential_resolver
     LABEL unit

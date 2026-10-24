@@ -2,6 +2,7 @@
 
 add_library(openscrt_config STATIC
     ModuleInfo.cpp
+    ButtonBarModel.cpp
     ConfigManager.cpp
     SessionProfile.cpp)
 

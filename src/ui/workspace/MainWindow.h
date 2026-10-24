@@ -25,9 +25,10 @@ class QListWidget;
 
 namespace openscrt::ui {
 
+class ButtonBar;
 class CommandWindow;
 class SessionManagerWidget;
-class WorkspaceTabs;
+class WorkspacePanes;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -47,6 +48,10 @@ class MainWindow : public QMainWindow {
     // written.
     bool saveSessions();
 
+    // Writes the button bar back to disk. Returns false when the file could not be
+    // written.
+    bool saveButtonBar();
+
     // Opens a saved session in a new tab.
     void openSession(const std::string& id);
 
@@ -61,7 +66,8 @@ class MainWindow : public QMainWindow {
     // be driven without a human in front of the screen.
     bool bindSessionToKeePassEntry(const std::string& session_id, const QString& entry_uuid);
 
-    [[nodiscard]] WorkspaceTabs* workspace() const noexcept { return workspace_; }
+    [[nodiscard]] WorkspacePanes* workspace() const noexcept { return workspace_; }
+    [[nodiscard]] ButtonBar* buttonBar() const noexcept { return button_bar_; }
     [[nodiscard]] CommandWindow* commandWindow() const noexcept { return command_window_; }
     [[nodiscard]] SessionManagerWidget* sessionManager() const noexcept { return session_manager_; }
     [[nodiscard]] QString statusText() const;
@@ -107,7 +113,8 @@ class MainWindow : public QMainWindow {
     config::SessionTree tree_;
     bool tree_loaded_{false};
 
-    WorkspaceTabs* workspace_{nullptr};
+    WorkspacePanes* workspace_{nullptr};
+    ButtonBar* button_bar_{nullptr};
     CommandWindow* command_window_{nullptr};
     // The KeePass database the sessions take their credentials from. It holds the
     // master key while it is open and nothing once it is locked.

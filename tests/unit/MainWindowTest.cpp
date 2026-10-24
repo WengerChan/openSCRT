@@ -38,7 +38,7 @@
 #include "ui/workspace/SessionManagerWidget.h"
 #include "ui/workspace/TerminalCanvasWidget.h"
 #include "ui/workspace/TerminalSession.h"
-#include "ui/workspace/WorkspaceTabs.h"
+#include "ui/workspace/WorkspacePanes.h"
 
 namespace openscrt::ui {
 namespace {
@@ -412,7 +412,7 @@ TEST_F(MainWindowTest, TheToolsMenuOffersTheKeePassActions) {
     // The picker and the database opener have to be reachable from the menu bar, or the
     // binding can only be written by a test.
     const QList<QAction*> menus = window_->menuBar()->actions();
-    QAction* tools = nullptr;
+    QMenu* tools = nullptr;
     for (QAction* action : menus) {
         if (action->text() == QStringLiteral("Tools")) {
             tools = action->menu();

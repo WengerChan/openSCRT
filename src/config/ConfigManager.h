@@ -10,6 +10,7 @@
 
 #include <string>
 
+#include "config/ButtonBarModel.h"
 #include "config/SessionProfile.h"
 
 class QSettings;
@@ -25,6 +26,12 @@ class ConfigManager {
     // Writes only the overridden fields, so a load/save cycle is lossless for inheritance.
     // Groups this manager does not own (the window geometry) are left alone.
     static bool saveTree(const SessionTree& tree, const std::string& ini_path);
+
+    // The button bar (P2-T10). It is saved in its own group of the same file, so the
+    // buttons a user built survive the window closing. The groups are replaced as a
+    // whole, because a button the user removed must not linger in the file.
+    static bool saveButtonBar(const ButtonBarModel& model, const std::string& ini_path);
+    static ButtonBarModel loadButtonBar(const std::string& ini_path);
 
     // Per-session UI state (last used tab, window geometry). Kept separate from the tree so
     // that rewriting either does not churn the other.

@@ -34,7 +34,7 @@
 #include "ui/workspace/MainWindow.h"
 #include "ui/workspace/TerminalCanvasWidget.h"
 #include "ui/workspace/TerminalSession.h"
-#include "ui/workspace/WorkspaceTabs.h"
+#include "ui/workspace/WorkspacePanes.h"
 
 namespace {
 
