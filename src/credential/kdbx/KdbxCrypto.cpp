@@ -3,6 +3,7 @@
 #include <openssl/core_names.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
+#include <openssl/kdf.h>
 #include <openssl/params.h>
 #include <sodium.h>
 #include <zlib.h>
