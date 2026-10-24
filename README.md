@@ -30,7 +30,7 @@ packages for all three platforms and publishes them. The tag must match `VERSION
 [`CMakeLists.txt`](CMakeLists.txt), so bump the version first, then tag.
 
 ```
-git tag v0.1.3 && git push origin v0.1.3
+git tag v0.1.4 && git push origin v0.1.4
 ```
 
 | Asset | Platform | Install |
