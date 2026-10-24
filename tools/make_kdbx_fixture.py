@@ -22,12 +22,13 @@ Usage:
 """
 
 import argparse
+import base64
 import hashlib
 import os
 import struct
 import zlib
 
-from Cryptodome.Cipher import AES
+from Cryptodome.Cipher import AES, Salsa20
 
 SIGNATURE_1 = 0x9AA2D903
 SIGNATURE_2 = 0xB54BFB67
@@ -48,6 +49,7 @@ FIELD_STREAM_START_BYTES = 9
 FIELD_INNER_RANDOM_STREAM_ID = 10
 
 INNER_STREAM_NONE = 0
+INNER_STREAM_SALSA20 = 2
 
 
 def header_field(field_id, value):
@@ -86,8 +88,40 @@ def block_stream(payload):
     return out
 
 
-def xml_document(title, username, password, url):
-    """A minimal KeePass XML with one group and one entry."""
+def inner_stream_key(seed):
+    """The key of the inner random stream that protects the individual values."""
+    return hashlib.sha256(seed).digest()
+
+
+def protect(value, stream_key):
+    """Encrypts one value with the inner random stream (Salsa20) and base64s it.
+
+    The protected stream is id 2 (Salsa20): the key is SHA-256(stream key) and the
+    nonce is the constant E8 30 09 4B 97 20 5D 2A. The state layout is the standard
+    one -- it was measured against a real KDBX 3.1 database, and the reference
+    implementation reads the result back.
+    """
+    key = inner_stream_key(stream_key)
+    nonce = bytes.fromhex("e830094b97205d2a")
+    encrypted = Salsa20.new(key=key, nonce=nonce).encrypt(value.encode("utf-8"))
+    return base64.b64encode(encrypted).decode("ascii")
+
+
+def xml_document(title, username, password, url, protected_password=None, stream_key=b""):
+    """A minimal KeePass XML with one group and one entry.
+
+    When `protected_password` is given, the password is stored the way KeePass
+    stores it: encrypted with the inner random stream and marked Protected="True".
+    """
+    if protected_password is None:
+        password_element = f"<String><Key>Password</Key><Value>{password}</Value></String>"
+    else:
+        encrypted = protect(protected_password, stream_key)
+        password_element = (
+            '<String><Key>Password</Key><Value Protected="True">'
+            f"{encrypted}</Value></String>"
+        )
+
     return (
         '<?xml version="1.0" encoding="utf-8" standalone="yes"?>\n'
         "<KeePassFile>\n"
@@ -106,7 +140,7 @@ def xml_document(title, username, password, url):
         "          <IconID>0</IconID>\n"
         f"          <String><Key>Title</Key><Value>{title}</Value></String>\n"
         f"          <String><Key>UserName</Key><Value>{username}</Value></String>\n"
-        f"          <String><Key>Password</Key><Value>{password}</Value></String>\n"
+        f"          {password_element}\n"
         f"          <String><Key>URL</Key><Value>{url}</Value></String>\n"
         "        </Entry>\n"
         "      </Entries>\n"
@@ -116,7 +150,8 @@ def xml_document(title, username, password, url):
     ).encode("utf-8")
 
 
-def build(password, key_file, rounds, title, username, entry_password, url, compress):
+def build(password, key_file, rounds, title, username, entry_password, url, compress,
+          protect_password=True):
     """Builds the whole file and returns its bytes."""
     master_seed = hashlib.sha256(b"openSCRT master seed").digest()
     transform_seed = hashlib.sha256(b"openSCRT transform seed").digest()
@@ -138,7 +173,9 @@ def build(password, key_file, rounds, title, username, entry_password, url, comp
     header += header_field(FIELD_ENCRYPTION_IV, encryption_iv)
     header += header_field(FIELD_INNER_RANDOM_STREAM_KEY, inner_key)
     header += header_field(FIELD_STREAM_START_BYTES, stream_start)
-    header += header_field(FIELD_INNER_RANDOM_STREAM_ID, struct.pack("<I", INNER_STREAM_NONE))
+    header += header_field(FIELD_INNER_RANDOM_STREAM_ID,
+                            struct.pack("<I", INNER_STREAM_SALSA20 if protect_password
+                                        else INNER_STREAM_NONE))
     header += header_field(FIELD_END, b"\x0d\x0a\x0d\x0a")
 
     # The order matters: the stream start bytes sit in front of the block stream and are
@@ -146,7 +183,9 @@ def build(password, key_file, rounds, title, username, entry_password, url, comp
     # KDBX 3.1 has no inner header inside the payload -- that is a KDBX 4 thing. The
     # protected stream id and key are header fields 8 and 10 here, and the payload is
     # the XML itself.
-    content = xml_document(title, username, entry_password, url)
+    content = xml_document(title, username, entry_password, url,
+                           protected_password=entry_password if protect_password else None,
+                           stream_key=inner_key)
     if compress:
         # The compression flag says GZip, so the content has to be GZip: 16 + MAX_WBITS
         # selects the GZip wrapper rather than the zlib one.
@@ -175,6 +214,8 @@ def main():
     parser.add_argument("--username", default="netops")
     parser.add_argument("--entry-password", default="s3cret")
     parser.add_argument("--url", default="ssh://10.20.30.40:22")
+    parser.add_argument("--plain-password", action="store_true",
+                        help="store the entry password unprotected")
     args = parser.parse_args()
 
     key_file = b""
@@ -186,7 +227,8 @@ def main():
             handle.write(key_file)
 
     data = build(args.password, key_file, args.rounds, args.title, args.username,
-                 args.entry_password, args.url, compress=True)
+                 args.entry_password, args.url, compress=True,
+                 protect_password=not args.plain_password)
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
     with open(args.output, "wb") as handle:
         handle.write(data)

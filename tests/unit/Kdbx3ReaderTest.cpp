@@ -54,8 +54,13 @@ TEST(Kdbx3ReaderTest, TheDatabaseWithAKeyFileOpens) {
     const std::string text = asText(result.payload);
     EXPECT_NE(text.find("<KeePassFile>"), std::string::npos) << text.substr(0, 200);
     EXPECT_NE(text.find("<Value>netops</Value>"), std::string::npos);
-    EXPECT_NE(text.find("<Value>s3cret</Value>"), std::string::npos);
     EXPECT_NE(text.find("<Value>ssh://10.20.30.40:22</Value>"), std::string::npos);
+
+    // The entry password is stored protected: the payload carries the encrypted value,
+    // and the plaintext must not be anywhere in it. Decrypting it is P2-T6's job.
+    EXPECT_NE(text.find("<Value Protected=\"True\">"), std::string::npos);
+    EXPECT_EQ(text.find("s3cret"), std::string::npos)
+        << "the password is protected, so the plaintext must not be in the payload";
 }
 
 TEST(Kdbx3ReaderTest, AWrongPasswordIsReported) {
