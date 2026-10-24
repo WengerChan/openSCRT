@@ -45,6 +45,7 @@
 | 特性分支 | `feat/<phase>-<任务号>-<短描述>`，如 `feat/p1-t04-vterm-statemachine` |
 | 提交粒度 | 一个任务号 = 一个 PR；跨任务改动必须拆 PR |
 | PR 门禁 | 必须关联任务号；【CI】全绿 + 至少 1 人 Review |
+| CI 触发 | `on.push` 带 `paths-ignore`（`**.md` / `docs/**` / `.proxy.sh`）：**纯文档提交不产生 run**，省掉一整轮三平台矩阵（见 POSTMORTEM 第五轮）。`pull_request` **不加**路径过滤——被跳过的 workflow 不会报 required status check，将来开分支保护会让文档类 PR 永远 pending；`workflow_dispatch` 保留，人工随时能跑完整矩阵 |
 
 ### 2.2 编译规约（CI 强制）
 

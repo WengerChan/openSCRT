@@ -9,6 +9,8 @@ openSCRT — C++20 + Qt 6 的 SecureCRT 对标终端。读代码前先读
 
 0. **CI 红着的时候不要继续推 main。** 要么等这一轮绿了再推下一个提交，要么在提交信息里
    写明"这次推送为什么是安全的"。本仓库没有 PR 保护，`main` 的唯一门禁就是 CI。
+   **纯文档提交不产生 run**：CI 触发器带 `paths-ignore`（`**.md`、`docs/**`、`.proxy.sh`），
+   推完没有 run 是设计如此，不是 CI 没跑。查某个提交自己的结论用 `?head_sha=<sha>`。
 1. **验证只走 CI。** 本地不编译、不跑测试、不装构建工具。编译/测试/覆盖率/性能基准
    一律以 GitHub Actions 的结果为准。本地只写代码、格式化、提交。
 2. **需要 Python 时用 uv**，cache 目录写项目内可写路径（`UV_CACHE_DIR=$PWD/.cache/uv`）。
