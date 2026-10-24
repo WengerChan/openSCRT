@@ -388,6 +388,19 @@ jobs:
         # perf tier would silently execute on Windows and macOS too.
         run: ctest --test-dir out/build/${{ matrix.preset }} -C Release -L unit --output-on-failure --timeout 600
 
+      # The connect dialog against a real server is the part of P1-A7 that CI can judge:
+      # the dialog's fields go through the window, into a transport, and the output has
+      # to land on the screen. It runs the case by name so the log shows what was proven
+      # instead of only reporting that the target passed.
+      - name: Connect dialog against the real server (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          QT_QPA_PLATFORM=offscreen \
+            out/build/linux-ci/bin/unit_main_window \
+            --gtest_filter='*ReachesARealServerThroughTheWindow*'
+
       - name: Test (perf tier, Linux only)
         if: runner.os == 'Linux'
         continue-on-error: false
