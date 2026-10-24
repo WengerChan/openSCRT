@@ -80,6 +80,17 @@ openscrt_add_test(unit_credential_provider
     SOURCES unit/ICredentialProviderTest.cpp
     LIBS openscrt_credential openscrt_core)
 
+# The KDBX header parser (P2-T3).
+#
+# The test data is the header of a real KeePass database, copied verbatim, plus a
+# KDBX 3.1 header assembled from the reference implementation's rules -- a parser
+# that is tested against bytes it produced itself would only prove that it agrees
+# with itself.
+openscrt_add_test(unit_kdbx_header_parser
+    LABEL unit
+    SOURCES unit/KdbxHeaderParserTest.cpp
+    LIBS openscrt_credential)
+
 # The window shell needs a QApplication; the offscreen platform plugin makes that work in CI
 # without a display server.
 openscrt_add_test(unit_main_window

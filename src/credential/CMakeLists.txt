@@ -2,7 +2,8 @@
 
 add_library(openscrt_credential STATIC
     ModuleInfo.cpp
-    ICredentialProvider.cpp)
+    ICredentialProvider.cpp
+    kdbx/KdbxHeaderParser.cpp)
 
 target_include_directories(openscrt_credential PUBLIC ${PROJECT_SOURCE_DIR}/src)
 
