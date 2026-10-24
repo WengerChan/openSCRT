@@ -99,8 +99,10 @@ bool SecureByteArray::withCString(const std::function<bool(const char*)>& action
     }
     // One byte more than the payload, for the terminator the C APIs expect.
     std::vector<char> buffer(size_ + 1, '\0');
-    copyOut(buffer.data(), size_);
-    const bool result = action(buffer.data());
+    // copyOut reports how much it copied. The buffer is one byte longer than the payload,
+    // so the terminator is always in place.
+    const std::size_t copied = copyOut(buffer.data(), size_);
+    const bool result = action(copied > 0 ? buffer.data() : "");
     // sodium_memzero, not a plain fill: the compiler is allowed to drop a store to a local
     // that is about to go out of scope, and this buffer holds a password.
     sodium_memzero(buffer.data(), buffer.size());
