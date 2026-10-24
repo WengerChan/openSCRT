@@ -46,8 +46,11 @@ bool KdbxProtectedStream::decrypt(const std::uint8_t* data, std::size_t size,
             }
             const Digest key = sha256(key_.data(), key_size_);
             out.assign(size, 0);
-            crypto_stream_salsa20(out.data(), static_cast<unsigned long long>(size), kSalsa20Nonce,
-                                  key.data());
+            // The _xor variant, not the plain one: the stored value is the plaintext
+            // XORed with the keystream, and the plain variant would only produce the
+            // keystream itself.
+            crypto_stream_salsa20_xor(out.data(), data, static_cast<unsigned long long>(size),
+                                      kSalsa20Nonce, key.data());
             return true;
         }
         case 3: {
