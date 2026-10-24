@@ -21,6 +21,7 @@
 #include <QTimer>
 #include <QtGlobal>
 #include <chrono>
+#include <cstdlib>
 #include <functional>
 #include <memory>
 #include <string>
@@ -266,6 +267,74 @@ TEST_F(MainWindowTest, TheQuickConnectDialogSaysSoWhenThereIsNoPasswordAndNoKey)
     dialog.setPrivateKeyPath(QStringLiteral("/home/operator/.ssh/id_ed25519"));
     EXPECT_TRUE(dialog.authenticationHint().isEmpty())
         << "the hint has to go away once a key is given";
+}
+
+TEST_F(MainWindowTest, TheQuickConnectDialogReachesARealServerThroughTheWindow) {
+    // P1-A7 的 M3/M4 做成机器可判定：对话框的字段走用户走的那条路（主机、端口、用户、
+    // 私钥或密码），命令的输出必须落到屏幕网格上。CI 的 Linux leg 起的是一台真实 sshd，
+    // 所以这条用例连的是一台真服务器，不是 mock。
+    const char* port = std::getenv("OPENCRT_TEST_SSH_PORT");
+    const char* user = std::getenv("OPENCRT_TEST_SSH_USER");
+    const char* key = std::getenv("OPENCRT_TEST_SSH_KEY");
+    const char* password_user = std::getenv("OPENCRT_TEST_SSH_PASSWORD_USER");
+    const char* password = std::getenv("OPENCRT_TEST_SSH_PASSWORD");
+    if (port == nullptr) {
+        GTEST_SKIP() << "no SSH server configured for this run";
+    }
+    const bool with_password = password_user != nullptr && password != nullptr;
+    if (!with_password && (user == nullptr || key == nullptr)) {
+        GTEST_SKIP() << "no SSH server configured for this run";
+    }
+
+    // The dialog, filled in the way a user fills it in.
+    QuickConnectDialog dialog;
+    dialog.setHost(QStringLiteral("127.0.0.1"));
+    dialog.setPort(std::atoi(port));
+    dialog.setUser(QString::fromUtf8(with_password ? password_user : user));
+    if (with_password) {
+        dialog.setPassword(QString::fromUtf8(password));
+    } else {
+        dialog.setPrivateKeyPath(QString::fromUtf8(key));
+    }
+    EXPECT_TRUE(dialog.validationError().isEmpty());
+    EXPECT_TRUE(dialog.authenticationHint().isEmpty())
+        << "a password or a private key was given, so there is nothing to hint at";
+
+    // The profile and the password go into a session exactly the way
+    // MainWindow::openQuickConnect does it.
+    config::SessionProfile profile = dialog.profile();
+    profile.id = "quick-ssh";
+    profile.name = profile.id;
+    core::SecureByteArray secret = dialog.password();
+
+    std::string error;
+    const int index = window_->workspace()->openSession(profile, error, std::move(secret));
+    ASSERT_GE(index, 0) << error;
+
+    TerminalSession* session = window_->workspace()->sessionById(QStringLiteral("quick-ssh"));
+    ASSERT_NE(session, nullptr);
+
+    const bool connected = waitFor(
+        [session]() { return session->state() == protocols::TransportState::kConnected; }, 20000);
+    ASSERT_TRUE(connected) << "the session never connected";
+
+    // The marker is not the text that was typed: the remote shell echoes the command back,
+    // so a marker identical to the command would match the echo even if nothing ran.
+    const std::string command = "printf 'openscrt-quick-%s\\n' ok\r";
+    session->sendInput(std::vector<std::uint8_t>(command.begin(), command.end()));
+
+    const bool printed = waitFor(
+        [session]() {
+            const terminal::ScreenGrid& grid = session->canvas()->grid();
+            for (int row = 0; row < grid.rows(); ++row) {
+                if (grid.rowText(row).find("openscrt-quick-ok") != std::string::npos) {
+                    return true;
+                }
+            }
+            return false;
+        },
+        20000);
+    EXPECT_TRUE(printed) << "the command output never reached the screen";
 }
 
 TEST_F(MainWindowTest, ApplyingTheDefaultSessionToAllReachesEverySession) {
