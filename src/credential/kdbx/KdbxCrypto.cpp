@@ -34,27 +34,6 @@ namespace {
     return ok;
 }
 
-// The KeePass AES-KDF transform of one 16-byte half.
-//
-// KeePass encrypts blocks of zeroes with AES-256-CBC, using the seed as the key and
-// the half itself as the IV, and takes the last ciphertext block as the new value.
-// For a zero plaintext that is exactly "XOR the encrypted zero block into the running
-// value", which is what this loop does.
-[[nodiscard]] bool aesKdfTransformHalf(const std::uint8_t* seed, std::uint8_t* half,
-                                       std::uint64_t rounds) {
-    const std::uint8_t zero_block[16] = {};
-    std::uint8_t encrypted[16] = {};
-    if (!aes256EncryptBlock(seed, zero_block, encrypted)) {
-        return false;
-    }
-    for (std::uint64_t round = 0; round < rounds; ++round) {
-        for (std::size_t i = 0; i < 16; ++i) {
-            half[i] = static_cast<std::uint8_t>(half[i] ^ encrypted[i]);
-        }
-    }
-    return true;
-}
-
 }  // namespace
 
 Digest sha256(const std::uint8_t* data, std::size_t size) {
@@ -111,6 +90,15 @@ Digest compositeKey(const std::string& password, const std::vector<std::uint8_t>
     return sha256(composite.data(), composite.size());
 }
 
+// The AES-KDF, the way the format does it.
+//
+// The composite key is encrypted with AES-256-ECB, `rounds` times, and the SHA-256 of
+// the result is the transformed key.
+//
+// This was measured against a real KDBX 3.1 database rather than taken from the
+// documentation: the alternative reading -- each half transformed on its own with CBC
+// over blocks of zeroes, the half itself as the IV -- produces a different key, and the
+// real file does not decrypt with it. See docs/evidence/kdbx-format-notes.md.
 Digest aesKdf(const std::uint8_t* seed, std::size_t seed_size, std::uint64_t rounds,
               const std::uint8_t* composite, std::size_t composite_size) {
     Digest transformed{};
@@ -119,20 +107,19 @@ Digest aesKdf(const std::uint8_t* seed, std::size_t seed_size, std::uint64_t rou
         return transformed;
     }
 
-    std::uint8_t left[16] = {};
-    std::uint8_t right[16] = {};
-    std::memcpy(left, composite, 16);
-    std::memcpy(right, composite + 16, 16);
-
-    if (!aesKdfTransformHalf(seed, left, rounds) || !aesKdfTransformHalf(seed, right, rounds)) {
-        return Digest{};
+    std::uint8_t value[32] = {};
+    std::memcpy(value, composite, sizeof(value));
+    for (std::uint64_t round = 0; round < rounds; ++round) {
+        std::uint8_t encrypted[32] = {};
+        if (!aes256EncryptBlock(seed, value, encrypted) ||
+            !aes256EncryptBlock(seed, value + 16, encrypted + 16)) {
+            sodium_memzero(value, sizeof(value));
+            return Digest{};
+        }
+        std::memcpy(value, encrypted, sizeof(value));
     }
-
-    std::uint8_t halves[32] = {};
-    std::memcpy(halves, left, 16);
-    std::memcpy(halves + 16, right, 16);
-    const Digest result = sha256(halves, sizeof(halves));
-    sodium_memzero(halves, sizeof(halves));
+    const Digest result = sha256(value, sizeof(value));
+    sodium_memzero(value, sizeof(value));
     return result;
 }
 

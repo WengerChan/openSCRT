@@ -10,8 +10,11 @@ namespace {
 // The signatures. KDBX 3.1 and KDBX 4.x differ in the second one, and getting that
 // wrong means reading a 3.1 file as if it were 4.x -- or the other way round.
 constexpr std::uint32_t kSignature1 = 0x9AA2D903;
-constexpr std::uint32_t kSignature2V4 = 0xB54BFB67;  // KDBX 4.x
-constexpr std::uint32_t kSignature2V3 = 0xB54BFB66;  // KDBX 3.1 (KeePass 2.x pre-release)
+// The second signature is the same for KDBX 3.1 and 4.x; the version number is what
+// tells them apart. 0xB54BFB66 is the pre-release signature, which KeePass also
+// accepts, and 0xB54BFB65 is the KeePass 1.x format, which is not supported.
+constexpr std::uint32_t kSignature2 = 0xB54BFB67;
+constexpr std::uint32_t kSignature2PreRelease = 0xB54BFB66;
 
 // The version numbers. The major version is in the high 16 bits.
 constexpr std::uint32_t kVersion3_1 = 0x00030001;
@@ -512,15 +515,13 @@ KdbxHeaderParseResult parseKdbxHeader(const std::uint8_t* data, std::size_t size
         return result;
     }
 
-    // The second signature tells 3.1 and 4.x apart, and it has to agree with the
-    // version: a file that claims 3.1 but carries the 4.x signature is not a file we
-    // should be guessing about.
-    const bool is_v3 = result.header.version == KdbxVersion::kV3_1;
-    const std::uint32_t expected_signature2 = is_v3 ? kSignature2V3 : kSignature2V4;
-    if (signature2 != expected_signature2) {
-        result.error = "the KDBX signatures and the version do not agree";
+    // The second signature is the same for 3.1 and 4.x; the pre-release variant is
+    // accepted too, because KeePass accepts it.
+    if (signature2 != kSignature2 && signature2 != kSignature2PreRelease) {
+        result.error = "not a KDBX file: the second signature does not match";
         return result;
     }
+    const bool is_v3 = result.header.version == KdbxVersion::kV3_1;
 
     // KDBX 3.1 writes the length of a header field as a UInt16; KDBX 4.x as an Int32.
     // Reading a 3.1 file with the 4.x width does not fail -- it reads the high bytes of

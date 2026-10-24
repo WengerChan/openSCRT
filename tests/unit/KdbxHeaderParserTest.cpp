@@ -167,7 +167,7 @@ TEST(KdbxHeaderParserTest, TheRealKdbx4HeaderParses) {
 }
 
 TEST(KdbxHeaderParserTest, AKdbx31HeaderParses) {
-    const std::vector<std::uint8_t> bytes = buildKdbx31Header(false, 0xB54BFB66, 0x00030001);
+    const std::vector<std::uint8_t> bytes = buildKdbx31Header(false, 0xB54BFB67, 0x00030001);
     const KdbxHeaderParseResult result = parseKdbxHeader(bytes.data(), bytes.size());
     ASSERT_TRUE(result.ok()) << result.error;
 
@@ -187,7 +187,7 @@ TEST(KdbxHeaderParserTest, TheFieldLengthWidthIsNotInterchangeable) {
     // The same header, read with the other version's framing, must not parse. If it
     // did, a 3.1 database would be read as a 4.x one (or the other way round) and the
     // failure would show up much later, as garbage in the payload.
-    const std::vector<std::uint8_t> narrow = buildKdbx31Header(false, 0xB54BFB66, 0x00030001);
+    const std::vector<std::uint8_t> narrow = buildKdbx31Header(false, 0xB54BFB67, 0x00030001);
     const std::vector<std::uint8_t> wide = buildKdbx31Header(true, 0xB54BFB67, 0x00040000);
 
     EXPECT_TRUE(parseKdbxHeader(narrow.data(), narrow.size()).ok());
@@ -228,8 +228,8 @@ TEST(KdbxHeaderParserTest, ATruncatedHeaderIsRejected) {
 }
 
 TEST(KdbxHeaderParserTest, AVersionAndSignatureThatDisagreeAreRejected) {
-    // The 4.x signature with the 3.1 version: the file is one of the two, and we do
-    // not get to guess which.
+    // The 4.x signature with the 3.1 version is a real combination -- the second
+    // signature is the same for both -- so the version number is what has to decide.
     const std::vector<std::uint8_t> bytes = buildKdbx31Header(false, 0xB54BFB67, 0x00030001);
     const KdbxHeaderParseResult result = parseKdbxHeader(bytes.data(), bytes.size());
     EXPECT_FALSE(result.ok());
