@@ -87,6 +87,9 @@ class KdbxVault final : public QObject {
     void onFileChanged(const QString& changed);
     void onIdleTimeout();
     void restartIdleTimer();
+    // Drops the key material without telling anyone. The destructor uses it: a signal
+    // emitted from a destructor reaches slots that may already be gone.
+    void clear() noexcept;
 
     QString path_;
     core::SecureByteArray password_;

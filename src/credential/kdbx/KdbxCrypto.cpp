@@ -76,9 +76,9 @@ Digest compositeKey(const std::uint8_t* password, std::size_t password_size,
     // than an error.
     Digest password_hash{};
     unsigned int length = 0;
-    const std::uint8_t* password_bytes = reinterpret_cast<const std::uint8_t*>(password.data());
-    if (EVP_Digest(password_bytes, password.size(), password_hash.data(), &length, EVP_sha256(),
-                   nullptr) != 1 ||
+    if (password == nullptr || password_size == 0 ||
+        EVP_Digest(password, password_size, password_hash.data(), &length, EVP_sha256(), nullptr) !=
+            1 ||
         length != password_hash.size()) {
         return Digest{};
     }

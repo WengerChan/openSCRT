@@ -37,7 +37,8 @@ KdbxVault::KdbxVault(QObject* parent) : QObject(parent) {
 }
 
 KdbxVault::~KdbxVault() {
-    lock();
+    // No signal from a destructor: the slots are not necessarily still there.
+    clear();
 }
 
 bool KdbxVault::open(const QString& path, const std::uint8_t* password, std::size_t password_size,
@@ -66,6 +67,13 @@ bool KdbxVault::open(const QString& path, const std::uint8_t* password, std::siz
 
 void KdbxVault::lock() noexcept {
     const bool was_open = open_;
+    clear();
+    if (was_open) {
+        emit locked();
+    }
+}
+
+void KdbxVault::clear() noexcept {
     open_ = false;
     index_ = KdbxIndex();
     protected_stream_ = KdbxProtectedStream();
@@ -73,9 +81,6 @@ void KdbxVault::lock() noexcept {
     // The password is the last thing to go: the vault may be reopened with it.
     password_ = core::SecureByteArray();
     idle_timer_.stop();
-    if (was_open) {
-        emit locked();
-    }
 }
 
 void KdbxVault::setIdleTimeout(std::chrono::milliseconds timeout) {
