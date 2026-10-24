@@ -75,6 +75,26 @@ TEST_F(ConfigManagerTest, OverriddenFieldsSurviveARoundTrip) {
     EXPECT_EQ(resolved.port, 2200);
 }
 
+TEST_F(ConfigManagerTest, TheCredentialBindingSurvivesARoundTrip) {
+    // The binding of a credential is configuration: the user picked it, so it has to
+    // still be there after the session tree is written and read back.
+    auto leaf = profile("leaf");
+    leaf.credential_source = std::string("keepass-uuid");
+    leaf.credential_entry_uuid = std::string("uuid-router");
+    leaf.credential_match_host = std::string("10.20.30.40");
+
+    SessionTree original;
+    ASSERT_TRUE(original.add(std::move(leaf)));
+    ASSERT_TRUE(ConfigManager::saveTree(original, path_));
+
+    const SessionTree loaded = ConfigManager::loadTree(path_);
+    const SessionProfile* loaded_profile = loaded.find("leaf");
+    ASSERT_NE(loaded_profile, nullptr);
+    EXPECT_EQ(loaded_profile->credential_source, std::optional<std::string>("keepass-uuid"));
+    EXPECT_EQ(loaded_profile->credential_entry_uuid, std::optional<std::string>("uuid-router"));
+    EXPECT_EQ(loaded_profile->credential_match_host, std::optional<std::string>("10.20.30.40"));
+}
+
 TEST_F(ConfigManagerTest, AFieldThatWasNeverOverriddenStaysInherited) {
     // The whole point: after a save/load cycle an inheriting session must still inherit,
     // otherwise a later template edit would stop reaching it.

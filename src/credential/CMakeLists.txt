@@ -32,6 +32,7 @@ add_library(openscrt_credential STATIC
     ModuleInfo.cpp
     ICredentialProvider.cpp
     kdbx/KdbxHeaderParser.cpp
+    kdbx/KdbxCredentialResolver.cpp
     kdbx/KdbxCrypto.cpp
     kdbx/Kdbx3Reader.cpp
     kdbx/Kdbx4Reader.cpp

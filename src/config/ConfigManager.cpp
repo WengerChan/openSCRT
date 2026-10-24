@@ -54,6 +54,16 @@ void writeProfile(QSettings& settings, const SessionProfile& profile, bool is_te
     if (profile.private_key_path) {
         put("key", QString::fromStdString(*profile.private_key_path));
     }
+    // The binding of the credential, not the credential itself.
+    if (profile.credential_source) {
+        put("cred-source", QString::fromStdString(*profile.credential_source));
+    }
+    if (profile.credential_entry_uuid) {
+        put("cred-uuid", QString::fromStdString(*profile.credential_entry_uuid));
+    }
+    if (profile.credential_match_host) {
+        put("cred-host", QString::fromStdString(*profile.credential_match_host));
+    }
 }
 
 std::string readString(QSettings& settings, const QString& key) {
@@ -127,6 +137,17 @@ SessionTree ConfigManager::loadTree(const std::string& ini_path) {
         }
         if (settings.contains(sessionKey(profile.id, "key"))) {
             profile.private_key_path = readString(settings, sessionKey(profile.id, "key"));
+        }
+        if (settings.contains(sessionKey(profile.id, "cred-source"))) {
+            profile.credential_source = readString(settings, sessionKey(profile.id, "cred-source"));
+        }
+        if (settings.contains(sessionKey(profile.id, "cred-uuid"))) {
+            profile.credential_entry_uuid =
+                readString(settings, sessionKey(profile.id, "cred-uuid"));
+        }
+        if (settings.contains(sessionKey(profile.id, "cred-host"))) {
+            profile.credential_match_host =
+                readString(settings, sessionKey(profile.id, "cred-host"));
         }
         pending.push_back(Pending{std::move(profile)});
     }

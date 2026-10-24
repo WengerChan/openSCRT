@@ -41,8 +41,21 @@ struct SessionProfile {
     std::optional<Protocol> protocol;
     std::optional<std::string> private_key_path;
 
+    // Where the password comes from. The password itself is never here -- it is in the
+    // session's own store, in the KeePass database, or typed in when the session
+    // opens. Only the *binding* is configuration, and it is configuration because the
+    // user picked it.
+    //
+    // The values are the ones `credential::kdbx::KdbxBindingSource` uses, so the
+    // session tree and the credential layer agree on the spelling.
+    std::optional<std::string> credential_source;  // session-saved / prompt-every-time /
+                                                   // keepass-uuid / keepass-auto-match
+    std::optional<std::string> credential_entry_uuid;
+    std::optional<std::string> credential_match_host;
+
     [[nodiscard]] bool inheritsEverything() const noexcept {
-        return !host && !port && !user && !protocol && !private_key_path;
+        return !host && !port && !user && !protocol && !private_key_path && !credential_source &&
+               !credential_entry_uuid && !credential_match_host;
     }
 };
 

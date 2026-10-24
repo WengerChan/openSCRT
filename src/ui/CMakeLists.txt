@@ -16,6 +16,7 @@ add_library(openscrt_ui STATIC
     renderer/GlyphAtlas.cpp
     renderer/TerminalRenderer.cpp
     workspace/MainWindow.cpp
+    workspace/KeePassSelectorDialog.cpp
     workspace/QuickConnectDialog.cpp
     workspace/SessionManagerWidget.cpp
     workspace/TerminalCanvasWidget.cpp
@@ -33,4 +34,5 @@ target_include_directories(openscrt_ui PUBLIC ${PROJECT_SOURCE_DIR}/src)
 # directories, and a static library's PRIVATE link does not propagate them.
 target_link_libraries(openscrt_ui
     PUBLIC openscrt_warnings Qt6::Core Qt6::Gui Qt6::Widgets
-    PRIVATE openscrt_core openscrt_terminal openscrt_config openscrt_protocols)
+    PRIVATE openscrt_core openscrt_terminal openscrt_config openscrt_protocols
+            openscrt_credential)
