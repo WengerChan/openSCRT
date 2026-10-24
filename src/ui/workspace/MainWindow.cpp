@@ -3,10 +3,14 @@
 #include <QAction>
 #include <QApplication>
 #include <QCloseEvent>
+#include <QDialog>
 #include <QDir>
 #include <QDockWidget>
+#include <QFileDialog>
+#include <QInputDialog>
 #include <QKeySequence>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QMenuBar>
@@ -15,13 +19,17 @@
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QVBoxLayout>
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 
 #include "config/ConfigManager.h"
 #include "core/BuildInfo.h"
+#include "credential/kdbx/KdbxCredentialResolver.h"
 #include "protocols/ITransportChannel.h"
 #include "ui/workspace/CommandWindow.h"
+#include "ui/workspace/KeePassSelectorDialog.h"
 #include "ui/workspace/QuickConnectDialog.h"
 #include "ui/workspace/SessionManagerWidget.h"
 #include "ui/workspace/TerminalSession.h"
@@ -156,7 +164,10 @@ void MainWindow::buildMenus() {
     addPlaceholder(script_menu, tr("Record / Run Script"), tr("the scripting phase"));
 
     QMenu* tools_menu = menuBar()->addMenu(tr("Tools"));
-    addPlaceholder(tools_menu, tr("Button Bar / Command Window"), tr("the workspace phase"));
+    tools_menu->addAction(tr("Open KeePass Database..."), this, &MainWindow::openCredentialStore);
+    tools_menu->addAction(tr("Bind Session to KeePass Entry..."), this,
+                          [this]() { chooseKeePassEntry(); });
+    addPlaceholder(tools_menu, tr("Button Bar"), tr("the workspace phase"));
 
     QMenu* window_menu = menuBar()->addMenu(tr("Window"));
     window_menu->addAction(tr("Next Tab"), QKeySequence(Qt::CTRL | Qt::Key_Tab), this, [this]() {
@@ -231,6 +242,152 @@ bool MainWindow::saveSessions() {
     return ok;
 }
 
+void MainWindow::openCredentialStore() {
+    const QString path =
+        QFileDialog::getOpenFileName(this, tr("Open KeePass Database"), QString(),
+                                     tr("KeePass databases (*.kdbx);;All files (*)"));
+    if (path.isEmpty()) {
+        return;
+    }
+    bool accepted = false;
+    const QString master =
+        QInputDialog::getText(this, tr("Master Password"), tr("Master password for %1").arg(path),
+                              QLineEdit::Password, QString(), &accepted);
+    if (!accepted) {
+        return;
+    }
+
+    std::string error;
+    const QByteArray master_utf8 = master.toUtf8();
+    const std::uint8_t* bytes = reinterpret_cast<const std::uint8_t*>(master_utf8.constData());
+    if (!vault_.open(path, bytes, static_cast<std::size_t>(master_utf8.size()), {}, error)) {
+        QMessageBox::warning(this, tr("KeePass"), QString::fromStdString(error));
+        return;
+    }
+    setStatus(tr("Opened the KeePass database with %1 entries")
+                  .arg(static_cast<qulonglong>(vault_.index().entries.size())));
+}
+
+std::optional<core::SecureByteArray> MainWindow::credentialFor(
+    const config::SessionProfile& profile, std::string& error) {
+    using credential::kdbx::KdbxBinding;
+    using credential::kdbx::KdbxBindingSource;
+    using credential::kdbx::KdbxResolutionOutcome;
+
+    // The buffer lives in its optional from the start. SecureByteArray cannot be copied,
+    // and the implicit move that turns a plain return value into one only applies when
+    // the expression has the same type as the return type -- here it does not, so the
+    // optional is built once and moved as a whole.
+    //
+    // An empty buffer inside the optional means "the server asks"; an unset optional
+    // means the session must not open at all.
+    std::optional<core::SecureByteArray> password{core::SecureByteArray{}};
+    if (!profile.credential_source) {
+        // The session asks the server itself.
+        return password;
+    }
+    KdbxBinding binding;
+    if (!credential::kdbx::kdbxBindingSourceFromString(*profile.credential_source,
+                                                       binding.source)) {
+        // A binding this build cannot read is a configuration error, not a missing
+        // password: connecting without it would fail later in a way that looks like the
+        // server's fault.
+        error = "the credential binding of this session is not one this build understands";
+        return std::nullopt;
+    }
+    if (binding.source == KdbxBindingSource::kSessionSaved) {
+        // The session's own password store is not written yet, so the server asks.
+        return password;
+    }
+    if (binding.source == KdbxBindingSource::kPromptEveryTime) {
+        bool accepted = false;
+        const QString typed = QInputDialog::getText(
+            this, tr("Password"), tr("Password for %1").arg(QString::fromStdString(profile.id)),
+            QLineEdit::Password, QString(), &accepted);
+        if (!accepted) {
+            error = "the password prompt was cancelled";
+            return std::nullopt;
+        }
+        const QByteArray utf8 = typed.toUtf8();
+        password->assign(reinterpret_cast<const std::uint8_t*>(utf8.constData()),
+                         static_cast<std::size_t>(utf8.size()));
+        return password;
+    }
+
+    if (!vault_.isOpen()) {
+        error = "the KeePass database is not open";
+        return std::nullopt;
+    }
+    binding.entry_uuid = profile.credential_entry_uuid.value_or(std::string());
+    binding.match_host = profile.credential_match_host.value_or(std::string());
+    const std::string host = profile.host.value_or(std::string());
+    const credential::kdbx::KdbxResolution resolution =
+        credential::kdbx::resolveKdbxBinding(vault_.index(), binding, host);
+    if (resolution.outcome != KdbxResolutionOutcome::kFound) {
+        error = "the KeePass entry for this session was not found";
+        return std::nullopt;
+    }
+    const credential::kdbx::KdbxEntry* entry = resolution.entry(vault_.index());
+    if (entry == nullptr || !vault_.revealPassword(*entry, *password, error)) {
+        return std::nullopt;
+    }
+    return password;
+}
+
+bool MainWindow::bindSessionToKeePassEntry(const std::string& session_id,
+                                           const QString& entry_uuid) {
+    const config::SessionProfile* existing = tree_.find(session_id);
+    if (existing == nullptr) {
+        setStatus(tr("No such session: %1").arg(QString::fromStdString(session_id)));
+        return false;
+    }
+    if (entry_uuid.isEmpty()) {
+        setStatus(tr("No KeePass entry was picked"));
+        return false;
+    }
+
+    config::SessionProfile updated = *existing;
+    updated.credential_source =
+        std::string(credential::kdbx::toString(credential::kdbx::KdbxBindingSource::kKeePassUuid));
+    updated.credential_entry_uuid = entry_uuid.toStdString();
+    // The uuid is the whole binding now. A leftover match host would be a second,
+    // contradicting answer to the same question.
+    updated.credential_match_host.reset();
+
+    std::string error;
+    if (!tree_.update(std::move(updated), &error)) {
+        setStatus(QString::fromStdString(error));
+        return false;
+    }
+    session_manager_->setTree(tree_);
+    saveSessions();
+    setStatus(tr("Session %1 now takes its password from the KeePass entry %2")
+                  .arg(QString::fromStdString(session_id), entry_uuid));
+    return true;
+}
+
+void MainWindow::chooseKeePassEntry() {
+    if (!vault_.isOpen()) {
+        QMessageBox::information(
+            this, tr("KeePass"),
+            tr("Open a KeePass database first (Tools > Open KeePass Database...)."));
+        return;
+    }
+    const std::string selected = session_manager_->selectedSessionId();
+    if (selected.empty()) {
+        QMessageBox::information(this, tr("KeePass"),
+                                 tr("Select a session in the Session Manager first."));
+        return;
+    }
+
+    KeePassSelectorDialog dialog(this);
+    dialog.setEntries(vault_.index());
+    if (dialog.exec() != QDialog::Accepted) {
+        return;
+    }
+    bindSessionToKeePassEntry(selected, dialog.selectedEntryUuid());
+}
+
 void MainWindow::openSession(const std::string& id) {
     const config::SessionProfile* profile = tree_.find(id);
     if (profile == nullptr) {
@@ -240,8 +397,18 @@ void MainWindow::openSession(const std::string& id) {
     // The session that goes into the tab carries the *effective* settings: the transport
     // needs plain values, not a chain to walk.
     const config::SessionProfile effective = tree_.effectiveProfile(id);
+    // The password comes from wherever the session's binding says it comes from. It is
+    // handed to the transport and forgotten; it never becomes part of the profile.
+    std::string credential_error;
+    std::optional<core::SecureByteArray> password = credentialFor(effective, credential_error);
+    if (!password.has_value()) {
+        // The user cancelled, or the credential could not be produced. Connecting anyway
+        // would fail with a password prompt nobody asked for.
+        setStatus(QString::fromStdString(credential_error));
+        return;
+    }
     std::string error;
-    const int index = workspace_->openSession(effective, error);
+    const int index = workspace_->openSession(effective, error, std::move(*password));
     if (index < 0) {
         setStatus(QString::fromStdString(error));
     }

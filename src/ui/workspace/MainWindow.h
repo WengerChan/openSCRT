@@ -11,9 +11,13 @@
 #define OPENCRT_UI_WORKSPACE_MAIN_WINDOW_H_
 
 #include <QMainWindow>
+#include <QString>
+#include <optional>
 #include <string>
 
 #include "config/SessionProfile.h"
+#include "core/SecureByteArray.h"
+#include "credential/kdbx/KdbxVault.h"
 
 class QCloseEvent;
 class QLabel;
@@ -51,6 +55,12 @@ class MainWindow : public QMainWindow {
     // session" action.
     void applyDefaultSessionToAll();
 
+    // Binds a session to a KeePass entry, by uuid, and writes the tree back.
+    //
+    // The picker is the dialog; this is the part that writes the binding down, so it can
+    // be driven without a human in front of the screen.
+    bool bindSessionToKeePassEntry(const std::string& session_id, const QString& entry_uuid);
+
     [[nodiscard]] WorkspaceTabs* workspace() const noexcept { return workspace_; }
     [[nodiscard]] CommandWindow* commandWindow() const noexcept { return command_window_; }
     [[nodiscard]] SessionManagerWidget* sessionManager() const noexcept { return session_manager_; }
@@ -83,6 +93,15 @@ class MainWindow : public QMainWindow {
     void refreshActiveSessions();
     // Points the command window at the sessions that are open, and at the one in front.
     void rebuildCommandTargets();
+    // Opens the KeePass database the sessions take their credentials from.
+    void openCredentialStore();
+    // Picks a KeePass entry for the selected session and binds it.
+    void chooseKeePassEntry();
+    // The password the session needs, taken from wherever its binding says. An unset
+    // result means the user cancelled and the session must not open; an empty one means
+    // "the server will ask", which is a legitimate way to connect.
+    std::optional<core::SecureByteArray> credentialFor(const config::SessionProfile& profile,
+                                                       std::string& error);
 
     std::string config_path_;
     config::SessionTree tree_;
@@ -90,6 +109,9 @@ class MainWindow : public QMainWindow {
 
     WorkspaceTabs* workspace_{nullptr};
     CommandWindow* command_window_{nullptr};
+    // The KeePass database the sessions take their credentials from. It holds the
+    // master key while it is open and nothing once it is locked.
+    credential::kdbx::KdbxVault vault_;
     SessionManagerWidget* session_manager_{nullptr};
     QListWidget* active_sessions_{nullptr};
     QLabel* status_label_{nullptr};

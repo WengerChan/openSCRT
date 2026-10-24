@@ -15,6 +15,7 @@
 #include <QDir>
 #include <QDockWidget>
 #include <QFile>
+#include <QMenu>
 #include <QMenuBar>
 #include <QStringList>
 #include <QTemporaryDir>
@@ -358,6 +359,72 @@ TEST_F(MainWindowTest, ApplyingTheDefaultSessionToAllReachesEverySession) {
     EXPECT_EQ(resolved.host, "localhost") << "the explicit override was cleared";
     ASSERT_TRUE(loaded.resolve("child", resolved));
     EXPECT_EQ(resolved.port, 22) << "the child follows the template as well";
+}
+
+TEST_F(MainWindowTest, BindingASessionToAKeePassEntryWritesTheBindingDown) {
+    // P2-T9/P2-A1: the binding is what the user picked, so it is configuration and it
+    // reaches the session file. The password itself never does.
+    config::SessionTree tree;
+    ASSERT_TRUE(tree.add(profile("alpha")));
+    saveTree(tree);
+
+    window_->loadSessions();
+    ASSERT_TRUE(window_->bindSessionToKeePassEntry("alpha", QStringLiteral("uuid-router")));
+
+    const config::SessionTree loaded = config::ConfigManager::loadTree(path_);
+    const config::SessionProfile* bound = loaded.find("alpha");
+    ASSERT_NE(bound, nullptr);
+    ASSERT_TRUE(bound->credential_source.has_value());
+    EXPECT_EQ(*bound->credential_source, "keepass-uuid");
+    EXPECT_EQ(bound->credential_entry_uuid.value_or(""), "uuid-router");
+    EXPECT_FALSE(bound->credential_match_host.has_value())
+        << "the uuid is the whole binding; a second answer would contradict it";
+}
+
+TEST_F(MainWindowTest, BindingASessionNeverWritesAPassword) {
+    config::SessionTree tree;
+    ASSERT_TRUE(tree.add(profile("alpha")));
+    saveTree(tree);
+
+    window_->loadSessions();
+    ASSERT_TRUE(window_->bindSessionToKeePassEntry("alpha", QStringLiteral("uuid-router")));
+
+    QFile file(QString::fromStdString(path_));
+    ASSERT_TRUE(file.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QString contents = QString::fromUtf8(file.readAll());
+    for (const QString& line : contents.split('\n')) {
+        const QString key = line.section('=', 0, 0).trimmed();
+        EXPECT_FALSE(key.contains(QStringLiteral("password"), Qt::CaseInsensitive))
+            << "the session file must not grow a password field";
+    }
+}
+
+TEST_F(MainWindowTest, BindingAnUnknownSessionFails) {
+    config::SessionTree tree;
+    ASSERT_TRUE(tree.add(profile("alpha")));
+    saveTree(tree);
+    window_->loadSessions();
+
+    EXPECT_FALSE(window_->bindSessionToKeePassEntry("ghost", QStringLiteral("uuid-router")));
+}
+
+TEST_F(MainWindowTest, TheToolsMenuOffersTheKeePassActions) {
+    // The picker and the database opener have to be reachable from the menu bar, or the
+    // binding can only be written by a test.
+    const QList<QAction*> menus = window_->menuBar()->actions();
+    QAction* tools = nullptr;
+    for (QAction* action : menus) {
+        if (action->text() == QStringLiteral("Tools")) {
+            tools = action->menu();
+        }
+    }
+    ASSERT_NE(tools, nullptr) << "the Tools menu is missing";
+    QStringList names;
+    for (const QAction* action : tools->actions()) {
+        names << action->text();
+    }
+    EXPECT_TRUE(names.contains(QStringLiteral("Open KeePass Database...")));
+    EXPECT_TRUE(names.contains(QStringLiteral("Bind Session to KeePass Entry...")));
 }
 
 TEST_F(MainWindowTest, OpeningASavedSessionOpensATab) {

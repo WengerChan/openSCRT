@@ -40,7 +40,8 @@ SKIP = {
     # extra build time; zlib is a small build of its own.
     #
     # pugixml is no longer skipped either: P2-T6 links it for the XML inside a KeePass
-    # database. nlohmann-json stays skipped until the KeePassHTTP client (P2-T8) links it.
+    # database. nlohmann-json is no longer skipped: P2-T8 links it for the KeePassHTTP
+    # payloads.
 }
 
 # Only linked by the test tree. A packaging/release build configures with

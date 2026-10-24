@@ -48,14 +48,21 @@ struct SessionProfile {
     //
     // The values are the ones `credential::kdbx::KdbxBindingSource` uses, so the
     // session tree and the credential layer agree on the spelling.
+    //
+    // Unlike the fields above, the binding does NOT inherit from an ancestor session. A
+    // child session usually points at a different machine, and a child that silently
+    // reused its parent's KeePass entry would send the parent's password to that
+    // machine. The binding is therefore per session, and a session without one asks the
+    // server itself.
     std::optional<std::string> credential_source;  // session-saved / prompt-every-time /
                                                    // keepass-uuid / keepass-auto-match
     std::optional<std::string> credential_entry_uuid;
     std::optional<std::string> credential_match_host;
 
+    // True when the session overrides nothing that can be inherited. The credential
+    // binding is not part of the inheritance chain, so it does not count here.
     [[nodiscard]] bool inheritsEverything() const noexcept {
-        return !host && !port && !user && !protocol && !private_key_path && !credential_source &&
-               !credential_entry_uuid && !credential_match_host;
+        return !host && !port && !user && !protocol && !private_key_path;
     }
 };
 
@@ -71,6 +78,14 @@ class SessionTree {
     // Rejects an empty id, a duplicate id, and a parent that does not exist, because a cycle
     // or a dangling parent turns resolution into an infinite walk.
     bool add(SessionProfile profile, std::string* error = nullptr);
+
+    // Replaces a session that is already in the tree, keeping its place in the list.
+    //
+    // The id says which session is replaced; everything else is the new content. This is
+    // how a session gets a credential binding without being deleted and added again,
+    // which would move it to the end of the tree.
+    bool update(SessionProfile profile, std::string* error = nullptr);
+
     bool remove(const std::string& id);
     [[nodiscard]] const SessionProfile* find(const std::string& id) const;
 
@@ -94,6 +109,9 @@ class SessionTree {
     // The effective settings of `id`, flattened into a profile. A transport needs plain
     // values, not a chain to walk, and the caller should not have to resolve the tree twice.
     // Returns an empty profile when the id is unknown.
+    //
+    // The credential binding is carried over as it is, without walking the chain: it does
+    // not inherit, so the session's own copy is the whole story.
     [[nodiscard]] SessionProfile effectiveProfile(const std::string& id) const;
 
     // Clears every explicitly overridden field in `id` and its descendants, so they all follow

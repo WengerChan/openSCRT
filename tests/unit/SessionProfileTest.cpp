@@ -205,6 +205,79 @@ TEST_F(SessionTreeFixture, EditingTheDefaultTemplateMovesEverythingThatDidNotOve
     EXPECT_EQ(beta.port, 2200) << "unset fields still follow the template";
 }
 
+TEST_F(SessionTreeFixture, TheCredentialBindingDoesNotInherit) {
+    // A child session usually points at a different machine. Inheriting the parent's
+    // KeePass entry would send the parent's password to that machine, so the binding
+    // stays with the session that owns it.
+    ASSERT_TRUE(tree_->add(profile("group")));
+    auto parent = profile("parent", "group");
+    parent.credential_source = std::string("keepass-uuid");
+    parent.credential_entry_uuid = std::string("uuid-parent");
+    ASSERT_TRUE(tree_->add(std::move(parent)));
+    ASSERT_TRUE(tree_->add(profile("child", "parent")));
+
+    const SessionProfile child = tree_->effectiveProfile("child");
+    EXPECT_FALSE(child.credential_source.has_value())
+        << "the child must not reuse the parent's KeePass entry";
+    EXPECT_FALSE(child.credential_entry_uuid.has_value());
+    EXPECT_FALSE(child.credential_match_host.has_value());
+
+    const SessionProfile own = tree_->effectiveProfile("parent");
+    ASSERT_TRUE(own.credential_source.has_value());
+    EXPECT_EQ(*own.credential_source, "keepass-uuid");
+    EXPECT_EQ(*own.credential_entry_uuid, "uuid-parent");
+}
+
+TEST_F(SessionTreeFixture, UpdatingASessionKeepsItsPlaceInTheTree) {
+    ASSERT_TRUE(tree_->add(profile("one")));
+    ASSERT_TRUE(tree_->add(profile("two")));
+
+    auto changed = profile("one");
+    changed.host = std::string("changed.example");
+    changed.credential_source = std::string("keepass-uuid");
+    changed.credential_entry_uuid = std::string("uuid-one");
+    ASSERT_TRUE(tree_->update(std::move(changed)));
+
+    ASSERT_EQ(tree_->profiles().size(), 2u);
+    EXPECT_EQ(tree_->profiles()[0].id, "one") << "the replaced session kept its slot";
+    EXPECT_EQ(tree_->profiles()[1].id, "two");
+    EXPECT_EQ(tree_->profiles()[0].host.value_or(""), "changed.example");
+    EXPECT_EQ(tree_->profiles()[0].credential_entry_uuid.value_or(""), "uuid-one");
+}
+
+TEST_F(SessionTreeFixture, UpdatingAnUnknownSessionFails) {
+    std::string error;
+    EXPECT_FALSE(tree_->update(profile("ghost"), &error));
+    EXPECT_EQ(error, "no such session: ghost");
+}
+
+TEST_F(SessionTreeFixture, UpdatingRejectsAParentThatWouldFormACycle) {
+    ASSERT_TRUE(tree_->add(profile("a")));
+    ASSERT_TRUE(tree_->add(profile("b", "a")));
+    std::string error;
+    EXPECT_FALSE(tree_->update(profile("a", "b"), &error))
+        << "moving a session under its own descendant would close the loop";
+}
+
+TEST_F(SessionTreeFixture, UpdatingKeepsTheCredentialBindingWhenNothingElseChanges) {
+    // "Apply the template to all" clears the inheritable fields. The binding is not one
+    // of them, so it has to survive.
+    ASSERT_TRUE(tree_->add(profile("group")));
+    auto child = profile("child", "group");
+    child.host = std::string("child.example");
+    child.credential_source = std::string("keepass-uuid");
+    child.credential_entry_uuid = std::string("uuid-child");
+    ASSERT_TRUE(tree_->add(std::move(child)));
+
+    tree_->inheritEverythingBelow("group");
+
+    const SessionProfile* bound = tree_->find("child");
+    ASSERT_NE(bound, nullptr);
+    EXPECT_FALSE(bound->host.has_value()) << "the inheritable fields were cleared";
+    ASSERT_TRUE(bound->credential_source.has_value());
+    EXPECT_EQ(*bound->credential_entry_uuid, "uuid-child");
+}
+
 TEST(SessionProfileTest, ProtocolRoundTripsThroughText) {
     for (const Protocol protocol :
          {Protocol::kSsh2, Protocol::kTelnet, Protocol::kSerial, Protocol::kLocalShell}) {

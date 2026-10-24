@@ -48,6 +48,37 @@ SessionProfile makeDefaultSession() {
     return profile;
 }
 
+// The checks that keep resolution possible: the parent has to exist, and the parent chain
+// must not close a cycle.
+//
+// The walk uses the tree as it is right now. For update() that means the session being
+// replaced is still in the tree with its old parent, which is what makes the cycle check
+// work: a session cannot be moved under one of its own descendants.
+bool validateParentChain(const SessionTree& tree, const SessionProfile& profile,
+                         std::string* error) {
+    const auto fail = [error](const std::string& message) {
+        if (error != nullptr) {
+            *error = message;
+        }
+        return false;
+    };
+
+    if (!profile.parent_id.empty() && tree.find(profile.parent_id) == nullptr) {
+        return fail("unknown parent: " + profile.parent_id);
+    }
+    if (!profile.parent_id.empty()) {
+        std::string cursor = profile.parent_id;
+        while (!cursor.empty()) {
+            if (cursor == profile.id) {
+                return fail("parent chain would form a cycle at " + profile.id);
+            }
+            const SessionProfile* node = tree.find(cursor);
+            cursor = (node == nullptr) ? std::string{} : node->parent_id;
+        }
+    }
+    return true;
+}
+
 }  // namespace
 
 SessionTree::SessionTree() : default_session_(makeDefaultSession()) {}
@@ -89,21 +120,36 @@ bool SessionTree::add(SessionProfile profile, std::string* error) {
     if (find(profile.id) != nullptr) {
         return fail("duplicate session id: " + profile.id);
     }
-    if (!profile.parent_id.empty() && find(profile.parent_id) == nullptr) {
-        return fail("unknown parent: " + profile.parent_id);
-    }
-    // Adding under a descendant would close a cycle.
-    if (!profile.parent_id.empty()) {
-        std::string cursor = profile.parent_id;
-        while (!cursor.empty()) {
-            if (cursor == profile.id) {
-                return fail("parent chain would form a cycle at " + profile.id);
-            }
-            const SessionProfile* node = find(cursor);
-            cursor = (node == nullptr) ? std::string{} : node->parent_id;
-        }
+    if (!validateParentChain(*this, profile, error)) {
+        return false;
     }
     profiles_.push_back(std::move(profile));
+    return true;
+}
+
+bool SessionTree::update(SessionProfile profile, std::string* error) {
+    const auto fail = [error](const std::string& message) {
+        if (error != nullptr) {
+            *error = message;
+        }
+        return false;
+    };
+
+    if (profile.id.empty()) {
+        return fail("session id must not be empty");
+    }
+    const auto found =
+        std::find_if(profiles_.begin(), profiles_.end(),
+                     [&profile](const SessionProfile& value) { return value.id == profile.id; });
+    if (found == profiles_.end()) {
+        return fail("no such session: " + profile.id);
+    }
+    if (!validateParentChain(*this, profile, error)) {
+        return false;
+    }
+    // The slot keeps its place, so the tree the user sees does not reshuffle under the
+    // cursor because a binding was added.
+    *found = std::move(profile);
     return true;
 }
 
@@ -224,10 +270,21 @@ SessionProfile SessionTree::effectiveProfile(const std::string& id) const {
     profile.user = resolved.user;
     profile.protocol = resolved.protocol;
     profile.private_key_path = resolved.private_key_path;
+    // The credential binding is the session's own and does not come from the chain. A
+    // child session usually points at another machine, and inheriting the parent's
+    // KeePass entry would send the parent's password to it.
+    profile.credential_source = source != nullptr ? source->credential_source : std::nullopt;
+    profile.credential_entry_uuid =
+        source != nullptr ? source->credential_entry_uuid : std::nullopt;
+    profile.credential_match_host =
+        source != nullptr ? source->credential_match_host : std::nullopt;
     return profile;
 }
 
 void SessionTree::inheritEverythingBelow(const std::string& id) {
+    // The credential binding is deliberately left alone: it is not part of the
+    // inheritance chain, so there is nothing for it to fall back to. Clearing it would
+    // throw away a binding the user picked by hand.
     for (SessionProfile& profile : profiles_) {
         if (profile.id == id) {
             profile.host.reset();
