@@ -30,13 +30,6 @@ const std::uint8_t* kPasswordBytes() {
 std::size_t kPasswordSize() {
     return kPasswordText.size();
 }
-constexpr std::string_view kWrongPasswordText = "wrong";
-const std::uint8_t* kWrongPasswordBytes() {
-    return reinterpret_cast<const std::uint8_t*>(kWrongPasswordText.data());
-}
-std::size_t kWrongPasswordSize() {
-    return kWrongPasswordText.size();
-}
 
 std::vector<std::uint8_t> readFile(const std::string& path) {
     std::ifstream stream(path, std::ios::binary);
