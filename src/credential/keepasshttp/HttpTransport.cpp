@@ -28,7 +28,10 @@ bool QtHttpTransport::post(const std::string& body, std::string& response, std::
 
     socket.write(request);
     socket.flush();
-    if (!socket.waitForBytesWritten(timeout_ms_)) {
+    // waitForBytesWritten() returns false when everything was already written, so its
+    // result is not a check -- the socket's error state is.
+    socket.waitForBytesWritten(timeout_ms_);
+    if (socket.error() != QAbstractSocket::UnknownSocketError) {
         error = "the request to the KeePassHttp plugin could not be sent";
         return false;
     }
