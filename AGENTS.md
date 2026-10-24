@@ -43,6 +43,7 @@ openSCRT — C++20 + Qt 6 的 SecureCRT 对标终端。读代码前先读
 | 2（Python 走 uv） | 要跑 Python 就 `uv run python ...`（`UV_CACHE_DIR=$PWD/.cache/uv`），不要 `python3`；改文件优先用编辑工具而不是脚本。 |
 | 3（外网走代理） | 每一条访问外网的命令都 `source ./.proxy.sh`——**包括 `api.github.com`**，哪怕它直连也能通。 |
 | 8（不动用户机器） | 验证一律走 CI runner；不要在用户的桌面启动应用。 |
+| 格式门禁（clang-format） | 推之前把新写的 C++ 过一遍**钉住版本**的 clang-format——CI 的 format job 跑的就是 `clang-format==23.1.3` 的 `--dry-run --Werror`，用别的版本格式化等于把代码改成另一个样子，CI 照样红。`uv tool install clang-format==23.1.3` 后 `clang-format -i <files>`；沙箱不让写 `~/.local/share` 时装到项目内：`UV_TOOL_DIR=$PWD/.cache/uv-tools UV_TOOL_BIN_DIR=$PWD/.cache/uv-bin uv tool install clang-format==23.1.3`，然后用 `.cache/uv-bin/clang-format`。**格式化是规则 1 明文允许的本地动作**，不是"本地不能做"。 |
 
 ## 排障纪律（来自 21 轮 CI 排障的复盘）
 
