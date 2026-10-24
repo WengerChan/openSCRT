@@ -150,7 +150,9 @@ class MockKeePassHttpServer final {
     std::string key_;
     QByteArray buffer_;
     std::string asked_url;
-    std::mutex mutex_;
+    // The lock is mutable so that the getter can be const: reading the state does not
+    // change it, but locking does.
+    mutable std::mutex mutex_;
     std::unique_ptr<QThread> worker_;
     QTcpServer* server_{nullptr};
     quint16 port_{0};
