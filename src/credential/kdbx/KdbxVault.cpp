@@ -100,7 +100,7 @@ void KdbxVault::checkFileChanged() {
         return;
     }
     const QFileInfo info(path_);
-    if (!info.exists() || info.lastModified() == read_at_) {
+    if (!info.exists() || (info.lastModified() == read_at_ && info.size() == read_size_)) {
         return;
     }
     std::string error;
@@ -175,7 +175,9 @@ bool KdbxVault::readDatabase(std::string& error) {
 
     index_ = std::move(new_index);
     protected_stream_ = new_stream;
-    read_at_ = QFileInfo(path_).lastModified();
+    const QFileInfo info(path_);
+    read_at_ = info.lastModified();
+    read_size_ = info.size();
     return true;
 }
 

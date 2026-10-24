@@ -233,20 +233,32 @@ TEST_F(VaultFixture, UsingTheVaultNoticesAChangeTheWatcherMissed) {
     QObject::connect(&vault, &KdbxVault::reloaded,
                      [&reloaded](bool, const QString&) { reloaded = true; });
 
-    // Change the file and then use the vault. The watch may or may not have seen it;
-    // the timestamp check is what makes the outcome the same on every platform.
+    // Change the file -- to a different size, because the clock on Windows has a
+    // resolution of about 15.6 ms and a change right after the read can carry the very
+    // same timestamp. The watch may or may not have seen it; the size and timestamp
+    // check is what makes the outcome the same on every platform.
+    //
+    // The replacement is a different database, so the re-read cannot succeed -- what the
+    // test checks is that the vault noticed, and that a change it cannot read does not
+    // cost it the index it already had.
+    const std::vector<std::uint8_t> other = readFile(kBlankDatabasePath.toStdString());
+    ASSERT_FALSE(other.empty());
+    ASSERT_NE(other.size(), bytes.size());
     {
         QFile file(path);
         ASSERT_TRUE(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
-        ASSERT_EQ(file.write(reinterpret_cast<const char*>(bytes.data()),
-                             static_cast<qint64>(bytes.size())),
-                  static_cast<qint64>(bytes.size()));
+        ASSERT_EQ(file.write(reinterpret_cast<const char*>(other.data()),
+                             static_cast<qint64>(other.size())),
+                  static_cast<qint64>(other.size()));
     }
     spin(50);
     vault.touch();
     spin(100);
     EXPECT_TRUE(reloaded) << "the vault did not notice the change when it was used";
     EXPECT_TRUE(vault.isOpen());
+    // The index it had is still there: a change that cannot be read is reported, not
+    // silently turned into an empty database.
+    EXPECT_EQ(vault.index().entries.size(), 1u);
 }
 
 }  // namespace

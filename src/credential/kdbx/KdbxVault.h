@@ -99,10 +99,13 @@ class KdbxVault final : public QObject {
     std::vector<std::uint8_t> key_file_;
     KdbxIndex index_;
     KdbxProtectedStream protected_stream_;
-    // When the database was read. The file watcher is registered on a helper thread on
-    // Windows, so a change in the first moments after opening can slip past it; the
-    // timestamp is the backstop.
+    // When the database was read, and how big it was. The file watcher is registered on
+    // a helper thread on Windows, so a change in the first moments after opening can
+    // slip past it; the size and the timestamp are the backstop. The size is in there
+    // because the clock on Windows only has a resolution of about 15.6 ms, so a change
+    // right after the read can carry the very same timestamp.
     QDateTime read_at_;
+    qint64 read_size_{0};
     bool open_{false};
     std::chrono::milliseconds idle_timeout_{0};
     QFileSystemWatcher watcher_;
