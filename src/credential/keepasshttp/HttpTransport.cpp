@@ -56,7 +56,9 @@ bool QtHttpTransport::post(const std::string& body, std::string& response, std::
                 headers.left(headers.indexOf('\r')).toStdString();
         return false;
     }
-    if (headers.contains(QByteArrayLiteral("Transfer-Encoding: chunked"), Qt::CaseInsensitive)) {
+    // QByteArray::contains takes one argument -- the case-insensitive overload belongs to
+    // QString -- so the headers are lower-cased before the search.
+    if (headers.toLower().contains(QByteArrayLiteral("transfer-encoding: chunked"))) {
         error =
             "the KeePassHttp plugin answered with a chunked body, which this transport "
             "does not read";
