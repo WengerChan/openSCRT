@@ -16,7 +16,7 @@ Measured on the published `openSCRT-0.1.2-windows-x64-portable.zip` with the sam
 script the CI runs:
 
 ```
-$ python3 .github/scripts/check_import_floor.py --floor 1607 \
+$ uv run python .github/scripts/check_import_floor.py --floor 1607 \
     --strict .cache/v012/openscrt-0.1.2-windows-x64/bin/openscrt.exe \
     --report .cache/v012/openscrt-0.1.2-windows-x64/bin/Qt6Core.dll
 declared floor: Windows 10.0 build 14393
@@ -24,6 +24,9 @@ declared floor: Windows 10.0 build 14393
   Qt6Core.dll:  needs 10.0 build 16299
 package floor: Windows 10.0 build 16299
 ```
+
+*这份输出取自 2026-10-24 实测的 v0.1.2 包；上面的命令已按规则 2 改写成 uv 形式
+（原跑法是系统 `python3`）。脚本只读 PE 文件，换不换解释器不改变结果。*
 
 **Our own executable now needs 1607** -- the three ConPTY entry points are resolved at
 run time, so they are no longer in the import table. The package as a whole still needs

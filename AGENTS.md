@@ -81,8 +81,12 @@ openSCRT — C++20 + Qt 6 的 SecureCRT 对标终端。读代码前先读
 - **脚本化改文件后，必须 grep 确认改动真的落盘**。`str.replace` 在锚点文本漂移时
   **静默不替换、不报错**，本仓库已经因此踩坑 3 次（成员变量漏加、函数调用漏改、
   位图初始化漏写），每次都白白多付一轮 CI 往返。改动提交前用 `grep` 验证结果。
-- **改 YAML / JSON 后，本地先解析一遍再推**。`python3 -c "import yaml;yaml.safe_load(...)"`
-  只能发现语法错，发现不了"这行跑到了别的 step 的 `run:` 里"——那类错误会让
+- **改 YAML / JSON 后，本地先解析一遍再推**。`uv run --with pyyaml python -c
+  "import yaml,sys;yaml.safe_load(open(sys.argv[1]))" <file.yml>`（JSON 同理，
+  `uv run python -c "import json,sys;json.load(open(sys.argv[1]))" <file.json>`，
+  `UV_CACHE_DIR=$PWD/.cache/uv`）。**写下来的命令形状要自己先跑过一遍**——照抄本仓库
+  自己的示例去写，示例本身是错的就会把错误复制到下一轮。解析只能发现语法错，
+  发现不了"这行跑到了别的 step 的 `run:` 里"——那类错误会让
   一个步骤在**所有断言都通过之后**以 exit 127 收场，job 变红且证据被抹掉。
   改完用 `grep -n` 确认关键行仍属于它该在的块。
 - **sanitizer 与覆盖率永不同构建**。gcov 计数器是普通全局，两线程自增同一计数器会被

@@ -169,7 +169,9 @@ gcov 的计数器是**普通全局变量**。同一个二进制里同时开 `--c
 后果不是"配置写错了"这么轻：**这个步骤里所有已经通过的断言都被这一次退出码抹掉**，job 变红；读日志的人第一眼看到的是 `exit 127`，要往回翻很久才知道真正的测试早就 Passed 了。
 
 **预防规则**：
-> 脚本改完 YAML，**先本地解析一遍**（`python3 -c "import yaml;yaml.safe_load(...)"`），
+> 脚本改完 YAML，**先本地解析一遍**（`uv run --with pyyaml python -c
+> "import yaml,sys;yaml.safe_load(open(sys.argv[1]))" <file.yml>`，
+> `UV_CACHE_DIR=$PWD/.cache/uv`；按规则 2 走 uv，不要用系统 `python3`），
 > 再 grep 确认关键行的归属步骤——这比通读一遍 diff 还快。
 > 判据：`grep -n "if-no-files-found" ci.yml` 的行号必须落在它该在的那个 step 块内。
 
