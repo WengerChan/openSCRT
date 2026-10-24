@@ -444,8 +444,9 @@ Windows / macOS / Linux 各做一遍，逐项打勾并留下记录。
 | P2-T1 凭据提供者抽象 | ✅ | `src/credential/ICredentialProvider.h`：明文只走 `core::SecureByteArray`；`takeSecret()` 把字节移交给调用方并清空来源；查不到就说查不到（not-found / cancelled / unavailable / error），不返回"空密码冒充成功"；`lock()` 在接口上，自动锁定（P2-T7）才不用向下转型。10 个用例，run **#40122964427** 三平台全绿 |
 | P2-T2 安全内存容器 | ✅ | 复用 `src/core/SecureByteArray`（见 D8）：`sodium_malloc` + `sodium_mlock`，析构时 `sodium_memzero` + 解锁。run **#40123563712** |
 | P2-A7 安全回归 | ✅ **观测到的** | run **#40123563712** 的 Linux leg 日志（CI 单独跑这一条用例，数字进日志）：`VmLck before=0 kB, during=4 kB, after=0 kB, mlock succeeded=yes` —— 锁的页在缓冲活着时确实被锁上，析构后**回到 0**。macOS / Windows 无此观测手段，那两个平台只验降级路径（`locked()` 诚实性），**不假装验过** |
-| P2-T3 KDBX 文件头解析 | ✅ | `src/credential/kdbx/KdbxHeaderParser.cpp`：魔数（3.1 的第二签名是 `0xB54BFB66`、4.x 是 `0xB54BFB67`）、TLV 字段、VariantDictionary、算法 UUID、压缩标志、KDF 参数。**字段长度宽度随版本变**（3.1 是 UInt16，4.x 是 Int32）——这是最容易写错且不报错的一处。夹具是**真实 KeePass 数据库的头 253 字节**（逐字节照抄），不是本项目自己产出的 |
-| KDBX 字节级事实 | ✅ | `docs/evidence/kdbx-format-notes.md`：每条事实带出处（官方规范 / KeePass 参考实现 / 独立实现 pykeepass / 真实样本十六进制）。**记错的两次**（版本号 `0x03040000`、3.1 的第二签名）都记在那份文件里，作为"格式跟 Win32 默认行为一样，凭记忆必错"的证据 |
+| P2-T3 KDBX 文件头解析 | ✅ | `src/credential/kdbx/KdbxHeaderParser.cpp`：魔数（3.1 的第二签名是 `0xB54BFB66`、4.x 是 `0xB54BFB67`）、TLV 字段、VariantDictionary、算法 UUID、压缩标志、KDF 参数。**字段长度宽度随版本变**（3.1 是 UInt16，4.x 是 Int32）——这是最容易写错且不报错的一处。夹具是**真实 KeePass 数据库的头 253 字节**（逐字节照抄），不是本项目自己产出的。run **#40127994271** |
+| P2-T4 KDBX 4 读取 | ✅ | `src/credential/kdbx/Kdbx4Reader.cpp`：复合密钥 → Argon2d/Argon2id → 主密钥 → 头部 SHA-256 → 头部 HMAC → **每块各自的 HMAC** → AES-256-CBC/ChaCha20 → GZip。**每一步都验签**，所以错密码是报错而不是"解出一堆垃圾"。读的是**真实数据库**（`tests/fixtures/kdbx/blank_database.kdbx`，公开夹具，来源与哈希写在其 README 里），并与参考实现对拍。run **#40127994271**（`unit_kdbx4_reader` 3.71 s 通过——含 64 MiB Argon2d 派生） |
+| KDBX 字节级事实 | ✅ | `docs/evidence/kdbx-format-notes.md`：每条事实带出处（官方规范 / KeePass 参考实现 / 独立实现 pykeepass / 真实样本十六进制）。**记错的五次**（版本号 `0x03040000`、3.1 的第二签名、复合密钥少一层哈希、AES-KDF 的形态、块 HMAC 的键）都记在那份文件里，作为"格式跟 Win32 默认行为一样，凭记忆必错"的证据 |
 
 ---
 
