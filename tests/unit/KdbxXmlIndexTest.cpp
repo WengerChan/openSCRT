@@ -80,8 +80,9 @@ TEST(KdbxXmlIndexTest, ThePasswordIsRevealedOnRequest) {
     EXPECT_EQ(read.protected_stream_id, 2u) << "the fixture uses the Salsa20 protected stream";
 
     core::SecureByteArray password;
-    ASSERT_TRUE(revealKdbxPassword(indexed.index.entries.front(), stream, password))
-        << "the password could not be revealed";
+    std::string error;
+    ASSERT_TRUE(revealKdbxPassword(indexed.index.entries.front(), stream, password, error))
+        << error;
     ASSERT_EQ(password.size(), 6u);
     char buffer[7] = {};
     EXPECT_EQ(password.copyOut(buffer, sizeof(buffer)), 6u);
