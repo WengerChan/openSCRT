@@ -31,6 +31,15 @@ std::size_t kPasswordSize() {
     return kPasswordText.size();
 }
 
+// The blank database has its own public password; it is a public test fixture.
+constexpr std::string_view kBlankPasswordText = "password";
+const std::uint8_t* kBlankPasswordBytes() {
+    return reinterpret_cast<const std::uint8_t*>(kBlankPasswordText.data());
+}
+std::size_t kBlankPasswordSize() {
+    return kBlankPasswordText.size();
+}
+
 std::vector<std::uint8_t> readFile(const std::string& path) {
     std::ifstream stream(path, std::ios::binary);
     if (!stream) {
@@ -101,8 +110,8 @@ TEST(KdbxXmlIndexTest, TheKdbx4InnerHeaderCarriesTheProtectedStream) {
     const std::vector<std::uint8_t> database = readFile(fixturePath("blank_database.kdbx"));
     ASSERT_FALSE(database.empty());
 
-    const Kdbx4ReadResult read =
-        readKdbx4(database.data(), database.size(), kPasswordBytes(), kPasswordSize(), {});
+    const Kdbx4ReadResult read = readKdbx4(database.data(), database.size(), kBlankPasswordBytes(),
+                                           kBlankPasswordSize(), {});
     ASSERT_TRUE(read.ok()) << read.error;
     // The inner header sits in front of the XML.
     EXPECT_GT(read.xml_offset, 0u);
