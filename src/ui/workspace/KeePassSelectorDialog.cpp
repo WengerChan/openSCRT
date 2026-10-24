@@ -55,15 +55,20 @@ void KeePassSelectorDialog::rebuild() {
     tree_->clear();
 
     for (const credential::kdbx::KdbxEntry& entry : index_.entries) {
-        if (!needle.isEmpty() && !entry.title.contains(needle.toStdString(), Qt::CaseInsensitive) &&
-            !entry.username.contains(needle.toStdString(), Qt::CaseInsensitive) &&
-            !entry.group_path.contains(needle.toStdString(), Qt::CaseInsensitive)) {
+        const QString title = QString::fromStdString(entry.title);
+        const QString user = QString::fromStdString(entry.username);
+        const QString group = QString::fromStdString(entry.group_path);
+        // QString::contains, not std::string::contains: the latter is C++23 and this
+        // project is C++20.
+        if (!needle.isEmpty() && !title.contains(needle, Qt::CaseInsensitive) &&
+            !user.contains(needle, Qt::CaseInsensitive) &&
+            !group.contains(needle, Qt::CaseInsensitive)) {
             continue;
         }
         auto* item = new QTreeWidgetItem(tree_);
-        item->setText(0, QString::fromStdString(entry.title));
-        item->setText(1, QString::fromStdString(entry.username));
-        item->setText(2, QString::fromStdString(entry.group_path));
+        item->setText(0, title);
+        item->setText(1, user);
+        item->setText(2, group);
         item->setData(0, kUuidRole, QString::fromStdString(entry.uuid));
     }
     if (tree_->topLevelItemCount() > 0) {
