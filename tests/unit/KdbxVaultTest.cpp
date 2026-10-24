@@ -24,6 +24,11 @@
 namespace openscrt::credential::kdbx {
 namespace {
 
+const QString kFixturePath =
+    QStringLiteral(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.kdbx";
+const QString kKeyFilePath =
+    QStringLiteral(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.key";
+
 constexpr std::string_view kPasswordText = "correct horse battery staple";
 const std::uint8_t* kPasswordBytes() {
     return reinterpret_cast<const std::uint8_t*>(kPasswordText.data());
@@ -67,14 +72,11 @@ class VaultFixture : public ::testing::Test {
 };
 
 TEST_F(VaultFixture, OpeningTheDatabaseReadsTheIndex) {
-    const std::vector<std::uint8_t> key_file =
-        readFile(std::string(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.key");
+    const std::vector<std::uint8_t> key_file = readFile(kKeyFilePath.toStdString());
 
     KdbxVault vault;
     std::string error;
-    ASSERT_TRUE(vault.open(
-        std::string(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.kdbx",
-        kPasswordBytes(), kPasswordSize(), key_file, error))
+    ASSERT_TRUE(vault.open(kFixturePath, kPasswordBytes(), kPasswordSize(), key_file, error))
         << error;
     EXPECT_TRUE(vault.isOpen());
     ASSERT_EQ(vault.index().entries.size(), 1u);
@@ -83,14 +85,11 @@ TEST_F(VaultFixture, OpeningTheDatabaseReadsTheIndex) {
 }
 
 TEST_F(VaultFixture, TheEntriesAreFoundByUuidAndByHost) {
-    const std::vector<std::uint8_t> key_file =
-        readFile(std::string(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.key");
+    const std::vector<std::uint8_t> key_file = readFile(kKeyFilePath.toStdString());
 
     KdbxVault vault;
     std::string error;
-    ASSERT_TRUE(vault.open(
-        std::string(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.kdbx",
-        kPasswordBytes(), kPasswordSize(), key_file, error))
+    ASSERT_TRUE(vault.open(kFixturePath, kPasswordBytes(), kPasswordSize(), key_file, error))
         << error;
 
     const KdbxEntry& entry = vault.index().entries.front();
@@ -100,14 +99,11 @@ TEST_F(VaultFixture, TheEntriesAreFoundByUuidAndByHost) {
 }
 
 TEST_F(VaultFixture, ThePasswordIsRevealedOnRequest) {
-    const std::vector<std::uint8_t> key_file =
-        readFile(std::string(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.key");
+    const std::vector<std::uint8_t> key_file = readFile(kKeyFilePath.toStdString());
 
     KdbxVault vault;
     std::string error;
-    ASSERT_TRUE(vault.open(
-        std::string(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.kdbx",
-        kPasswordBytes(), kPasswordSize(), key_file, error))
+    ASSERT_TRUE(vault.open(kFixturePath, kPasswordBytes(), kPasswordSize(), key_file, error))
         << error;
     ASSERT_EQ(vault.index().entries.size(), 1u);
 
@@ -120,14 +116,11 @@ TEST_F(VaultFixture, ThePasswordIsRevealedOnRequest) {
 }
 
 TEST_F(VaultFixture, LockingDropsTheIndex) {
-    const std::vector<std::uint8_t> key_file =
-        readFile(std::string(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.key");
+    const std::vector<std::uint8_t> key_file = readFile(kKeyFilePath.toStdString());
 
     KdbxVault vault;
     std::string error;
-    ASSERT_TRUE(vault.open(
-        std::string(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.kdbx",
-        kPasswordBytes(), kPasswordSize(), key_file, error))
+    ASSERT_TRUE(vault.open(kFixturePath, kPasswordBytes(), kPasswordSize(), key_file, error))
         << error;
 
     bool locked = false;
@@ -142,14 +135,11 @@ TEST_F(VaultFixture, LockingDropsTheIndex) {
 }
 
 TEST_F(VaultFixture, TheVaultLocksItselfWhenItGoesIdle) {
-    const std::vector<std::uint8_t> key_file =
-        readFile(std::string(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.key");
+    const std::vector<std::uint8_t> key_file = readFile(kKeyFilePath.toStdString());
 
     KdbxVault vault;
     std::string error;
-    ASSERT_TRUE(vault.open(
-        std::string(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.kdbx",
-        kPasswordBytes(), kPasswordSize(), key_file, error))
+    ASSERT_TRUE(vault.open(kFixturePath, kPasswordBytes(), kPasswordSize(), key_file, error))
         << error;
 
     vault.setIdleTimeout(std::chrono::milliseconds(50));
@@ -159,14 +149,11 @@ TEST_F(VaultFixture, TheVaultLocksItselfWhenItGoesIdle) {
 }
 
 TEST_F(VaultFixture, UsingTheVaultRestartsTheIdleTimer) {
-    const std::vector<std::uint8_t> key_file =
-        readFile(std::string(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.key");
+    const std::vector<std::uint8_t> key_file = readFile(kKeyFilePath.toStdString());
 
     KdbxVault vault;
     std::string error;
-    ASSERT_TRUE(vault.open(
-        std::string(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.kdbx",
-        kPasswordBytes(), kPasswordSize(), key_file, error))
+    ASSERT_TRUE(vault.open(kFixturePath, kPasswordBytes(), kPasswordSize(), key_file, error))
         << error;
 
     vault.setIdleTimeout(std::chrono::milliseconds(150));
@@ -182,8 +169,7 @@ TEST_F(VaultFixture, AChangedFileIsReadAgain) {
     ASSERT_TRUE(directory.isValid());
     const QString path = directory.filePath("vault.kdbx");
 
-    const std::vector<std::uint8_t> bytes =
-        readFile(std::string(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.kdbx");
+    const std::vector<std::uint8_t> bytes = readFile(kFixturePath.toStdString());
     ASSERT_FALSE(bytes.empty());
     {
         QFile file(path);
@@ -192,8 +178,7 @@ TEST_F(VaultFixture, AChangedFileIsReadAgain) {
                              static_cast<qint64>(bytes.size())),
                   static_cast<qint64>(bytes.size()));
     }
-    const std::vector<std::uint8_t> key_file =
-        readFile(std::string(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.key");
+    const std::vector<std::uint8_t> key_file = readFile(kKeyFilePath.toStdString());
 
     KdbxVault vault;
     std::string error;
