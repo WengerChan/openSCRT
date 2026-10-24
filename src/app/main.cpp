@@ -238,7 +238,7 @@ int runAcceptanceCheck(QApplication& app) {
             const auto echo_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
             while (std::chrono::steady_clock::now() < echo_deadline) {
                 if (session != nullptr) {
-                    const terminal::ScreenGrid& grid = session->canvas()->grid();
+                    const openscrt::terminal::ScreenGrid& grid = session->canvas()->grid();
                     for (int row = 0; row < grid.rows(); ++row) {
                         if (grid.rowText(row).find("openscrt-acceptance") != std::string::npos) {
                             echoed = true;
