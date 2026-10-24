@@ -175,7 +175,9 @@ target_compile_definitions(unit_kdbx_xml_index PRIVATE
 openscrt_add_test(unit_main_window
     LABEL unit
     SOURCES unit/MainWindowTest.cpp
-    LIBS openscrt_ui openscrt_config Qt6::Gui Qt6::Widgets)
+    LIBS openscrt_ui openscrt_config openscrt_credential Qt6::Gui Qt6::Widgets)
+target_compile_definitions(unit_main_window PRIVATE
+    OPENCRT_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 set_tests_properties(unit_main_window PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 

@@ -23,14 +23,18 @@
 #include <QtGlobal>
 #include <chrono>
 #include <cstdlib>
+#include <fstream>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "config/ConfigManager.h"
 #include "config/SessionProfile.h"
 #include "core/SecureByteArray.h"
+#include "credential/kdbx/KdbxVault.h"
 #include "protocols/ITransportChannel.h"
 #include "terminal/buffer/ScreenGrid.h"
 #include "ui/workspace/MainWindow.h"
@@ -42,6 +46,16 @@
 
 namespace openscrt::ui {
 namespace {
+
+// The bytes of a file, for the key file of the KeePass database.
+std::vector<std::uint8_t> readFile(const std::string& path) {
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream) {
+        return {};
+    }
+    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream),
+                                     std::istreambuf_iterator<char>());
+}
 
 // QWidget requires QApplication, not QGuiApplication: creating a widget under a plain
 // QGuiApplication aborts the process.
@@ -329,6 +343,76 @@ TEST_F(MainWindowTest, TheQuickConnectDialogReachesARealServerThroughTheWindow) 
             const terminal::ScreenGrid& grid = session->canvas()->grid();
             for (int row = 0; row < grid.rows(); ++row) {
                 if (grid.rowText(row).find("openscrt-quick-ok") != std::string::npos) {
+                    return true;
+                }
+            }
+            return false;
+        },
+        20000);
+    EXPECT_TRUE(printed) << "the command output never reached the screen";
+}
+
+TEST_F(MainWindowTest, ThePasswordFromTheDatabaseLogsIn) {
+    // P2-A1: the whole chain, and the last link of it. The password is taken out of a
+    // KeePass database -- master password and key file -- and used to log into a real
+    // SSH server. The account of the server holds the password of the entry, so a login
+    // that works proves that the password really came out of the database.
+    const char* port = std::getenv("OPENCRT_TEST_SSH_PORT");
+    const char* user = std::getenv("OPENCRT_TEST_SSH_PASSWORD_USER");
+    const char* password = std::getenv("OPENCRT_TEST_SSH_PASSWORD");
+    if (port == nullptr || user == nullptr || password == nullptr) {
+        GTEST_SKIP() << "no SSH server configured for this run";
+    }
+
+    // The database, opened the way a user opens it: with the master password and the
+    // key file that belongs to it.
+    credential::kdbx::KdbxVault vault;
+    std::string error;
+    const std::string master = "correct horse battery staple";
+    const std::vector<std::uint8_t> key_file =
+        readFile(std::string(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.key");
+    ASSERT_TRUE(vault.open(
+        QStringLiteral(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.kdbx",
+        reinterpret_cast<const std::uint8_t*>(master.data()), master.size(), key_file, error))
+        << error;
+    ASSERT_EQ(vault.index().entries.size(), 1u);
+
+    // The password of the entry. It is only ever in a locked buffer, and it is wiped
+    // when the buffer dies.
+    core::SecureByteArray secret;
+    ASSERT_TRUE(vault.revealPassword(vault.index().entries.front(), secret, error)) << error;
+    char plain[64] = {};
+    const std::size_t length = secret.copyOut(plain, sizeof(plain));
+    ASSERT_EQ(std::string(plain, length), std::string(password))
+        << "the entry of the database has to hold the password of the account";
+
+    // The session, with the password that came out of the database.
+    config::SessionProfile profile;
+    profile.id = "from-database";
+    profile.name = profile.id;
+    profile.host = std::string("127.0.0.1");
+    profile.port = std::atoi(port);
+    profile.user = std::string(user);
+    profile.protocol = config::Protocol::kSsh2;
+
+    const int index = window_->workspace()->openSession(profile, error, std::move(secret));
+    ASSERT_GE(index, 0) << error;
+
+    TerminalSession* session = window_->workspace()->sessionById(QStringLiteral("from-database"));
+    ASSERT_NE(session, nullptr);
+
+    const bool connected = waitFor(
+        [session]() { return session->state() == protocols::TransportState::kConnected; }, 20000);
+    ASSERT_TRUE(connected) << "the session never connected";
+
+    const std::string command = "printf 'openscrt-from-db-%s\\n' ok\r";
+    session->sendInput(std::vector<std::uint8_t>(command.begin(), command.end()));
+
+    const bool printed = waitFor(
+        [session]() {
+            const terminal::ScreenGrid& grid = session->canvas()->grid();
+            for (int row = 0; row < grid.rows(); ++row) {
+                if (grid.rowText(row).find("openscrt-from-db-ok") != std::string::npos) {
                     return true;
                 }
             }

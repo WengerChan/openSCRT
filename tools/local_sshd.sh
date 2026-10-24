@@ -93,7 +93,12 @@ chmod 600 "$KEY_DIR/authorized_keys"
 
 # 3. The throwaway account with a password. The password is generated here and never
 #    leaves this machine except through the variables below.
-PASSWORD_VALUE="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+#
+#    OPENCRT_TEST_SSH_PASSWORD_VALUE pins it. The CI does that, because a test that takes
+#    its password out of a KeePass database can only log in if it knows the password the
+#    database holds. The manual path leaves it unset, so the password of a server a user
+#    runs for themselves is still a random one.
+PASSWORD_VALUE="${OPENCRT_TEST_SSH_PASSWORD_VALUE:-$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')}"
 sudo useradd --create-home --shell /bin/bash "$PASSWORD_USER" 2>/dev/null || true
 echo "$PASSWORD_USER:$PASSWORD_VALUE" | sudo chpasswd
 

@@ -277,6 +277,13 @@ jobs:
         shell: bash
         # The same script the user runs to get a server for the P1-A7 manual check, so
         # the parameters CI hands to the tests are the ones the script prints for a human.
+        #
+        # The password is pinned here, and only here: a test that takes its password out
+        # of a KeePass database can only log in if the database holds the password of the
+        # account. The script keeps a random password when the variable is not set, so
+        # the server a user runs for themselves is still a random one.
+        env:
+          OPENCRT_TEST_SSH_PASSWORD_VALUE: s3cret
         run: tools/local_sshd.sh --export-env
 
       - name: Configure (${{ matrix.preset }})
