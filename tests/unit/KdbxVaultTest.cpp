@@ -73,6 +73,60 @@ class VaultFixture : public ::testing::Test {
     std::unique_ptr<QCoreApplication> application_;
 };
 
+TEST_F(VaultFixture, TheDatabaseCanBeUnlockedOnAWorkerThread) {
+    // The derivation of the key is deliberately slow, so it happens on a worker thread
+    // and the answer comes back through the event loop. This is what keeps the window
+    // from freezing while a database is unlocked.
+    const std::vector<std::uint8_t> key_file = readFile(kKeyFilePath.toStdString());
+
+    KdbxVault vault;
+    bool reported = false;
+    bool ok = false;
+    QObject::connect(&vault, &KdbxVault::opened, &vault, [&](bool success, const QString&) {
+        ok = success;
+        reported = true;
+    });
+
+    vault.openAsync(kFixturePath, kPasswordBytes(), kPasswordSize(), key_file);
+
+    QElapsedTimer timer;
+    timer.start();
+    while (!reported && timer.elapsed() < 20000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    }
+
+    ASSERT_TRUE(reported) << "the vault never reported back";
+    EXPECT_TRUE(ok);
+    EXPECT_TRUE(vault.isOpen());
+    EXPECT_FALSE(vault.index().entries.empty());
+}
+
+TEST_F(VaultFixture, AWorkerThreadUnlockThatFailsSaysSo) {
+    KdbxVault vault;
+    bool reported = false;
+    bool ok = true;
+    QString message;
+    QObject::connect(&vault, &KdbxVault::opened, &vault, [&](bool success, const QString& text) {
+        ok = success;
+        message = text;
+        reported = true;
+    });
+
+    const char* wrong = "wrong";
+    vault.openAsync(kFixturePath, reinterpret_cast<const std::uint8_t*>(wrong), 5, {});
+
+    QElapsedTimer timer;
+    timer.start();
+    while (!reported && timer.elapsed() < 20000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    }
+
+    ASSERT_TRUE(reported) << "the vault never reported back";
+    EXPECT_FALSE(ok);
+    EXPECT_FALSE(message.isEmpty()) << "a refusal has to say why";
+    EXPECT_FALSE(vault.isOpen());
+}
+
 TEST_F(VaultFixture, OpeningTheDatabaseReadsTheIndex) {
     const std::vector<std::uint8_t> key_file = readFile(kKeyFilePath.toStdString());
 

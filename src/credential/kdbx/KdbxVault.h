@@ -27,7 +27,10 @@
 #include <QTimer>
 #include <chrono>
 #include <cstdint>
+#include <mutex>
+#include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "core/SecureByteArray.h"
@@ -49,6 +52,14 @@ class KdbxVault final : public QObject {
     [[nodiscard]] bool open(const QString& path, const std::uint8_t* password,
                             std::size_t password_size, const std::vector<std::uint8_t>& key_file,
                             std::string& error);
+
+    // Opens the database on a worker thread.
+    //
+    // The key derivation of a KDBX 4 file takes a second or more on purpose, and the
+    // thread that draws the window must not wait for it. The result is reported through
+    // the `opened` signal, on the thread that owns the vault.
+    void openAsync(const QString& path, const std::uint8_t* password, std::size_t password_size,
+                   const std::vector<std::uint8_t>& key_file);
 
     // Drops the key material and the index. The file stays watched, so unlocking again
     // is just another open().
@@ -82,8 +93,36 @@ class KdbxVault final : public QObject {
     void reloaded(bool ok, const QString& message);
     // The vault locked itself: the key material is gone.
     void locked();
+    // An asynchronous open finished. `ok` says whether the database was opened, and the
+    // message says why it was not when it was not.
+    void opened(bool ok, const QString& message);
 
  private:
+    // The result of an asynchronous open, waiting to be picked up by the thread that
+    // owns the vault.
+    struct PendingOpen {
+        bool ok{false};
+        std::string error;
+        QString path;
+        KdbxIndex index;
+        KdbxProtectedStream stream;
+        core::SecureByteArray password;
+        std::vector<std::uint8_t> key_file;
+    };
+
+    // Reads a database file into an index and a protected stream. This is the whole of
+    // the work of opening a database, and it does not touch the members of the vault, so
+    // it can run on a worker thread.
+    [[nodiscard]] static bool readDatabaseInto(const QString& path,
+                                               const core::SecureByteArray& password,
+                                               const std::vector<std::uint8_t>& key_file,
+                                               KdbxIndex& index, KdbxProtectedStream& stream,
+                                               std::string& error);
+
+    // Picks the result of the worker up and puts it into the vault. Runs on the thread
+    // that owns the vault.
+    void finishOpen();
+
     bool readDatabase(std::string& error);
     void onFileChanged(const QString& changed);
     void onIdleTimeout();
@@ -110,6 +149,10 @@ class KdbxVault final : public QObject {
     std::chrono::milliseconds idle_timeout_{0};
     QFileSystemWatcher watcher_;
     QTimer idle_timer_;
+    // The worker that does the key derivation, and the result it left behind.
+    std::thread open_worker_;
+    std::mutex open_mutex_;
+    std::optional<PendingOpen> pending_open_;
 };
 
 }  // namespace openscrt::credential::kdbx

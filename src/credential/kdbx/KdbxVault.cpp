@@ -2,7 +2,9 @@
 
 #include <QFile>
 #include <QFileInfo>
+#include <QMetaObject>
 #include <algorithm>
+#include <utility>
 
 #include "credential/kdbx/Kdbx3Reader.h"
 #include "credential/kdbx/Kdbx4Reader.h"
@@ -38,6 +40,11 @@ KdbxVault::KdbxVault(QObject* parent) : QObject(parent) {
 }
 
 KdbxVault::~KdbxVault() {
+    // The worker reads the members of the vault, so it has to be finished before they
+    // are gone.
+    if (open_worker_.joinable()) {
+        open_worker_.join();
+    }
     // No signal from a destructor: the slots are not necessarily still there.
     clear();
 }
@@ -64,6 +71,74 @@ bool KdbxVault::open(const QString& path, const std::uint8_t* password, std::siz
     }
     restartIdleTimer();
     return true;
+}
+
+void KdbxVault::openAsync(const QString& path, const std::uint8_t* password,
+                          std::size_t password_size, const std::vector<std::uint8_t>& key_file) {
+    if (open_worker_.joinable()) {
+        // An unlock that is still running has to be finished before another one starts.
+        open_worker_.join();
+    }
+
+    core::SecureByteArray secret;
+    if (password != nullptr && password_size > 0) {
+        secret.assign(password, password_size);
+    }
+    const std::vector<std::uint8_t> keys = key_file;
+
+    open_worker_ = std::thread([this, path, secret = std::move(secret), keys]() mutable {
+        PendingOpen result;
+        std::string error;
+        result.ok = readDatabaseInto(path, secret, keys, result.index, result.stream, error);
+        result.error = std::move(error);
+        result.path = path;
+        // The password is kept: the file may change, and the vault has to read it again
+        // without asking the user for the password a second time.
+        result.password = std::move(secret);
+        result.key_file = keys;
+        {
+            const std::lock_guard<std::mutex> lock(open_mutex_);
+            pending_open_ = std::move(result);
+        }
+        // The result is picked up on the thread that owns the vault. The call carries
+        // nothing but the vault itself, so it does not depend on what a queued
+        // invocation is allowed to hold.
+        QMetaObject::invokeMethod(this, [this]() { finishOpen(); }, Qt::QueuedConnection);
+    });
+}
+
+void KdbxVault::finishOpen() {
+    PendingOpen result;
+    {
+        const std::lock_guard<std::mutex> lock(open_mutex_);
+        if (!pending_open_.has_value()) {
+            return;
+        }
+        result = std::move(*pending_open_);
+        pending_open_.reset();
+    }
+
+    if (!result.ok) {
+        emit opened(false, QString::fromStdString(result.error));
+        return;
+    }
+
+    path_ = result.path;
+    password_ = std::move(result.password);
+    key_file_ = std::move(result.key_file);
+    index_ = std::move(result.index);
+    protected_stream_ = std::move(result.stream);
+    open_ = true;
+
+    const QFileInfo info(path_);
+    read_at_ = info.lastModified();
+    read_size_ = info.size();
+
+    if (!watcher_.files().contains(path_)) {
+        watcher_.addPath(path_);
+    }
+    restartIdleTimer();
+    emit opened(true, QString());
 }
 
 void KdbxVault::lock() noexcept {
@@ -120,8 +195,10 @@ void KdbxVault::restartIdleTimer() {
     idle_timer_.start(static_cast<int>(idle_timeout_.count()));
 }
 
-bool KdbxVault::readDatabase(std::string& error) {
-    const std::vector<std::uint8_t> bytes = readWholeFile(path_);
+bool KdbxVault::readDatabaseInto(const QString& path, const core::SecureByteArray& password,
+                                 const std::vector<std::uint8_t>& key_file, KdbxIndex& index,
+                                 KdbxProtectedStream& stream, std::string& error) {
+    const std::vector<std::uint8_t> bytes = readWholeFile(path);
     if (bytes.empty()) {
         error = "the database file could not be read";
         return false;
@@ -139,7 +216,7 @@ bool KdbxVault::readDatabase(std::string& error) {
 
     if (header.header.version == KdbxVersion::kV3_1) {
         const Kdbx3ReadResult read =
-            readKdbx3(bytes.data(), bytes.size(), password_.data(), password_.size(), key_file_);
+            readKdbx3(bytes.data(), bytes.size(), password.data(), password.size(), key_file);
         if (!read.ok()) {
             error = read.error;
             return false;
@@ -156,7 +233,7 @@ bool KdbxVault::readDatabase(std::string& error) {
         new_index = indexed.index;
     } else {
         const Kdbx4ReadResult read =
-            readKdbx4(bytes.data(), bytes.size(), password_.data(), password_.size(), key_file_);
+            readKdbx4(bytes.data(), bytes.size(), password.data(), password.size(), key_file);
         if (!read.ok()) {
             error = read.error;
             return false;
@@ -173,8 +250,19 @@ bool KdbxVault::readDatabase(std::string& error) {
         new_index = indexed.index;
     }
 
+    index = std::move(new_index);
+    stream = std::move(new_stream);
+    return true;
+}
+
+bool KdbxVault::readDatabase(std::string& error) {
+    KdbxIndex new_index;
+    KdbxProtectedStream new_stream;
+    if (!readDatabaseInto(path_, password_, key_file_, new_index, new_stream, error)) {
+        return false;
+    }
     index_ = std::move(new_index);
-    protected_stream_ = new_stream;
+    protected_stream_ = std::move(new_stream);
     const QFileInfo info(path_);
     read_at_ = info.lastModified();
     read_size_ = info.size();

@@ -15,6 +15,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QProgressDialog>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QStatusBar>
@@ -337,11 +338,36 @@ void MainWindow::openCredentialStore() {
         return;
     }
 
-    std::string error;
+    // The derivation of the key of a KDBX 4 file takes a second or more, and it is done
+    // on purpose. It happens on a worker thread, so the window keeps answering while
+    // the database is being unlocked.
+    QProgressDialog progress(tr("Unlocking the database..."), QString(), 0, 0, this);
+    progress.setCancelButton(nullptr);
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setMinimumDuration(0);
+    progress.setAutoClose(false);
+    progress.setAutoReset(false);
+
+    bool opened = false;
+    QString message;
+    // The dialog is the context of the connection, so the connection goes away with it
+    // and a second unlock does not pile up on the first.
+    connect(&vault_, &KdbxVault::opened, &progress, [&](bool ok, const QString& text) {
+        opened = ok;
+        message = text;
+        progress.close();
+    });
+
     const QByteArray master_utf8 = master.toUtf8();
     const std::uint8_t* bytes = reinterpret_cast<const std::uint8_t*>(master_utf8.constData());
-    if (!vault_.open(path, bytes, static_cast<std::size_t>(master_utf8.size()), {}, error)) {
-        QMessageBox::warning(this, tr("KeePass"), QString::fromStdString(error));
+    vault_.openAsync(path, bytes, static_cast<std::size_t>(master_utf8.size()), {});
+
+    // The dialog runs a nested event loop, so the window stays alive and the unlock
+    // finishes in the background.
+    progress.exec();
+
+    if (!opened) {
+        QMessageBox::warning(this, tr("KeePass"), message);
         return;
     }
     setStatus(tr("Opened the KeePass database with %1 entries")
