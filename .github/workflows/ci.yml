@@ -398,7 +398,10 @@ jobs:
       #
       # Our own binaries must not need anything newer than 1607. The Qt libraries in the
       # package have their own floor, which is reported rather than enforced: that floor is
-      # the product's floor.
+      # the product's floor, and it is not ours to fix. But the package floor is still a
+      # gate -- against 1809, the baseline the README and the release notes promise --
+      # so a Qt upgrade that raises it cannot pass CI unnoticed and break the promise in
+      # the loader, on a user's machine.
       #
       # It runs after the tests on purpose: a floor that is too high is worth knowing
       # about, but not at the cost of the test evidence.
@@ -414,6 +417,7 @@ jobs:
           fi
           python .github/scripts/check_import_floor.py \
             --floor 1607 \
+            --package-floor 1809 \
             --strict "$EXE" \
             --report "$QT_ROOT_DIR/bin/Qt6Core.dll" \
             --report "$QT_ROOT_DIR/bin/Qt6Gui.dll" \

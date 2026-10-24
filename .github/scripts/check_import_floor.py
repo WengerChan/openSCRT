@@ -27,6 +27,17 @@ says 1607, and a real 1607 kernel32 does not export it.
 The floor for the whole package is the highest one any of its binaries needs. The Qt
 libraries in the package set their own floor, which is why this script reports it rather
 than only checking our own binaries.
+
+Two floors, two jobs
+--------------------
+`--floor` is the floor of *our* binaries: anything newer fails the build.
+
+`--package-floor` is the floor of the *shipped package*: the Qt libraries are shipped
+with us, so their floor is ours too. That floor is normally only reported, because it
+is the product's floor and not a mistake in our code -- but a release notes promise
+("Windows 10 1809 or later") is only worth something if something checks it. A Qt
+upgrade that raises the package floor would otherwise sail through CI, and the promise
+would break silently, in the loader, on a user's machine.
 """
 
 import argparse
@@ -63,6 +74,7 @@ FLOORS = {
     "1507": (10, 0, 10240),
     "1607": BUILD_14393,
     "1703": BUILD_15063,
+    "1709": (10, 0, 16299),
     "1803": BUILD_17134,
     "1809": BUILD_17763,
 }
@@ -157,6 +169,9 @@ def main():
                         help="a binary that must not exceed the floor")
     parser.add_argument("--report", action="append", default=[],
                         help="a binary whose floor is reported but not enforced")
+    parser.add_argument("--package-floor", default=None, choices=sorted(FLOORS),
+                        help="the newest Windows version the shipped package as a whole may "
+                             "require; fails the build when a reported binary needs more")
     arguments = parser.parse_args()
 
     limit = FLOORS[arguments.floor]
@@ -182,11 +197,31 @@ def main():
 
     print(f"package floor: Windows {format_version(highest)}")
 
+    package_error = ""
+    if arguments.package_floor is not None:
+        package_limit = FLOORS[arguments.package_floor]
+        if highest > package_limit:
+            package_error = (
+                f"::error::the shipped package needs Windows {format_version(highest)}, "
+                f"which is newer than the declared package floor "
+                f"Windows {format_version(package_limit)}\n"
+                f"::error::the release notes promise a floor the shipped binaries do not "
+                f"meet: the loader will stop the program before main(), with no message")
+        else:
+            print(f"package floor is within the declared Windows {arguments.package_floor}")
+
+    # Both gates report before the build fails: a run that stops at the first problem
+    # hides the second one, and the next round only finds half of it.
     if failures:
         print("\n::error::these binaries import kernel32 exports newer than the declared floor:")
         for path in failures:
             print(f"::error::{path}")
         print("::error::a Windows older than the floor dies in the loader, before main()")
+
+    if package_error:
+        print(f"\n{package_error}")
+
+    if failures or package_error:
         return 1
     return 0
 

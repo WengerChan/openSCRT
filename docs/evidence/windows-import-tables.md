@@ -33,7 +33,33 @@ run time, so they are no longer in the import table. The package as a whole stil
 **1709**, because `Qt6Core.dll` imports `SetThreadDescription`, and that symbol is not
 ours to remove.
 
+## The floor of the current build
+
+The same gate runs on every Windows build, so the number below is the live one, not a
+snapshot of one release. From run #40118988731 (Windows job 120946214460, commit
+`2136d0c`):
+
+```
+declared floor: Windows 10.0 build 14393
+  openscrt.exe: needs 10.0 build 14393  [ok]
+  Qt6Core.dll:  needs 10.0 build 16299
+  Qt6Gui.dll:   needs 10.0 build 14393
+  Qt6Widgets.dll: needs 10.0 build 14393
+  Qt6Network.dll: needs 10.0 build 14393
+package floor: Windows 10.0 build 16299
+```
+
+Two floors, and the release notes promise the looser one: the **hard** floor of the
+shipped package is **1709** (build 16299, from `Qt6Core.dll`), while the **supported**
+baseline is **1809** (build 17763). The gap is deliberate -- 1709 comes from a
+symbol-to-build table, not from a machine anyone ran this on, and Qt 6.8 supports
+1809 and later. The CI gate now enforces both: our own binaries may not exceed 1607,
+and the package may not exceed 1809 (`--package-floor 1809`).
+
 ## The floor, per binary
+
+This table is the **v0.1.1** package, kept because it is the one that shows the
+ConPTY symbols in the import table before they were moved to run-time resolution.
 
 | Binary | kernel32 imports | Newest Windows it needs |
 | --- | --- | --- |
