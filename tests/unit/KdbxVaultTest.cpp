@@ -28,6 +28,8 @@ const QString kFixturePath =
     QStringLiteral(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.kdbx";
 const QString kKeyFilePath =
     QStringLiteral(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/kdbx31_with_keyfile.key";
+const QString kBlankDatabasePath =
+    QStringLiteral(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/blank_database.kdbx";
 
 constexpr std::string_view kPasswordText = "correct horse battery staple";
 const std::uint8_t* kPasswordBytes() {
