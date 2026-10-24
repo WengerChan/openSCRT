@@ -51,10 +51,10 @@ enum class CredentialField : std::uint8_t {
 // it is plain data that the profile can persist -- the provider never sees it, the
 // session layer resolves it and then calls a provider.
 enum class CredentialSource : std::uint8_t {
-    kSessionSaved,     // the password stored with the session
-    kPromptEveryTime,  // ask the user at connect time
-    kKeePassUuid,      // a KeePass entry bound by UUID
-    kKeePassAutoMatch, // a KeePass entry matched by host / title
+    kSessionSaved,      // the password stored with the session
+    kPromptEveryTime,   // ask the user at connect time
+    kKeePassUuid,       // a KeePass entry bound by UUID
+    kKeePassAutoMatch,  // a KeePass entry matched by host / title
 };
 
 [[nodiscard]] const char* toString(CredentialSource source) noexcept;
@@ -89,10 +89,10 @@ struct CredentialEntry {
 
 enum class CredentialStatus : std::uint8_t {
     kFound,
-    kNotFound,      // the provider answered: no entry matches
-    kCancelled,     // the user dismissed the picker
-    kUnavailable,   // the provider cannot be reached at all (KeePass is not running)
-    kError,         // the provider failed (wrong master password, corrupt file, ...)
+    kNotFound,     // the provider answered: no entry matches
+    kCancelled,    // the user dismissed the picker
+    kUnavailable,  // the provider cannot be reached at all (KeePass is not running)
+    kError,        // the provider failed (wrong master password, corrupt file, ...)
 };
 
 [[nodiscard]] const char* toString(CredentialStatus status) noexcept;

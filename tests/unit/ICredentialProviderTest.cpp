@@ -57,6 +57,10 @@ class FakeProvider final : public ICredentialProvider {
     void lock() noexcept override {
         ++locks;
         entries.clear();
+        // Locking drops the key material, so the provider cannot answer until it is
+        // unlocked again -- the file or the service is still there, but the answer is
+        // not. isAvailable() means "can answer right now", so it has to go false.
+        available = false;
     }
 
     bool available{true};
@@ -82,8 +86,7 @@ TEST(CredentialVocabularyTest, EverySourceRoundTripsThroughItsName) {
         CredentialSource::kKeePassAutoMatch,
     };
     for (const CredentialSource source : sources) {
-        const std::optional<CredentialSource> parsed =
-            credentialSourceFromString(toString(source));
+        const std::optional<CredentialSource> parsed = credentialSourceFromString(toString(source));
         ASSERT_TRUE(parsed.has_value());
         EXPECT_EQ(*parsed, source);
     }

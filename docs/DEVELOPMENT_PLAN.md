@@ -400,7 +400,7 @@ Windows / macOS / Linux 各做一遍，逐项打勾并留下记录。
 | 任务号 | 任务 | 产出物 | 依赖 |
 | :--- | :--- | :--- | :--- |
 | P2-T1 | 凭据提供者抽象 | `src/credential/ICredentialProvider.h`：统一检索与自动注入接口（`ICredentialProvider.h`） | — |
-| P2-T2 | 安全内存容器 | `src/credential/memory/SecureByteArray`：`sodium_malloc` + `mlock`，析构时 `sodium_memzero` + 解锁 | P2-T1 |
+| P2-T2 | 安全内存容器 | `src/core/SecureByteArray`：`sodium_malloc` + `mlock`，析构时 `sodium_memzero` + 解锁（**Phase 1 的 P1-T14 已落地，Phase 2 直接复用；路径取舍见 D8**） | P2-T1 |
 | P2-T3 | KDBX 文件头解析 | `src/credential/kdbx/KdbxHeaderParser`：魔数校验、TLE / Variant Dictionary、算法 UUID、压缩标志、KDF 参数 | P2-T1 |
 | P2-T4 | KDBX 4 读取 | `Kdbx4Reader`：Argon2d/Argon2id 派生 + HMAC-SHA256 块流 + AES-256-CBC / ChaCha20 + zlib | P2-T3, P2-T2 |
 | P2-T5 | KDBX 3.1 读取 | `Kdbx3Reader`：SHA-256 复合主密钥 + AES-KDF + Twofish 可选 | P2-T3, P2-T2 |
@@ -427,6 +427,12 @@ Windows / macOS / Linux 各做一遍，逐项打勾并留下记录。
 ### 5.4 风险
 - **Argon2 在受限容器内超时**：CI 上 Argon2 参数不可用真实 KeePass 默认值（~1s）。**对策**：测试库使用低参数版本，同时单独保留一个"高参数"手工验证用例，明确 CI 测的是正确性不是性能。
 - **`mlock` 在容器中受 `RLIMIT_MEMLOCK` 限制**：必须实现降级路径（关闭 mlock 但仍 `sodium_malloc` + 显式清零），并在日志中明确告知用户降级发生。
+
+### 5.5 Phase 2 的偏差
+
+| # | 偏差 | 证据 | 处置 |
+| :--- | :--- | :--- | :--- |
+| D8 | **P2-T2 的安全内存容器留在 `src/core/SecureByteArray`，没有迁到计划书写的 `src/credential/memory/`** | Phase 1 的 P1-T14（密码认证）已经需要它，于是它落在 `src/core/`，并被 `protocols`（`SshConnectionOptions::password`）、`ui`（`QuickConnectDialog` / `TerminalSession` / `WorkspaceTabs`）共同依赖。而 `credential` 是**依赖** `core` 的一层（`openscrt_credential` 链 `openscrt_core`）：把基元搬到上层，会让 `core` 反过来依赖 `credential`，也逼 `protocols` / `ui` 改依赖方向 | **复用，不复制。** `src/credential/` 只放 KeePass 专有的东西（KDBX 解析、HTTP 客户端、条目选择器）。P2-A7 的两条断言落在 `tests/unit/SecureByteArrayTest.cpp`：① 析构后 `VmLck` 页计数回到基线（**只有 Linux 有这个观测手段**——`/proc/self/status`；macOS / Windows 无对应计数器，测试显式 skip 并说明原因，不假装验过）；② `mlock` 失败时走降级路径而不是崩溃（`locked()` 诚实性） |
 
 ---
 

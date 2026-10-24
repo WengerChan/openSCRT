@@ -4,6 +4,8 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <fstream>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -11,6 +13,34 @@
 
 namespace openscrt::core {
 namespace {
+
+// P2-A7: "the locked page count returns to zero after SecureByteArray is destroyed".
+//
+// The only machine-readable way to observe that is the kernel's own count of locked
+// pages for this process, and on Linux that is VmLck in /proc/self/status. Windows and
+// macOS do not expose an equivalent counter, so the test skips there instead of
+// pretending to have checked something: the other platforms still get the `locked()`
+// honesty test below, which covers the degraded path.
+#if defined(__linux__)
+std::optional<long> lockedKilobytes() {
+    std::ifstream status("/proc/self/status");
+    if (!status.is_open()) {
+        return std::nullopt;
+    }
+    std::string key;
+    while (status >> key) {
+        if (key == "VmLck:") {
+            long value = 0;
+            status >> value;
+            return value;
+        }
+        // Skip the remainder of this line so the next token is a key again.
+        std::string rest;
+        std::getline(status, rest);
+    }
+    return std::nullopt;
+}
+#endif
 
 TEST(SecureByteArrayTest, DefaultIsEmpty) {
     SecureByteArray secret;
@@ -115,6 +145,38 @@ TEST(SecureByteArrayTest, LockedFlagIsHonestAboutFallback) {
     EXPECT_NE(secret.data(), nullptr) << "flag must survive a resize";
     EXPECT_EQ(secret.size(), 8192u);
 }
+
+#if defined(__linux__)
+TEST(SecureByteArrayTest, TheDestructorGivesTheLockedPagesBack) {
+    // P2-A7, first half: the pages the buffer locked must be unlocked when it dies, or
+    // every unlocked database would leak locked pages until the process ends.
+    const std::optional<long> before = lockedKilobytes();
+    if (!before.has_value()) {
+        GTEST_SKIP() << "this kernel does not report VmLck";
+    }
+
+    bool was_locked = false;
+    std::optional<long> during;
+    {
+        SecureByteArray secret;
+        secret.resize(64 * 1024);
+        secret.assign("topsecret", 9);
+        was_locked = secret.locked();
+        during = lockedKilobytes();
+    }  // the destructor runs here
+
+    ASSERT_TRUE(during.has_value());
+    const std::optional<long> after = lockedKilobytes();
+    ASSERT_TRUE(after.has_value());
+
+    if (!was_locked) {
+        GTEST_SKIP() << "mlock is unavailable here (RLIMIT_MEMLOCK); the unlock path cannot "
+                        "be observed on this machine";
+    }
+    EXPECT_GT(*during, *before) << "the pages were locked while the buffer was alive";
+    EXPECT_EQ(*after, *before) << "the destructor must unlock the pages it locked";
+}
+#endif
 
 }  // namespace
 }  // namespace openscrt::core

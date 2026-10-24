@@ -32,8 +32,7 @@ const char* toString(CredentialSource source) noexcept {
     return "session-saved";
 }
 
-std::optional<CredentialSource> credentialSourceFromString(
-    std::string_view text) noexcept {
+std::optional<CredentialSource> credentialSourceFromString(std::string_view text) noexcept {
     if (text == "session-saved") {
         return CredentialSource::kSessionSaved;
     }
