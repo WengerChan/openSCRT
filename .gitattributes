@@ -10,3 +10,10 @@
 * text=auto eol=lf
 tests/fixtures/** text eol=lf
 tests/baselines/** text eol=lf
+
+# The KeePass fixtures are binary. The rule above forces text treatment on everything
+# under tests/fixtures, and a .kdbx is not text: the line-ending normalisation turned
+# two bytes of the database into one and the file no longer decrypted. It happened once,
+# and the symptom was a fixture whose hash did not match the one in its README -- so the
+# rule is now explicit, and the README carries the hash to check it against.
+tests/fixtures/kdbx/** binary

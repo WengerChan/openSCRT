@@ -33,10 +33,16 @@ SKIP = {
     # libssh is no longer skipped: P1-T11 links it. vcpkg pulls openssl in as a transitive
     # dependency of libssh, so openssl still gets built even though nothing links it
     # directly -- that is the cost the D4 contract accepts when a phase starts using a port.
-    "openssl": "not linked directly -- KDBX/crypto lands in Phase 2-3; built as libssh's dependency",
-    "nlohmann-json": "not linked yet -- session config persistence (src/config) lands in Phase 1",
-    "pugixml": "not linked yet -- SecureCrtConfigImporter XML parsing lands in Phase 2",
-    "zlib": "not linked yet -- transfer compression lands in Phase 3",
+    #
+    # openssl and zlib are no longer skipped either: P2-T4 links openssl for the KDBX
+    # cryptography (SHA-256, HMAC-SHA256, AES-256-CBC) and zlib for the GZip-compressed
+    # payload. openssl was already being built as libssh's dependency, so this costs no
+    # extra build time; zlib is a small build of its own.
+    #
+    # nlohmann-json and pugixml stay skipped until something links them: the KeePassHTTP
+    # client is P2-T8 and the XML inside the database is P2-T6.
+    "nlohmann-json": "not linked yet -- the KeePassHTTP client lands in P2-T8",
+    "pugixml": "not linked yet -- the XML inside the KDBX database lands in P2-T6",
 }
 
 # Only linked by the test tree. A packaging/release build configures with

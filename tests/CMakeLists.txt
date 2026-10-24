@@ -91,6 +91,18 @@ openscrt_add_test(unit_kdbx_header_parser
     SOURCES unit/KdbxHeaderParserTest.cpp
     LIBS openscrt_credential)
 
+# The KDBX 4.x reader (P2-T4).
+#
+# The test reads a real KeePass database from tests/fixtures/kdbx and compares the
+# result against what the reference implementation produces for the same file, so the
+# two implementations have to agree rather than the project agreeing with itself.
+openscrt_add_test(unit_kdbx4_reader
+    LABEL unit
+    SOURCES unit/Kdbx4ReaderTest.cpp
+    LIBS openscrt_credential)
+target_compile_definitions(unit_kdbx4_reader PRIVATE
+    OPENCRT_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+
 # The window shell needs a QApplication; the offscreen platform plugin makes that work in CI
 # without a display server.
 openscrt_add_test(unit_main_window
