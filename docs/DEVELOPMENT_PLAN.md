@@ -446,7 +446,9 @@ Windows / macOS / Linux 各做一遍，逐项打勾并留下记录。
 | P2-A7 安全回归 | ✅ **观测到的** | run **#40123563712** 的 Linux leg 日志（CI 单独跑这一条用例，数字进日志）：`VmLck before=0 kB, during=4 kB, after=0 kB, mlock succeeded=yes` —— 锁的页在缓冲活着时确实被锁上，析构后**回到 0**。macOS / Windows 无此观测手段，那两个平台只验降级路径（`locked()` 诚实性），**不假装验过** |
 | P2-T3 KDBX 文件头解析 | ✅ | `src/credential/kdbx/KdbxHeaderParser.cpp`：魔数（3.1 的第二签名是 `0xB54BFB66`、4.x 是 `0xB54BFB67`）、TLV 字段、VariantDictionary、算法 UUID、压缩标志、KDF 参数。**字段长度宽度随版本变**（3.1 是 UInt16，4.x 是 Int32）——这是最容易写错且不报错的一处。夹具是**真实 KeePass 数据库的头 253 字节**（逐字节照抄），不是本项目自己产出的。run **#40127994271** |
 | P2-T4 KDBX 4 读取 | ✅ | `src/credential/kdbx/Kdbx4Reader.cpp`：复合密钥 → Argon2d/Argon2id → 主密钥 → 头部 SHA-256 → 头部 HMAC → **每块各自的 HMAC** → AES-256-CBC/ChaCha20 → GZip。**每一步都验签**，所以错密码是报错而不是"解出一堆垃圾"。读的是**真实数据库**（`tests/fixtures/kdbx/blank_database.kdbx`，公开夹具，来源与哈希写在其 README 里），并与参考实现对拍。run **#40127994271**（`unit_kdbx4_reader` 3.71 s 通过——含 64 MiB Argon2d 派生） |
-| KDBX 字节级事实 | ✅ | `docs/evidence/kdbx-format-notes.md`：每条事实带出处（官方规范 / KeePass 参考实现 / 独立实现 pykeepass / 真实样本十六进制）。**记错的五次**（版本号 `0x03040000`、3.1 的第二签名、复合密钥少一层哈希、AES-KDF 的形态、块 HMAC 的键）都记在那份文件里，作为"格式跟 Win32 默认行为一样，凭记忆必错"的证据 |
+| P2-T5 KDBX 3.1 读取 | ✅ | `src/credential/kdbx/Kdbx3Reader.cpp`：3.1 的三处不同（字段长度 **UInt16**、单一加密流 + **stream start bytes** 校验、块里是普通 **SHA-256** 而非 HMAC、且**没有内层头部**）都写在代码注释里。夹具由 `tools/make_kdbx_fixture.py`（**本项目自己的 Python 写入器**）生成，**主密码 + 密钥文件**一起解锁，条目口令按 KeePass 的做法**受保护**；夹具的合法性由**独立实现**（pykeepass）验证并记录在夹具 README。run **#40130212759**（`unit_kdbx3_reader` 通过） |
+| P2-T6 XML 索引 + 保护流 | ✅ | `src/credential/kdbx/KdbxXmlIndex.cpp`（pugixml）+ `KdbxProtectedStream.cpp`（libsodium）。索引**不解密**：口令保持数据库里的密文形态，**只有要用的会话**才在锁定内存里还原（路线图要求的"只在发起连接的瞬间还原"）。保护流的形态是对**真实 KDBX 3.1 文件量出来的**（按 KeePass 的 C# 源码推的那个布局**解不开真实文件**）。run **#40131694513**（`unit_kdbx_xml_index` 通过：索引里看不到明文，按需还原得到 `s3cret`） |
+| KDBX 字节级事实 | ✅ | `docs/evidence/kdbx-format-notes.md`：每条事实带出处（官方规范 / KeePass 参考实现 / 独立实现 pykeepass / 真实样本十六进制）。**记错的七次**（版本号 `0x03040000`、3.1 的第二签名、复合密钥少一层哈希、AES-KDF 的形态、块 HMAC 的键、3.1 没有内层头部、保护流要用 `_xor` 变体）都记在那份文件里，作为"格式跟 Win32 默认行为一样，凭记忆必错"的证据。**其中三次是真实文件纠正的**，不是文档纠正的 |
 
 ---
 
