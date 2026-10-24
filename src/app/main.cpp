@@ -30,6 +30,7 @@
 #include "transfer/ModuleInfo.h"
 #include "ui/ModuleInfo.h"
 #include "ui/workspace/MainWindow.h"
+#include "ui/workspace/TerminalCanvasWidget.h"
 #include "ui/workspace/TerminalSession.h"
 #include "ui/workspace/WorkspaceTabs.h"
 
