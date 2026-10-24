@@ -115,8 +115,12 @@ bool Ssh2Channel::authenticate(Session& session, std::string& error) {
     }
 
     if (!key_only && !options_.password.empty()) {
-        if (ssh_userauth_password(session.session, nullptr, options_.password.c_str()) ==
-            SSH_AUTH_SUCCESS) {
+        // The plaintext is handed to libssh as a C string and the copy is wiped as soon
+        // as the attempt is over.
+        const bool accepted = options_.password.withCString([&session](const char* secret) {
+            return ssh_userauth_password(session.session, nullptr, secret) == SSH_AUTH_SUCCESS;
+        });
+        if (accepted) {
             return true;
         }
     }
@@ -124,20 +128,25 @@ bool Ssh2Channel::authenticate(Session& session, std::string& error) {
     if (!key_only && !password_only && !keyboard_only) {
         // Keyboard-interactive is how most two-factor setups answer. libssh 0.11 replaced the
         // one-shot ssh_userauth_keyboard_interactive with a request/answer exchange:
-        // ask for the prompts, fill them in, then send the answers.
-        if (ssh_userauth_kbdint(session.session, nullptr, nullptr) == SSH_AUTH_SUCCESS) {
+        // ask for the prompts, fill them in, then send the answers. The whole exchange
+        // happens inside one wiped copy of the password.
+        const bool accepted = options_.password.withCString([&session](const char* secret) {
+            if (ssh_userauth_kbdint(session.session, nullptr, nullptr) != SSH_AUTH_SUCCESS) {
+                return false;
+            }
             const int prompts = ssh_userauth_kbdint_getnprompts(session.session);
             for (int index = 0; index < prompts; ++index) {
                 char echo = 0;
                 static_cast<void>(ssh_userauth_kbdint_getprompt(
                     session.session, static_cast<unsigned int>(index), &echo));
                 ssh_userauth_kbdint_setanswer(session.session, static_cast<unsigned int>(index),
-                                              options_.password.c_str());
+                                              secret);
             }
             // The second call is what actually transmits the answers.
-            if (ssh_userauth_kbdint(session.session, nullptr, nullptr) == SSH_AUTH_SUCCESS) {
-                return true;
-            }
+            return ssh_userauth_kbdint(session.session, nullptr, nullptr) == SSH_AUTH_SUCCESS;
+        });
+        if (accepted) {
+            return true;
         }
     }
 

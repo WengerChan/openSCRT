@@ -341,7 +341,7 @@ POSIX 端全绿。
 2. **探针的最后一行比推理可靠。** 前面三轮都在推理"读线程卡在哪"，加了探针之后
    一行日志就把答案摆出来了。**挂死类问题，先让程序说出它停在哪一步。**
 
-### 8.5 发布流水线的两个新坑
+### 8.5 发布流水线的四个新坑
 
 **一、发布页只拿到一个平台的资产。** `publish` 写成 `needs: package-windows`，于是它一
 等 Windows 结束就开始跑，`download-artifact` 执行的时候 macOS 与 Linux 还在打包 → 资产
@@ -362,6 +362,23 @@ ld: warning: ignoring file '.../x64-osx/lib/libssh.a': found architecture 'x86_6
 
 **平台名不蕴含架构**，尤其在 CI 的 runner 镜像上——直觉会骗人，链接器不会。
 改用 `arm64-osx` 之后，包在 Apple Silicon 上原生运行，不用 Rosetta 2。
+
+**三、macOS 的 `.app` 是自己组装的，`macdeployqt` 不能照搬。** 又两轮失败：
+
+1. `macdeployqt <裸可执行文件> -appbundle` 报 `Could not find app bundle`——它要的输入是
+   一个**已经存在**的 `.app` 目录，而不是一个二进制。
+2. 自己组装 bundle 时，用 `otool -L` 遍历链接关系来推断该带哪些 framework，漏了
+   `QtDBus.framework`（QtGui 链的是它），启动即
+   `Library not loaded: @rpath/QtDBus.framework`。
+
+**最后是"全带上"**：把 Qt 安装目录下的 framework 全部复制进 `Contents/Frameworks`，
+用 `install_name_tool -add_rpath @executable_path/../Frameworks` 把加载路径指回 bundle 内，
+再手工复制运行时才加载的平台插件到 `Contents/PlugIns/platforms`，最后写一个 `Info.plist`。
+**framework 的集合不要靠推断**——推断错一个就是启动即崩，而且只有真正启动一次才会发现。
+
+**四、发版前先把打好的包在 runner 上跑一遍。** 打包步骤现在在打 tar 之前执行一次
+`--self-test`：一个在构建它的机器上都起不来的包，没有资格发布。上面那两轮 macOS 的失败
+都是这一步本该拦住的。
 
 ---
 

@@ -14,9 +14,11 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QDockWidget>
+#include <QFile>
 #include <QMenuBar>
 #include <QStringList>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QtGlobal>
 #include <chrono>
 #include <functional>
@@ -26,6 +28,7 @@
 
 #include "config/ConfigManager.h"
 #include "config/SessionProfile.h"
+#include "core/SecureByteArray.h"
 #include "protocols/ITransportChannel.h"
 #include "terminal/buffer/ScreenGrid.h"
 #include "ui/workspace/MainWindow.h"
@@ -169,6 +172,75 @@ TEST_F(MainWindowTest, QuickConnectProducesTheProfile) {
     EXPECT_EQ(value.user.value_or(""), "operator");
     EXPECT_EQ(value.protocol.value_or(config::Protocol::kSsh2), config::Protocol::kLocalShell);
     EXPECT_TRUE(value.id.empty()) << "a quick-connect session is not saved under an id yet";
+}
+
+TEST_F(MainWindowTest, TheStartupQuickConnectDialogAppearsAndCancellingLeavesNoTab) {
+    // P1-T13: a launch without arguments puts the connect dialog on screen. The dialog is
+    // modal and there is nobody to dismiss it here, so it is closed as soon as the event
+    // loop inside exec() starts.
+    bool shown = false;
+    QObject::connect(window_.get(), &MainWindow::quickConnectDialogShown, window_.get(), [&] {
+        shown = true;
+        QTimer::singleShot(0, [] {
+            if (auto* modal = QApplication::activeModalWidget()) {
+                modal->close();
+            }
+        });
+    });
+
+    window_->openStartupQuickConnect();
+
+    EXPECT_TRUE(shown) << "the startup path must put the connect dialog on screen";
+    EXPECT_EQ(window_->workspace()->sessionCount(), 0)
+        << "cancelling the dialog must not leave a tab behind";
+}
+
+TEST_F(MainWindowTest, TheQuickConnectPasswordNeverReachesTheProfile) {
+    // P1-T14: the password is for this connection only. The profile is what gets written
+    // to the session file, so it must not carry the password.
+    QuickConnectDialog dialog;
+    dialog.setHost(QStringLiteral("host.example"));
+    dialog.setUser(QStringLiteral("operator"));
+    dialog.setPassword(QStringLiteral("s3cret-not-to-be-saved"));
+
+    const config::SessionProfile value = dialog.profile();
+    EXPECT_TRUE(value.host.has_value());
+    EXPECT_EQ(value.private_key_path.value_or(""), "");
+
+    // And the session file the profile ends up in has no trace of it.
+    config::SessionProfile saved = value;
+    saved.id = "quick-password";
+    saved.name = saved.id;
+    config::SessionTree tree;
+    ASSERT_TRUE(tree.add(std::move(saved)));
+    saveTree(tree);
+
+    QFile file(QString::fromStdString(path_));
+    ASSERT_TRUE(file.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QString contents = QString::fromUtf8(file.readAll());
+    EXPECT_FALSE(contents.contains(QStringLiteral("s3cret-not-to-be-saved")));
+    EXPECT_FALSE(contents.contains(QStringLiteral("password"), Qt::CaseInsensitive))
+        << "the session file must not grow a password field";
+}
+
+TEST_F(MainWindowTest, TheQuickConnectPasswordIsHandedOverInAWipeableBuffer) {
+    // The password travels in a locked buffer instead of a string, and the buffer can be
+    // cleared on demand. That is what "used and then wiped" looks like.
+    QuickConnectDialog dialog;
+    dialog.setPassword(QStringLiteral("s3cret"));
+
+    core::SecureByteArray secret = dialog.password();
+    ASSERT_EQ(secret.size(), 6u);
+    char plain[7] = {};
+    EXPECT_EQ(secret.copyOut(plain, sizeof(plain)), 6u);
+    EXPECT_STREQ(plain, "s3cret");
+
+    secret.wipe();
+    char cleared[7] = {};
+    EXPECT_EQ(secret.copyOut(cleared, sizeof(cleared)), 6u);
+    for (const char byte : cleared) {
+        EXPECT_EQ(byte, '\0') << "the buffer has to be zero after it is wiped";
+    }
 }
 
 TEST_F(MainWindowTest, ApplyingTheDefaultSessionToAllReachesEverySession) {

@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <string>
+#include <utility>
 
 #include "protocols/ssh/Ssh2Channel.h"
 
@@ -27,7 +28,7 @@ SshConnectionOptions unreachableHost() {
     options.host = "127.0.0.1";
     options.port = 1;
     options.user = "nobody";
-    options.password = "irrelevant";
+    options.password.assign("irrelevant");
     options.auth_method = SshAuthMethod::kPassword;
     options.timeout_seconds = 5;
     return options;
@@ -47,7 +48,7 @@ TEST(Ssh2ChannelTest, RemoteAddressIncludesUserAndPort) {
 TEST(Ssh2ChannelTest, RemoteAddressOmitsAnEmptyUserButKeepsThePort) {
     SshConnectionOptions options = unreachableHost();
     options.user.clear();
-    Ssh2Channel channel{options};
+    Ssh2Channel channel{std::move(options)};
     EXPECT_EQ(channel.remoteAddress(), "127.0.0.1:1");
 }
 
@@ -62,7 +63,7 @@ TEST(Ssh2ChannelTest, ConnectToAnUnreachableHostFailsCleanly) {
 TEST(Ssh2ChannelTest, ConnectWithoutAHostFailsWithoutTouchingTheNetwork) {
     SshConnectionOptions options = unreachableHost();
     options.host.clear();
-    Ssh2Channel channel{options};
+    Ssh2Channel channel{std::move(options)};
     const TransportResult result = channel.connectAsync();
     EXPECT_FALSE(result.ok);
     EXPECT_EQ(result.error, "no host");
@@ -135,7 +136,7 @@ TEST(Ssh2ChannelTest, ConnectsToARealServerAndRunsACommand) {
     options.auth_method = SshAuthMethod::kPublicKey;
     options.timeout_seconds = 20;
 
-    Ssh2Channel channel{options};
+    Ssh2Channel channel{std::move(options)};
     const TransportResult result = channel.connectAsync();
     ASSERT_TRUE(result.ok) << result.error;
     EXPECT_EQ(channel.state(), TransportState::kConnected);
@@ -162,6 +163,52 @@ TEST(Ssh2ChannelTest, ConnectsToARealServerAndRunsACommand) {
     }
     EXPECT_NE(accumulated.find("openscrt-ssh-ok"), std::string::npos)
         << "the command output never came back over the SSH channel";
+    EXPECT_TRUE(channel.disconnect().ok);
+}
+
+TEST(Ssh2ChannelTest, ConnectsWithAPasswordToARealServer) {
+    // P1-A14: the password path has to work against a real server, not just in the
+    // failure paths. The CI Linux leg starts an sshd with a throwaway account that has a
+    // password, and points these variables at it.
+    const char* port = std::getenv("OPENCRT_TEST_SSH_PORT");
+    const char* user = std::getenv("OPENCRT_TEST_SSH_PASSWORD_USER");
+    const char* password = std::getenv("OPENCRT_TEST_SSH_PASSWORD");
+    if (port == nullptr || user == nullptr || password == nullptr) {
+        GTEST_SKIP() << "no SSH server with a password account configured for this run";
+    }
+
+    SshConnectionOptions options;
+    options.host = "127.0.0.1";
+    options.port = std::atoi(port);
+    options.user = user;
+    options.password.assign(password);
+    options.auth_method = SshAuthMethod::kPassword;
+    options.timeout_seconds = 20;
+
+    Ssh2Channel channel{std::move(options)};
+    const TransportResult result = channel.connectAsync();
+    ASSERT_TRUE(result.ok) << result.error;
+    EXPECT_EQ(channel.state(), TransportState::kConnected);
+
+    channel.send("printf 'openscrt-pw-%s\\n' ok\r");
+
+    std::string accumulated;
+    std::uint8_t buffer[1024];
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+    while (std::chrono::steady_clock::now() < deadline) {
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - std::chrono::steady_clock::now());
+        const std::size_t count = channel.readAvailable(buffer, sizeof(buffer), remaining);
+        accumulated.append(reinterpret_cast<char*>(buffer), count);
+        if (accumulated.find("openscrt-pw-ok") != std::string::npos) {
+            break;
+        }
+        if (count == 0 && channel.state() != TransportState::kConnected) {
+            break;
+        }
+    }
+    EXPECT_NE(accumulated.find("openscrt-pw-ok"), std::string::npos)
+        << "the command output never came back over the password-authenticated channel";
     EXPECT_TRUE(channel.disconnect().ok);
 }
 

@@ -276,6 +276,14 @@ jobs:
             "$(cat tests/fixtures/ssh/sshcom_rsa_plain.pub)" >> "$HOME/.ssh/authorized_keys"
           chmod 600 "$HOME/.ssh/authorized_keys"
 
+          # A throwaway account with a password, for the password-authentication path
+          # (P1-A14). The password is generated here and handed to the test through the
+          # environment, so it never lives in the repository.
+          PASSWORD_USER="openscrt-pw"
+          PASSWORD_VALUE="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 20)"
+          sudo useradd --create-home --shell /bin/bash "$PASSWORD_USER" 2>/dev/null || true
+          echo "$PASSWORD_USER:$PASSWORD_VALUE" | sudo chpasswd
+
           # StrictModes off: the runner's home directory is not root-owned, and sshd would
           # otherwise refuse the authorized_keys file for that reason alone.
           SSHD_CONFIG="$RUNNER_TEMP/sshd_config"
@@ -285,7 +293,7 @@ jobs:
           HostKey /etc/ssh/ssh_host_ed25519_key
           AuthorizedKeysFile $HOME/.ssh/authorized_keys
           PubkeyAuthentication yes
-          PasswordAuthentication no
+          PasswordAuthentication yes
           KbdInteractiveAuthentication no
           # UsePAM yes, not no: with UsePAM no, sshd refuses any account whose password
           # field is locked -- and the runner account's is. The login then fails with a
@@ -320,6 +328,10 @@ jobs:
           echo "OPENCRT_TEST_SSH_PORT=2222" >> "$GITHUB_ENV"
           echo "OPENCRT_TEST_SSH_USER=$(id -un)" >> "$GITHUB_ENV"
           echo "OPENCRT_TEST_SSH_KEY=$HOME/.ssh/openscrt_test_key" >> "$GITHUB_ENV"
+          # The password account for the P1-A14 password-authentication test. The value
+          # never leaves the runner except through these variables.
+          echo "OPENCRT_TEST_SSH_PASSWORD_USER=$PASSWORD_USER" >> "$GITHUB_ENV"
+          echo "OPENCRT_TEST_SSH_PASSWORD=$PASSWORD_VALUE" >> "$GITHUB_ENV"
 
       - name: Configure (${{ matrix.preset }})
         shell: bash

@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "config/SessionProfile.h"
+#include "core/SecureByteArray.h"
 
 namespace openscrt::ui {
 
@@ -26,7 +27,11 @@ class WorkspaceTabs : public QTabWidget {
 
     // Opens a tab for the session and starts connecting it. Returns the tab index, or -1
     // with `error` filled in when the session's protocol has no implementation yet.
-    int openSession(const config::SessionProfile& profile, std::string& error);
+    //
+    // The password is for this connection only and never becomes part of the profile, so
+    // it cannot reach the session file. It is handed to the transport and forgotten.
+    int openSession(const config::SessionProfile& profile, std::string& error,
+                    core::SecureByteArray password = {});
 
     [[nodiscard]] int sessionCount() const;
     [[nodiscard]] QString activeSessionId() const;

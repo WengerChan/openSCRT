@@ -39,6 +39,12 @@ QuickConnectDialog::QuickConnectDialog(QWidget* parent) : QDialog(parent) {
     key_edit_ = new QLineEdit(this);
     key_edit_->setPlaceholderText(tr("private key file (optional)"));
 
+    // The password is used for this connection only. It is not part of the profile, so it
+    // never reaches the session file.
+    password_edit_ = new QLineEdit(this);
+    password_edit_->setEchoMode(QLineEdit::Password);
+    password_edit_->setPlaceholderText(tr("password (optional, not saved)"));
+
     error_label_ = new QLabel(this);
     error_label_->setStyleSheet(QStringLiteral("color: #b00020;"));
     error_label_->setWordWrap(true);
@@ -50,6 +56,7 @@ QuickConnectDialog::QuickConnectDialog(QWidget* parent) : QDialog(parent) {
     form->addRow(tr("Username:"), user_edit_);
     form->addRow(tr("Protocol:"), protocol_combo_);
     form->addRow(tr("Private key:"), key_edit_);
+    form->addRow(tr("Password:"), password_edit_);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     connect(buttons, &QDialogButtonBox::accepted, this, &QuickConnectDialog::accept);
@@ -111,6 +118,27 @@ void QuickConnectDialog::setProtocol(config::Protocol protocol) {
 
 void QuickConnectDialog::setPrivateKeyPath(const QString& path) {
     key_edit_->setText(path);
+}
+
+void QuickConnectDialog::setPassword(const QString& password) {
+    password_edit_->setText(password);
+}
+
+core::SecureByteArray QuickConnectDialog::password() const {
+    core::SecureByteArray secret;
+    const QByteArray raw = password_edit_->text().toUtf8();
+    if (!raw.isEmpty()) {
+        secret.assign(raw.constData(), static_cast<std::size_t>(raw.size()));
+    }
+    return secret;
+}
+
+void QuickConnectDialog::done(int result) {
+    // The password was in the line edit as text. Qt does not clear strings for us, so the
+    // best that can be done from here is to take it out of the widget as soon as the
+    // dialog is done with it.
+    password_edit_->clear();
+    QDialog::done(result);
 }
 
 void QuickConnectDialog::accept() {

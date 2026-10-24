@@ -248,8 +248,15 @@ void MainWindow::applyDefaultSessionToAll() {
     setStatus(tr("All sessions now follow the Default Session template"));
 }
 
+void MainWindow::openStartupQuickConnect() {
+    // The startup path and the File menu path show the same dialog; the only difference
+    // is that at startup the window is already behind it.
+    openQuickConnect();
+}
+
 void MainWindow::openQuickConnect() {
     QuickConnectDialog dialog(this);
+    emit quickConnectDialogShown();
     if (dialog.exec() != QDialog::Accepted) {
         return;
     }
@@ -260,8 +267,12 @@ void MainWindow::openQuickConnect() {
         profile.name = profile.id;
     }
 
+    // The password goes to the transport beside the profile, never into it: the profile
+    // is what gets written to the session file.
+    core::SecureByteArray password = dialog.password();
+
     std::string error;
-    const int index = workspace_->openSession(profile, error);
+    const int index = workspace_->openSession(profile, error, std::move(password));
     if (index < 0) {
         setStatus(QString::fromStdString(error));
         return;

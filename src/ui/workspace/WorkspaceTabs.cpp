@@ -14,12 +14,13 @@ WorkspaceTabs::WorkspaceTabs(QWidget* parent) : QTabWidget(parent) {
     connect(this, &QTabWidget::tabCloseRequested, this, &WorkspaceTabs::handleTabCloseRequested);
 }
 
-int WorkspaceTabs::openSession(const config::SessionProfile& profile, std::string& error) {
+int WorkspaceTabs::openSession(const config::SessionProfile& profile, std::string& error,
+                               core::SecureByteArray password) {
     auto* canvas = new TerminalCanvasWidget(this);
     // No QObject parent: the vector owns the session. A QObject that is both owned by a
     // unique_ptr and parented to a widget is deleted twice -- once by the vector, once by
     // the parent's child list.
-    auto session = std::make_unique<TerminalSession>(profile, canvas);
+    auto session = std::make_unique<TerminalSession>(profile, canvas, std::move(password));
     TerminalSession* raw = session.get();
     sessions_.push_back(std::move(session));
 

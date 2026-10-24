@@ -11,6 +11,7 @@
 #include <QDockWidget>
 #include <QMenuBar>
 #include <QTemporaryDir>
+#include <QTimer>
 
 #include "config/ModuleInfo.h"
 #include "config/SessionProfile.h"
@@ -175,5 +176,14 @@ int main(int argc, char** argv) {
     openscrt::ui::MainWindow window;
     window.loadSessions();
     window.show();
+    if (!self_test) {
+        // A launch without arguments opens the connect dialog straight away (P1-T13), so
+        // the first thing the user sees is the way to connect. The timer puts it inside
+        // the event loop, where the dialog can be painted and dismissed.
+        //
+        // The smoke test skips it on purpose: the dialog is modal, and a smoke test has
+        // nobody to dismiss it.
+        QTimer::singleShot(0, &window, &openscrt::ui::MainWindow::openStartupQuickConnect);
+    }
     return app.exec();
 }

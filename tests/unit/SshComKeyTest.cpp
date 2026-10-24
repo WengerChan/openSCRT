@@ -16,6 +16,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "protocols/ssh/Ssh2Channel.h"
@@ -148,7 +149,7 @@ TEST(SshComKeyTest, LogsInWithAnSshComKey) {
     options.auth_method = SshAuthMethod::kPublicKey;
     options.timeout_seconds = 20;
 
-    Ssh2Channel channel{options};
+    Ssh2Channel channel{std::move(options)};
     const TransportResult result = channel.connectAsync();
     ASSERT_TRUE(result.ok) << result.error;
     EXPECT_EQ(channel.state(), TransportState::kConnected);

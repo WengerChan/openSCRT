@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "config/SessionProfile.h"
+#include "core/SecureByteArray.h"
 #include "protocols/ITransportChannel.h"
 
 namespace openscrt::ui {
@@ -37,7 +38,7 @@ class TerminalSession : public QObject {
     // The canvas is not owned by the session: the tab widget parents it, so closing a tab
     // destroys the widget exactly once. The session only points at it.
     TerminalSession(config::SessionProfile profile, TerminalCanvasWidget* canvas,
-                    QObject* parent = nullptr);
+                    core::SecureByteArray password = {}, QObject* parent = nullptr);
     ~TerminalSession() override;
 
     TerminalSession(const TerminalSession&) = delete;
@@ -96,6 +97,9 @@ class TerminalSession : public QObject {
     static void leaveCallback(const std::shared_ptr<CallbackGuard>& guard);
 
     config::SessionProfile profile_;
+    // The password for this connection. It is not part of the profile, so it never reaches
+    // the session file, and it is given up as soon as the transport has it.
+    core::SecureByteArray password_;
     TerminalCanvasWidget* canvas_{nullptr};
 
     // Shared with the connect worker: a session torn down mid-handshake lets go of its

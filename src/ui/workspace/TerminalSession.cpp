@@ -20,6 +20,7 @@ constexpr auto kConnectDrainTimeout = std::chrono::milliseconds(500);
 // protocols that have no implementation yet: Telnet and Serial arrive with their own
 // phases, and a dialog that silently does nothing is worse than one that says so.
 std::shared_ptr<protocols::ITransportChannel> makeChannel(const config::SessionProfile& profile,
+                                                          core::SecureByteArray password,
                                                           std::string& error) {
     const config::Protocol protocol = profile.protocol.value_or(config::Protocol::kSsh2);
     switch (protocol) {
@@ -31,7 +32,13 @@ std::shared_ptr<protocols::ITransportChannel> makeChannel(const config::SessionP
             options.port = profile.port.value_or(22);
             options.user = profile.user.value_or("");
             options.private_key_path = profile.private_key_path.value_or("");
-            return std::make_shared<protocols::ssh::Ssh2Channel>(options);
+            // The password travels beside the profile, never inside it: a profile is
+            // written to the INI, and a password in the INI is a password on disk.
+            options.password = std::move(password);
+            if (!options.password.empty() && options.private_key_path.empty()) {
+                options.auth_method = protocols::ssh::SshAuthMethod::kPassword;
+            }
+            return std::make_shared<protocols::ssh::Ssh2Channel>(std::move(options));
         }
         case config::Protocol::kTelnet:
             error = "Telnet is not implemented yet (it arrives with the Telnet phase)";
@@ -47,9 +54,10 @@ std::shared_ptr<protocols::ITransportChannel> makeChannel(const config::SessionP
 }  // namespace
 
 TerminalSession::TerminalSession(config::SessionProfile profile, TerminalCanvasWidget* canvas,
-                                 QObject* parent)
+                                 core::SecureByteArray password, QObject* parent)
     : QObject(parent),
       profile_(std::move(profile)),
+      password_(std::move(password)),
       canvas_(canvas),
       guard_(std::make_shared<CallbackGuard>()),
       connect_state_(std::make_shared<ConnectState>()) {
@@ -109,7 +117,10 @@ bool TerminalSession::connectSession(std::string& error) {
         }
     }
 
-    std::shared_ptr<protocols::ITransportChannel> channel = makeChannel(profile_, error);
+    // The password is handed to the transport and then given up: it is not part of the
+    // profile, so nothing that gets written to disk ever sees it.
+    std::shared_ptr<protocols::ITransportChannel> channel =
+        makeChannel(profile_, std::move(password_), error);
     if (!channel) {
         return false;
     }

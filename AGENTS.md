@@ -7,21 +7,27 @@ openSCRT — C++20 + Qt 6 的 SecureCRT 对标终端。读代码前先读
 
 ## 硬约束
 
+0. **CI 红着的时候不要继续推 main。** 要么等这一轮绿了再推下一个提交，要么在提交信息里
+   写明"这次推送为什么是安全的"。本仓库没有 PR 保护，`main` 的唯一门禁就是 CI。
 1. **验证只走 CI。** 本地不编译、不跑测试、不装构建工具。编译/测试/覆盖率/性能基准
    一律以 GitHub Actions 的结果为准。本地只写代码、格式化、提交。
 2. **需要 Python 时用 uv**，cache 目录写项目内可写路径（`UV_CACHE_DIR=$PWD/.cache/uv`）。
    不要用系统 `python3`/`pip3` 装包。
 3. **访问外网走 `./.proxy.sh`**（`github.com:443` 直连常超时）。CI 里所有网络调用同样走代理环境。
+   `api.github.com` 直连也能通，但外网访问统一走代理，别给"直连更快"找借口。
 4. **依赖只经 `vcpkg.json` 声明。** CI 从中派生一份更小的清单（`.github/scripts/ci-vcpkg-manifest.py`
    的 SKIP 表）。**开始 link 某个 port 时，必须在同一个 PR 里删掉它的 SKIP 条目**，
    否则 configure 会报 not found。
-5. **一个任务号 = 一个 PR。** 分支名 `feat/<phase>-<任务号>-<短描述>`。`main` 受保护，
-   必须 CI 全绿才能合并。
+5. **一个任务号 = 一个提交。** 本仓库**直推 `main`**，没有分支也没有 PR（与早期
+   "一任务号一 PR"的写法不同，以本文为准）。`main` 受保护，合并前必须 CI 全绿。
 6. **告警零容忍**：`-Wall -Wextra -Wpedantic -Werror`（MSVC `/W4 /WX`）。
    不要为了消告警放弃有意的设计（例如 `SpscRingBuffer` 的 `alignas(64)`），
    正确做法是局部 `#pragma warning(disable)` 并写清理由。
 7. **平台无关代码**：CI 脚本禁用 `mapfile`/`readarray`/数组展开，用 `while IFS= read -r`
    并剥 `\r`；写给 CI 读的文件一律 `newline="\n"`。
+8. **不要在用户的机器上启动应用或改动机器状态。** agent 的 shell 起的进程**杀不掉**
+   （`killall`/`pgrep`/`osascript` 都被沙箱拒），只能让用户自己收尾。要验证"程序在这台机器
+   上能不能起来"，用 CI 的 runner，或让用户自己跑。
 
 ## 排障纪律（来自 21 轮 CI 排障的复盘）
 

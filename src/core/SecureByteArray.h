@@ -15,6 +15,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 
 namespace openscrt::core {
 
@@ -47,6 +48,15 @@ class SecureByteArray {
     // Caller-provided output buffer; keeps the plaintext inside a stack buffer the caller
     // owns and can wipe.
     [[nodiscard]] std::size_t copyOut(void* dst, std::size_t dst_size) const;
+
+    // Calls `action` with the plaintext as a NUL-terminated C string and wipes the copy
+    // afterwards. The C APIs of libssh and friends want a `const char*`, and a copy that
+    // outlives the call is a copy nobody wipes. The wipe uses sodium_memzero, so the
+    // compiler cannot drop it as a dead store.
+    //
+    // Returns whatever `action` returned. An empty buffer is passed as an empty string,
+    // never as a null pointer.
+    bool withCString(const std::function<bool(const char*)>& action) const;
 
     // Best-effort wipe that is not optimised away.
     void wipe() noexcept;

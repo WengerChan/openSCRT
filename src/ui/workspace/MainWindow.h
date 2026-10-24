@@ -54,10 +54,21 @@ class MainWindow : public QMainWindow {
     [[nodiscard]] SessionManagerWidget* sessionManager() const noexcept { return session_manager_; }
     [[nodiscard]] QString statusText() const;
 
+    // Opens the connect dialog the way a launch without arguments does (P1-T13): the
+    // window is already up, and the dialog is on top of it. The File menu path uses
+    // openQuickConnect(), which is the same dialog.
+    void openStartupQuickConnect();
+
  public slots:
     void openQuickConnect();
     void connectSelectedSession();
     void closeCurrentTab();
+
+ signals:
+    // Emitted once the Quick Connect dialog has been built, before it is shown. The
+    // startup path and the File menu path both go through here, so a test can observe
+    // that the dialog really appears without waiting for a human to close it.
+    void quickConnectDialogShown();
 
  protected:
     void closeEvent(QCloseEvent* event) override;

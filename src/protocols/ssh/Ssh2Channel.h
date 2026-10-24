@@ -18,6 +18,7 @@
 #include <string>
 #include <thread>
 
+#include "core/SecureByteArray.h"
 #include "core/SpscRingBuffer.h"
 #include "protocols/ITransportChannel.h"
 
@@ -36,7 +37,9 @@ struct SshConnectionOptions {
     int port{22};
     std::string user;
 
-    std::string password;
+    // The password never goes into a profile: a profile is written to the INI. It travels
+    // in this locked buffer instead, and the buffer is wiped when the attempt is over.
+    core::SecureByteArray password;
     // OpenSSH or PEM private key. For OpenSSH format keys the public half is derived from
     // the same file.
     std::string private_key_path;

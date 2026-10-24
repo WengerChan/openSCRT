@@ -4,6 +4,7 @@
 
 #include <cstring>
 #include <utility>
+#include <vector>
 
 namespace openscrt::core {
 namespace {
@@ -90,6 +91,20 @@ void SecureByteArray::assign(const char* text) {
         return;
     }
     assign(text, std::strlen(text));
+}
+
+bool SecureByteArray::withCString(const std::function<bool(const char*)>& action) const {
+    if (!action) {
+        return false;
+    }
+    // One byte more than the payload, for the terminator the C APIs expect.
+    std::vector<char> buffer(size_ + 1, '\0');
+    copyOut(buffer.data(), size_);
+    const bool result = action(buffer.data());
+    // sodium_memzero, not a plain fill: the compiler is allowed to drop a store to a local
+    // that is about to go out of scope, and this buffer holds a password.
+    sodium_memzero(buffer.data(), buffer.size());
+    return result;
 }
 
 std::size_t SecureByteArray::copyOut(void* dst, std::size_t dst_size) const {
