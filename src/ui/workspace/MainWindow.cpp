@@ -114,10 +114,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     // A button sends to the session that is in front when it is pressed. The session is
     // looked up at that moment and not when the button was built, so a button follows
     // the user from one session to the next.
-    button_bar_->setSender([this](const std::uint8_t* data, std::size_t size) {
+    //
+    // The buffer is not called "data": QWidget has a protected member of that name, and
+    // a local with the same name shadows it.
+    button_bar_->setSender([this](const std::uint8_t* payload, std::size_t size) {
         TerminalSession* target = workspace_->sessionById(workspace_->activeSessionId());
         if (target != nullptr) {
-            target->sendInput(std::vector<std::uint8_t>(data, data + size));
+            target->sendInput(std::vector<std::uint8_t>(payload, payload + size));
         }
     });
     connect(button_bar_, &ButtonBar::openSessionRequested, this,

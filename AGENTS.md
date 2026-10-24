@@ -52,6 +52,13 @@ openSCRT — C++20 + Qt 6 的 SecureCRT 对标终端。读代码前先读
   所以一个 `terminal::` 写成 `openscrt::terminal::`、一个 `[[nodiscard]]` 的返回值没接住，
   都是**一整轮 CI**的价钱——第三、四轮 14 次失败里有 5 次是这个。改动面越大，一轮里能藏的
   笔误越多。
+- **Qt 的类里埋着会撞车的成员名。** `QWidget` 有个 protected 成员就叫 `data`
+  （`qwidget.h`），所以在 `QWidget` 的子类里写一个叫 `data` 的局部变量或参数，
+  `-Wshadow` 会直接拦下（`-Werror` 下就是编译失败）。缓冲区叫 `payload` 或 `bytes`。
+- **Qt 的 API 名字要查，不能凭印象写。** `QSplitter` **没有** `removeWidget`（只有
+  `replaceWidget` / `insertWidget`）；把窗格从 splitter 里拿掉是把槽位交还成
+  `replaceWidget(index, nullptr)`。凭记忆写出来的 Qt 调用几乎必错，而本仓库本地不编译，
+  一次写错就是一轮 CI。
 - **"工具报告成功"不等于"产物在预期位置"。** 下游找不到时，第一反应是 `ls -R <路径>`，
   顺序永远是：产物存在吗 → 路径对吗 → 工具怎么找。**跳过第一步是最大的浪费来源。**
 - **同一处失败连修两轮而症状不变 → 停止推理，进观测模式。** 加一行 `ls` / `printenv`

@@ -251,7 +251,9 @@ void WorkspacePanes::closeActivePane() {
     pane->closeAll();
 
     if (auto* parent = qobject_cast<QSplitter*>(pane->parentWidget())) {
-        parent->removeWidget(pane);
+        // QSplitter has no removeWidget. Handing the slot back with a null widget is
+        // what takes the pane out of the splitter; the pane itself is deleted below.
+        parent->replaceWidget(parent->indexOf(pane), nullptr);
     }
     panes_.erase(std::remove(panes_.begin(), panes_.end(), pane), panes_.end());
     if (active_pane_ == pane) {
