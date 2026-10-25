@@ -232,7 +232,10 @@ void MainWindow::buildMenus() {
     QMenu* help_menu = menuBar()->addMenu(tr("Help"));
     help_menu->addAction(tr("About openSCRT"), this, [this]() {
         QMessageBox::about(this, tr("About openSCRT"),
-                           tr("openSCRT %1\n\nA SecureCRT-alike native cross-platform terminal.")
+                           tr("openSCRT %1\n\nA SecureCRT-alike native cross-platform terminal.\n\n"
+                              "Licensed under the Apache License, Version 2.0.\n"
+                              "The licenses of the bundled third-party components are listed in "
+                              "THIRD_PARTY_NOTICES.md.")
                                .arg(QString::fromUtf8(core::kProjectVersion)));
     });
 }

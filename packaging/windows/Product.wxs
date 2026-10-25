@@ -28,7 +28,7 @@
     <Package InstallerVersion="500"
              Compressed="yes"
              InstallScope="perMachine"
-             Description="openSCRT $(var.ProductVersion), a SecureCRT-alike terminal emulator" />
+             Description="openSCRT $(var.ProductVersion), a SecureCRT-alike terminal emulator (Apache-2.0)" />
 
     <!-- UpgradeCode is the identity that ties v0.1.0 to v0.2.0. Without a stable one every
          release installs side by side and the user ends up with two copies on PATH. -->

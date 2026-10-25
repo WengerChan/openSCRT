@@ -279,6 +279,21 @@ jobs:
             echo "bundled $dll from ${found/$STAGE_POSIX\//}"
           done
 
+          # The license of the project and the texts of the components that travel with it
+          # have to be in the bundle: the LGPL of Qt asks for them, and a bundle without
+          # them is not a lawful distribution.
+          cp -f "$GITHUB_WORKSPACE/LICENSE" "$GITHUB_WORKSPACE/THIRD_PARTY_NOTICES.md" "$STAGE_POSIX/"
+          for copyright in "$(cygpath -u "$VCPKG_INSTALLED_DIR")"/share/*/copyright; do
+            [ -f "$copyright" ] || continue
+            port=$(basename "$(dirname "$copyright")")
+            cp -f "$copyright" "$STAGE_POSIX/$port.copyright.txt"
+          done
+          if [ -d "$(cygpath -u "$QT_ROOT_DIR")/Licenses" ]; then
+            cp -r "$(cygpath -u "$QT_ROOT_DIR")/Licenses" "$STAGE_POSIX/Qt-Licenses"
+          else
+            echo "::warning::the Qt installation has no Licenses directory; its text is not shipped"
+          fi
+
           echo "staged files:"
           find "$STAGE_POSIX" -type f | sed "s|$STAGE_POSIX/||"
 
@@ -662,6 +677,22 @@ jobs:
           # started here, with the plugins it ships, before it is packaged.
           QT_QPA_PLATFORM=offscreen "$APP/Contents/MacOS/openscrt" --self-test
 
+          # The license of the project and the texts of the components that travel with it
+          # have to be in the bundle: the LGPL of Qt asks for them.
+          mkdir -p "$APP/Contents/Resources/Licenses"
+          cp -f "$GITHUB_WORKSPACE/LICENSE" "$GITHUB_WORKSPACE/THIRD_PARTY_NOTICES.md" \
+            "$APP/Contents/Resources/Licenses/"
+          for copyright in "$VCPKG_INSTALLED_DIR"/share/*/copyright; do
+            [ -f "$copyright" ] || continue
+            port=$(basename "$(dirname "$copyright")")
+            cp -f "$copyright" "$APP/Contents/Resources/Licenses/$port.copyright.txt"
+          done
+          if [ -d "$QT_ROOT_DIR/Licenses" ]; then
+            cp -R "$QT_ROOT_DIR/Licenses" "$APP/Contents/Resources/Licenses/Qt-Licenses"
+          else
+            echo "::warning::the Qt installation has no Licenses directory; its text is not shipped"
+          fi
+
           tar -C "$STAGE" -czf "$GITHUB_WORKSPACE/out/pkg/openSCRT-$VERSION-macos-arm64.tar.gz" openscrt.app
           cd "$GITHUB_WORKSPACE/out/pkg"
           shasum -a 256 "openSCRT-$VERSION-macos-arm64.tar.gz" > SHA256SUMS-macos.txt
@@ -818,6 +849,21 @@ jobs:
           mkdir -p "$STAGE/lib/qt/plugins"
           cp -R "$QT_ROOT_DIR/plugins/platforms" "$STAGE/lib/qt/plugins/"
           cp -R "$QT_ROOT_DIR/plugins/imageformats" "$STAGE/lib/qt/plugins/"
+
+          # The license of the project and the texts of the components that travel with it
+          # have to be in the bundle: the LGPL of Qt asks for them.
+          mkdir -p "$STAGE/Licenses"
+          cp -f "$GITHUB_WORKSPACE/LICENSE" "$GITHUB_WORKSPACE/THIRD_PARTY_NOTICES.md" "$STAGE/Licenses/"
+          for copyright in "$VCPKG_INSTALLED_DIR"/share/*/copyright; do
+            [ -f "$copyright" ] || continue
+            port=$(basename "$(dirname "$copyright")")
+            cp -f "$copyright" "$STAGE/Licenses/$port.copyright.txt"
+          done
+          if [ -d "$QT_ROOT_DIR/Licenses" ]; then
+            cp -R "$QT_ROOT_DIR/Licenses" "$STAGE/Licenses/Qt-Licenses"
+          else
+            echo "::warning::the Qt installation has no Licenses directory; its text is not shipped"
+          fi
 
           # The real binary gets a wrapper that points the loader and the plugin path at the
           # tree it was unpacked into, so the archive works wherever it is unpacked.

@@ -135,5 +135,12 @@ CMake cache switches: `OPENCRT_BUILD_TESTS` (ON by default) and `OPENCRT_WARNING
 
 ## License
 
-To be decided. Until a license is chosen the project is **all rights reserved** — do not
-redistribute.
+**Apache License, Version 2.0** — see [`LICENSE`](LICENSE).
+
+The project is distributed under the Apache-2.0 terms: permissive, with an explicit
+patent grant, and compatible with the licenses of everything it links (Qt under the
+LGPL, OpenSSL under the Apache, the rest under the MIT/BSD/ISC terms).
+
+The licenses of the bundled third-party components are listed in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), which ships with the release
+artifacts.
