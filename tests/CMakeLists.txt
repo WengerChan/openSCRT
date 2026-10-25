@@ -144,6 +144,12 @@ openscrt_add_test(unit_securecrt_importer
     SOURCES unit/SecureCrtConfigImporterTest.cpp
     LIBS openscrt_config Qt6::Core)
 
+# The secret store of the system (P2-T8): the Credential Manager and the Keychain.
+openscrt_add_test(unit_secret_store
+    LABEL unit
+    SOURCES unit/SecretStoreTest.cpp
+    LIBS openscrt_credential)
+
 # The credential binding of a session (P2-T9).
 openscrt_add_test(unit_kdbx_credential_resolver
     LABEL unit

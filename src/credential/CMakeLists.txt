@@ -31,6 +31,7 @@ set(CMAKE_AUTOMOC ON)
 add_library(openscrt_credential STATIC
     ModuleInfo.cpp
     ICredentialProvider.cpp
+    SecretStore.cpp
     kdbx/KdbxHeaderParser.cpp
     kdbx/KdbxCredentialResolver.cpp
     kdbx/KdbxCrypto.cpp
@@ -39,6 +40,7 @@ add_library(openscrt_credential STATIC
     kdbx/KdbxProtectedStream.cpp
     kdbx/KdbxVault.cpp
     kdbx/KdbxXmlIndex.cpp
+    keepasshttp/KeePassHttpAssociation.cpp
     keepasshttp/KeePassHttpClient.cpp
     keepasshttp/KeePassHttpCrypto.cpp
     keepasshttp/HttpTransport.cpp)
@@ -49,3 +51,12 @@ target_link_libraries(openscrt_credential
     PUBLIC openscrt_warnings Qt6::Core Qt6::Network
     PRIVATE openscrt_core openscrt_sodium OpenSSL::Crypto ZLIB::ZLIB pugixml::pugixml
             nlohmann_json::nlohmann_json)
+
+# The secret store of the system: the Credential Manager on Windows, the Keychain on
+# macOS. Linux has Libsecret, which is not wired up yet.
+if(WIN32)
+    target_link_libraries(openscrt_credential PRIVATE advapi32)
+elseif(APPLE)
+    target_link_libraries(openscrt_credential PRIVATE "-framework Security"
+                                                "-framework CoreFoundation")
+endif()
