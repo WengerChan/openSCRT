@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -109,6 +110,7 @@ TEST_F(CommandWindowBroadcastSshTest, ABroadcastReachesTwentyRealSshSessionsInTh
     // deadline for all twenty, so a server that never answers costs a minute and not
     // twenty.
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    std::size_t answered = 0;
     for (std::size_t i = 0; i < kSessions; ++i) {
         std::string accumulated;
         std::uint8_t buffer[1024];
@@ -121,9 +123,16 @@ TEST_F(CommandWindowBroadcastSshTest, ABroadcastReachesTwentyRealSshSessionsInTh
                 break;
             }
         }
+        if (accumulated.find(kMarker) != std::string::npos) {
+            ++answered;
+        }
         EXPECT_NE(accumulated.find(kMarker), std::string::npos)
             << "session " << i << " never ran the command";
     }
+    // The log line the CI step looks for: a green tick does not say how many sessions
+    // answered.
+    std::cout << "[p2-a6] " << kSessions << " real SSH sessions, " << answered
+              << " of them ran the command\n";
 }
 
 }  // namespace

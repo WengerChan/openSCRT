@@ -403,6 +403,20 @@ jobs:
             out/build/linux-ci/bin/unit_main_window \
             --gtest_filter='*ReachesARealServerThroughTheWindow*:*ThePasswordFromTheDatabaseLogsIn*'
 
+      # P2-A6: the broadcast against twenty real SSH sessions.
+      #
+      # The ordinary test pass reports this as a green tick, and a green tick does not say
+      # how many sessions answered. This step runs the case by name so the log shows the
+      # twenty sessions and the answers that came back.
+      - name: Broadcast to twenty real SSH sessions (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          QT_QPA_PLATFORM=offscreen \
+            out/build/linux-ci/bin/unit_command_window_broadcast_ssh \
+            --gtest_filter='*ABroadcastReachesTwentyRealSshSessionsInTheSameOrder*'
+
       - name: Test (perf tier, Linux only)
         if: runner.os == 'Linux'
         continue-on-error: false
