@@ -134,6 +134,13 @@ openSCRT — C++20 + Qt 6 的 SecureCRT 对标终端。读代码前先读
   `ssh_pki_import_privkey_file` 是出参形式、`ssh_userauth_keyboard_interactive`
   已删除、`SSH_STATUS_*` 枚举根本不存在。**下载依赖对应的发布包，核对每个用到的符号
   的真实声明**，不要照着旧版本的记忆写。
+- **崩溃先分"崩在被调用内部"还是"崩在调用之后"。** 上探针（每一步打印一行），
+  **一行都没打出来 = 崩在被调用的内部，函数没返回**；这比推理一轮便宜。
+  **系统 API 的出参别传 NULL**：MIG 生成的客户端桩会把 reply 里的结果**直接往用户指针写**，
+  不查指针（内核那侧反而查了：`if (object_name) *object_name = IP_NULL;`）→ 传 NULL 就是
+  段错误。**同一份协议要读两端**：内核实现 + 客户端桩；桩不开源时，**看真实调用点怎么传**
+  （CPython 的 `remote_debug.h`、Rust 的 `mach2`、Zig 的 `darwin.zig`、Chromium 的
+  `memory_mac.mm` 都传真实变量，一个传 NULL 的都没有）。
 - **绕过包的元数据，就要自己接它的传递依赖**。用 `find_library` 代替
   `find_package` 会丢掉 config 里的 `find_dependency`：libssh 是静态库，OpenSSL
   必须由使用方自己链接。优先用 `find_package`，回退路径要显式补齐依赖，并且**先搜
