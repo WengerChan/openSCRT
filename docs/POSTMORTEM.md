@@ -577,7 +577,6 @@ directory: 'QDir'`），窗口里的 `KdbxVault::opened` 少写了命名空间�
 核对出来的格式自己写的。
 
 ### 9.5 格式化器能改坏代码
-
 Windows 那条腿的失败是：**clang-format 把 `<wincred.h>` 排到了 `<windows.h>` 前面**。
 `wincred.h` 用 `windows.h` 的类型（`ULONG_PTR`、`DWORD`、`LPWSTR`）却不自己包含它，
 于是它在一个什么都没有定义的环境里被解析，编译器报的是
@@ -610,6 +609,30 @@ macOS 那条腿在 `ClosingAPaneClosesTheSessionsInIt` 里卡了十分钟，被�
 * **扫进程的内存只能读可写的映射**。整个地址空间里最大的是库文件，读一遍要 600 秒；
   而明文只可能写在可写内存里 ✔。另外读内存要用 `pread` 而不是流：流有自己的缓冲区，
   那份缓冲区会留下上一次找到的东西，第二次扫描就会"找到"一个并不存在的明文 ✔。
+
+### 9.7 编译错误要读 note 行（macOS 的 mach_vm_region 连错三轮）
+
+macOS 那条腿为了让测试能扫自己的进程内存，要调 `mach_vm_region` ✔。**同一个错误连着错了
+三轮** ✔：
+
+1. `reinterpret_cast from 'vm_region_basic_info_data_64_t' to 'vm_region_info_t' is not
+   allowed` —— 联合体是按值传的，我按值转 ✔；
+2. `no matching function for call to 'mach_vm_region'` —— 改按指针转之后，**参数个数不对** ✔；
+3. 还是 `no matching function` —— note 里写着 `no known conversion from 'vm_address_t *'
+   to 'mach_vm_address_t *'` —— **地址要用 mach_vm 那套类型** ✔。
+
+三轮的答案一直写在错误下面那行 `note:` 里 ✔：`requires 7 arguments, but 6 were provided`
+✔、`no known conversion from ... to ...` ✔。
+
+**教训**：
+
+- **读 note 行，不只读 error 行** ✔ —— clang 把"要什么"说得很清楚 ✔；
+- **镜像里的 SDK 可能是旧的** ✔：网上的 `MacOSX10.6.sdk` 里 `mach_vm_region` 是七个参数、
+  info 是 `vm_region_info_t` ✔；runner 上装的是 14.5 ✔，七个参数 ✔、info 是
+  `vm_region_info_data_t *` ✔、地址是 `mach_vm_address_t *` ✔。**裁判是 runner 上装的那份**
+  ✔，不是网上的 ✔；
+- **同一个错误连着两轮症状不变就停下来读日志** ✔ —— 第三轮之前把错误和 note 完整读一遍，
+  就是一行改动 ✔，而不是再猜一轮 ✔。
 
 ---
 

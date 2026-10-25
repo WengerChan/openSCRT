@@ -64,6 +64,13 @@ openSCRT — C++20 + Qt 6 的 SecureCRT 对标终端。读代码前先读
 - **库把 Qt 链成 PRIVATE 时，用到 Qt 的测试要自己点名 Qt。** `openscrt_config` 的
   PRIVATE 依赖不会传给测试，测试不会因此拿到 Qt 的 include 路径——症状是
   `No such file or directory: 'QDir'`。
+- **编译错误要读 note 行，不是只读 error 行。** clang 的 `no matching function for call to
+  'X'` 下面跟着 `note: candidate function not viable: requires 7 arguments, but 6 were
+  provided` / `no known conversion from 'A *' to 'B *'` —— **它把要什么说得很清楚** ✔。
+  同一个错误（macOS 的 `mach_vm_region`）连着三轮，每轮的 note 都指向一个具体的差别 ✔：
+  参数个数 ✔、联合体是按值还是按指针 ✔、地址类型是 `vm_` 还是 `mach_vm_` ✔。
+  **别猜 API 签名**：去取头文件原文 ✔（Windows 的 `wincred.h`、Apple 的 SDK ✔），
+  但**镜像里的 SDK 可能是旧的** ✔ —— runner 上装的那份才是裁判 ✔。
 - **一轮 CI 只报第一个错误。** ninja 在第一个失败处停下，别的目标根本没编，
   所以**后面的错误藏在后面**。一次失败要把日志里**所有**编译错误修完再推；
   同一批错误在三条腿上表现不同，先怀疑"谁先失败"，不是"平台不一样"。
