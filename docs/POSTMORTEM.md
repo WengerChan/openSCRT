@@ -574,6 +574,20 @@ directory: 'QDir'`），窗口里的 `KdbxVault::opened` 少写了命名空间�
 真实文件因为来源仓库**没有许可证**而没有入库，只在本地留副本核对——测试用的夹具是按
 核对出来的格式自己写的。
 
+### 9.5 格式化器能改坏代码
+
+Windows 那条腿的失败是：**clang-format 把 `<wincred.h>` 排到了 `<windows.h>` 前面**。
+`wincred.h` 用 `windows.h` 的类型（`ULONG_PTR`、`DWORD`、`LPWSTR`）却不自己包含它，
+于是它在一个什么都没有定义的环境里被解析，编译器报的是
+`'dwLower': unknown override specifier` —— 看着像"类型写错了"，其实是"类型根本没定义"。
+
+**格式化器改的是代码，不是风格**。两个 include 之间放一行注释，它就不会重排它们；
+仓库里 `LocalPtyChannel.cpp` 的 `windows.h` / `consoleapi.h` 早就是这么写的（为了
+`CreatePseudoConsole`），只是当时没人把"为什么"写下来。
+
+**教训**：SDK 的头文件常常**靠包含顺序**。凡是要包含 Windows SDK 的头，就把顺序和
+理由写进注释里，别指望格式化器懂。
+
 ---
 
 ## 落到 CI 上的自动化防线
