@@ -51,6 +51,32 @@ TESTS_ONLY = {
     "gtest": "only the test tree links it; drop it when OPENCRT_BUILD_TESTS=OFF",
 }
 
+# The platforms vcpkg knows, and the names the workflows use.
+VCPKG_PLATFORMS = {
+    "Linux": "linux",
+    "Windows": "windows",
+    "macOS": "osx",
+}
+
+
+def dependency_name(dependency):
+    """The port a dependency stands for.
+
+    A dependency is either the name of a port, or an object with a name and maybe a
+    platform -- a port that only exists on one platform, like libsecret, which vcpkg
+    refuses to build on Windows and macOS.
+    """
+    if isinstance(dependency, str):
+        return dependency
+    return dependency.get("name", "")
+
+
+def dependency_platform(dependency):
+    """The platform a dependency is for, or None when it is for every platform."""
+    if isinstance(dependency, str):
+        return None
+    return dependency.get("platform")
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -60,7 +86,19 @@ def main() -> int:
         action="store_true",
         help="keep the ports the test tree needs (gtest); omit for a packaging build",
     )
+    parser.add_argument(
+        "--platform",
+        help="the platform the manifest is derived for (Linux, Windows, macOS). A port "
+        "that is declared for another platform is left out: vcpkg would refuse to build "
+        "it here anyway, and building it would cost minutes on every job.",
+    )
     args = parser.parse_args()
+
+    platform = None
+    if args.platform is not None:
+        platform = VCPKG_PLATFORMS.get(args.platform)
+        if platform is None:
+            sys.exit("unknown platform: " + args.platform)
 
     skip = dict(SKIP)
     if not args.with_tests:
@@ -71,15 +109,23 @@ def main() -> int:
 
     # Typo guard: a SKIP entry that no longer exists in vcpkg.json is a stale rule, and silently
     # ignoring it would hide the drift that actually breaks the build.
-    unknown = sorted(set(skip) - set(manifest["dependencies"]))
+    unknown = sorted(set(skip) - {dependency_name(dep) for dep in manifest["dependencies"]})
     if unknown:
         sys.exit("SKIP names ports absent from vcpkg.json: " + ", ".join(unknown))
 
-    ports = [dep for dep in manifest["dependencies"] if dep not in skip]
-    if not ports:
+    kept = []
+    for dep in manifest["dependencies"]:
+        if dependency_name(dep) in skip:
+            continue
+        wanted = dependency_platform(dep)
+        if platform is not None and wanted is not None and wanted != platform:
+            continue
+        kept.append(dep)
+    if not kept:
         sys.exit("every declared port is skipped -- the manifest would be empty")
 
-    manifest["dependencies"] = ports
+    manifest["dependencies"] = kept
+    ports = [dependency_name(dep) for dep in kept]
 
     os.makedirs(args.out_dir, exist_ok=True)
     # newline="\n" matters: on the Windows runner a text-mode write produces CRLF, and the stray \r

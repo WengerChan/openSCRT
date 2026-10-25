@@ -1,6 +1,7 @@
 #include "credential/SecretStore.h"
 
 #include <algorithm>
+#include <cstring>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -10,6 +11,8 @@
 #elif defined(__APPLE__)
 #include <CoreFoundation/CoreFoundation.h>
 #include <Security/Security.h>
+#elif defined(__linux__)
+#include <libsecret/secret.h>
 #endif
 
 namespace openscrt::credential {
@@ -173,6 +176,73 @@ class MacKeychainStore final : public ISecretStore {
     }
 };
 
+#elif defined(__linux__)
+
+// The secret store of the desktop: the Secret Service of freedesktop.org, which is what
+// GNOME, KDE and the other desktops use behind one API.
+class LibsecretStore final : public ISecretStore {
+ public:
+    [[nodiscard]] bool store(const std::string& name, const std::vector<std::uint8_t>& secret,
+                             std::string& error) override {
+        GError* failure = nullptr;
+        const char* password = secret.empty() ? "" : reinterpret_cast<const char*>(secret.data());
+        const gboolean stored =
+            secret_password_store_sync(schema(), SECRET_COLLECTION_DEFAULT, "openSCRT", password,
+                                       nullptr, &failure, "key", name.c_str(), nullptr);
+        if (failure != nullptr) {
+            error = failure->message;
+            g_error_free(failure);
+            return false;
+        }
+        return stored == TRUE;
+    }
+
+    [[nodiscard]] bool load(const std::string& name, std::vector<std::uint8_t>& secret,
+                            std::string& error) override {
+        GError* failure = nullptr;
+        gchar* found =
+            secret_password_lookup_sync(schema(), nullptr, &failure, "key", name.c_str(), nullptr);
+        if (failure != nullptr) {
+            error = failure->message;
+            g_error_free(failure);
+            return false;
+        }
+        if (found == nullptr) {
+            error = "there is no secret stored under that name";
+            return false;
+        }
+        const std::size_t length = std::strlen(found);
+        secret.assign(reinterpret_cast<const std::uint8_t*>(found), length);
+        secret_password_free(found);
+        return true;
+    }
+
+    [[nodiscard]] bool remove(const std::string& name, std::string& error) override {
+        GError* failure = nullptr;
+        const gboolean cleared =
+            secret_password_clear_sync(schema(), nullptr, &failure, "key", name.c_str(), nullptr);
+        if (failure != nullptr) {
+            error = failure->message;
+            g_error_free(failure);
+            return false;
+        }
+        if (cleared != TRUE) {
+            error = "there was no secret stored under that name";
+            return false;
+        }
+        return true;
+    }
+
+ private:
+    // The schema of the entries of this program. The attribute is the name the secret
+    // is stored under, so two programs that use the same schema see the same entries.
+    static const SecretSchema* schema() {
+        static const SecretSchema* value =
+            secret_schema_new("org.openscrt.Secret", SECRET_SCHEMA_NONE, "key", nullptr);
+        return value;
+    }
+};
+
 #endif
 
 }  // namespace
@@ -182,9 +252,11 @@ std::unique_ptr<ISecretStore> systemSecretStore() {
     return std::make_unique<WindowsCredentialStore>();
 #elif defined(__APPLE__)
     return std::make_unique<MacKeychainStore>();
+#elif defined(__linux__)
+    return std::make_unique<LibsecretStore>();
 #else
-    // Linux has Libsecret, which is not wired up yet. The caller keeps the secret in
-    // memory for as long as the program runs.
+    // A platform with no store of its own: the caller keeps the secret in the memory of
+    // the program for as long as it runs, and says so.
     return nullptr;
 #endif
 }

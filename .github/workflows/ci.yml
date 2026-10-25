@@ -222,7 +222,7 @@ jobs:
           # The skip table lives in one place (.github/scripts/ci-vcpkg-manifest.py) and is
           # shared with release.yml, so a port cannot be "un-skipped" in one workflow and stay
           # skipped in the other. vcpkg.json remains the source of truth; this derives from it.
-          python .github/scripts/ci-vcpkg-manifest.py "$VCPKG_MANIFEST_DIR" --with-tests
+          python .github/scripts/ci-vcpkg-manifest.py "$VCPKG_MANIFEST_DIR" --with-tests --platform "${{ runner.os }}"
 
           # Point CMake at the SAME reduced manifest, so vcpkg.cmake computes the installed-tree
           # prefix path from it. It never reads the repo-root vcpkg.json, which still lists

@@ -54,10 +54,16 @@ target_link_libraries(openscrt_credential
             nlohmann_json::nlohmann_json)
 
 # The secret store of the system: the Credential Manager on Windows, the Keychain on
-# macOS. Linux has Libsecret, which is not wired up yet.
+# macOS, the Secret Service of freedesktop.org on Linux.
 if(WIN32)
     target_link_libraries(openscrt_credential PRIVATE advapi32)
 elseif(APPLE)
     target_link_libraries(openscrt_credential PRIVATE "-framework Security"
                                                 "-framework CoreFoundation")
+elseif(UNIX)
+    # Libsecret is a GLib library, so it is found with pkg-config. The port is declared
+    # for Linux only: vcpkg does not build it on Windows or macOS.
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(LIBSECRET REQUIRED IMPORTED_TARGET libsecret-1)
+    target_link_libraries(openscrt_credential PRIVATE PkgConfig::LIBSECRET)
 endif()

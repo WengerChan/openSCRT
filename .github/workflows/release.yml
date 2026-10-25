@@ -118,7 +118,7 @@ jobs:
           # OPENCRT_BUILD_TESTS=OFF, so a test dependency in the job that ships the installer is
           # minutes spent for nothing.
           export VCPKG_MANIFEST_DIR="$RUNNER_TEMP/vcpkg-release-manifest"
-          python .github/scripts/ci-vcpkg-manifest.py "$VCPKG_MANIFEST_DIR"
+          python .github/scripts/ci-vcpkg-manifest.py "$VCPKG_MANIFEST_DIR" --platform "${{ runner.os }}"
           echo "VCPKG_MANIFEST_DIR=$VCPKG_MANIFEST_DIR" >> "$GITHUB_ENV"
 
           # Classic mode is selected by the working directory: vcpkg treats "there is a
@@ -552,7 +552,7 @@ jobs:
         shell: bash
         run: |
           export VCPKG_MANIFEST_DIR="$RUNNER_TEMP/vcpkg-release-manifest"
-          python .github/scripts/ci-vcpkg-manifest.py "$VCPKG_MANIFEST_DIR"
+          python .github/scripts/ci-vcpkg-manifest.py "$VCPKG_MANIFEST_DIR" --platform "${{ runner.os }}"
           echo "VCPKG_MANIFEST_DIR=$VCPKG_MANIFEST_DIR" >> "$GITHUB_ENV"
 
           CLASSIC_DIR="$RUNNER_TEMP/vcpkg-classic-mode"
@@ -739,7 +739,7 @@ jobs:
         shell: bash
         run: |
           export VCPKG_MANIFEST_DIR="$RUNNER_TEMP/vcpkg-release-manifest"
-          python .github/scripts/ci-vcpkg-manifest.py "$VCPKG_MANIFEST_DIR"
+          python .github/scripts/ci-vcpkg-manifest.py "$VCPKG_MANIFEST_DIR" --platform "${{ runner.os }}"
           echo "VCPKG_MANIFEST_DIR=$VCPKG_MANIFEST_DIR" >> "$GITHUB_ENV"
 
           CLASSIC_DIR="$RUNNER_TEMP/vcpkg-classic-mode"
