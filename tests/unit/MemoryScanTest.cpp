@@ -108,9 +108,10 @@ std::size_t readMemoryAt(std::uintptr_t address, std::size_t size, std::uint8_t*
 // The two declarations are as the modern SDK has them: mach_vm_read takes the buffer
 // before the count, and the buffer is a vm_offset_t pointer -- an integer type used as
 // a pointer, which is what MIG generates. mach_vm_region takes the region info as a
-// pointer to the union and six arguments; the older 10.6 SDK had a seventh argument and
-// a different type for the info, which is what the first version of this code used --
-// and the macOS leg of CI said so, twice, in two different ways.
+// pointer to the union, and seven arguments -- the last one for the name of the object
+// the region belongs to, which nothing here needs. The older 10.6 SDK had a different
+// type for the info, which is what the first version of this code used -- and the macOS
+// leg of CI said so, three times, in three different ways.
 std::vector<Region> readableRegions() {
     std::vector<Region> regions;
     vm_address_t address = 0;
@@ -120,7 +121,7 @@ std::vector<Region> readableRegions() {
         mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
         const kern_return_t status =
             mach_vm_region(mach_task_self(), &address, &size, VM_REGION_BASIC_INFO_64,
-                           reinterpret_cast<vm_region_info_data_t*>(&info), &count);
+                           reinterpret_cast<vm_region_info_data_t*>(&info), &count, nullptr);
         if (status != KERN_SUCCESS) {
             break;
         }
