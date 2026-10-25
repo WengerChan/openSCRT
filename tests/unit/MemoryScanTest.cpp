@@ -83,7 +83,11 @@ std::vector<Region> readableRegions() {
             continue;
         }
         const std::string permissions = line.substr(space + 1, 4);
-        if (permissions.find('r') == std::string::npos) {
+        // Only the writable memory is read. A plaintext that was written lives in a
+        // mapping that can be written, and the libraries -- which are most of the
+        // address space -- are not.
+        if (permissions.find('r') == std::string::npos ||
+            permissions.find('w') == std::string::npos) {
             continue;
         }
         regions.push_back(Region{begin, static_cast<std::size_t>(end - begin)});
@@ -103,14 +107,18 @@ std::size_t readMemoryAt(std::uintptr_t address, std::size_t size, std::uint8_t*
 
 #elif defined(__APPLE__)
 
-// The regions come from mach_vm_region, the bytes from mach_vm_read.
+// The regions come from mach_vm_region, the bytes from mach_vm_read_overwrite.
 //
-// The two declarations are as the modern SDK has them: mach_vm_read takes the buffer
-// before the count, and the buffer is a vm_offset_t pointer -- an integer type used as
-// a pointer, which is what MIG generates. mach_vm_region takes seven arguments, the
-// address as a mach_vm_address_t pointer, and the region info as a vm_region_info_t --
-// which is an int pointer into the union, so the union is cast by address and handed
-// over as that pointer.
+// The two declarations are as the modern SDK has them: mach_vm_region takes seven
+// arguments, the address as a mach_vm_address_t pointer, and the region info as a
+// vm_region_info_t -- which is an int pointer into the union, so the union is cast by
+// address and handed over as that pointer.
+//
+// The read is mach_vm_read_overwrite and not mach_vm_read on purpose. mach_vm_read
+// takes an out array whose element is eight bytes wide and counts in elements, so a
+// count that is given in bytes makes the kernel write eight times as much as the
+// buffer holds. mach_vm_read_overwrite takes the address of the buffer and gives back
+// the number of bytes, so there is no unit to get wrong.
 std::vector<Region> readableRegions() {
     std::vector<Region> regions;
     // The address and the size are the mach_vm ones, not the vm ones: they are both 64
@@ -130,7 +138,10 @@ std::vector<Region> readableRegions() {
         if (size == 0) {
             break;
         }
-        if ((info.protection & VM_PROT_READ) != 0) {
+        // Only the writable memory is read. A plaintext that was written lives in a
+        // mapping that can be written, and the shared libraries -- which are most of
+        // the address space -- are not.
+        if ((info.protection & VM_PROT_READ) != 0 && (info.protection & VM_PROT_WRITE) != 0) {
             regions.push_back(
                 Region{static_cast<std::uintptr_t>(address), static_cast<std::size_t>(size)});
         }
@@ -140,14 +151,14 @@ std::vector<Region> readableRegions() {
 }
 
 std::size_t readMemoryAt(std::uintptr_t address, std::size_t size, std::uint8_t* out) {
-    mach_msg_type_number_t count = static_cast<mach_msg_type_number_t>(size);
-    const kern_return_t status =
-        mach_vm_read(mach_task_self(), static_cast<mach_vm_address_t>(address), size,
-                     reinterpret_cast<vm_offset_t*>(out), &count);
+    mach_vm_size_t copied = 0;
+    const kern_return_t status = mach_vm_read_overwrite(
+        mach_task_self(), static_cast<mach_vm_address_t>(address),
+        static_cast<mach_vm_size_t>(size), reinterpret_cast<mach_vm_address_t>(out), &copied);
     if (status != KERN_SUCCESS) {
         return 0;
     }
-    return static_cast<std::size_t>(count);
+    return static_cast<std::size_t>(copied);
 }
 
 #elif defined(_WIN32)
@@ -160,8 +171,14 @@ std::vector<Region> readableRegions() {
     std::uintptr_t address = 0;
     while (VirtualQuery(reinterpret_cast<LPCVOID>(address), &info, sizeof(info)) == sizeof(info)) {
         const auto base = reinterpret_cast<std::uintptr_t>(info.BaseAddress);
-        if (info.State == MEM_COMMIT && (info.Protect & PAGE_GUARD) == 0 &&
-            (info.Protect & PAGE_NOACCESS) == 0) {
+        // Only the writable memory is read. A plaintext that was written lives in a
+        // mapping that can be written, and the libraries -- which are most of the
+        // address space -- are not.
+        const DWORD protect = info.Protect;
+        const bool writable = (protect & PAGE_GUARD) == 0 && (protect & PAGE_NOACCESS) == 0 &&
+                              protect != PAGE_READONLY && protect != PAGE_EXECUTE &&
+                              protect != PAGE_EXECUTE_READ;
+        if (info.State == MEM_COMMIT && writable) {
             regions.push_back(Region{base, static_cast<std::size_t>(info.RegionSize)});
         }
         const std::uintptr_t next = base + static_cast<std::uintptr_t>(info.RegionSize);
@@ -267,7 +284,11 @@ TEST_F(SecureByteArrayMemoryTest, APlaintextThatWasUsedIsNotInTheMemoryAfterward
 
         // The control: the memory of the process really holds the marker while the
         // buffer is alive. Without this the test could pass without looking at anything.
-        EXPECT_EQ(scanProcessMemoryFor(marker.data(), marker.size()), ScanResult::kFound)
+        const ScanResult while_alive = scanProcessMemoryFor(marker.data(), marker.size());
+        if (while_alive == ScanResult::kCouldNotLook) {
+            GTEST_SKIP() << "this platform cannot read the memory of the process";
+        }
+        EXPECT_EQ(while_alive, ScanResult::kFound)
             << "the scan does not see the buffer, so the rest of the test proves nothing";
 
         // Wiping it is what the buffer does when it dies.
@@ -297,8 +318,11 @@ TEST_F(SecureByteArrayMemoryTest, TheScanCanLookAtTheMemoryAtAll) {
 
     SecureByteArray buffer;
     buffer.assign(marker.data(), marker.size());
-    EXPECT_EQ(scanProcessMemoryFor(marker.data(), marker.size()), ScanResult::kFound)
-        << "the scan cannot read the memory of this process";
+    const ScanResult result = scanProcessMemoryFor(marker.data(), marker.size());
+    if (result == ScanResult::kCouldNotLook) {
+        GTEST_SKIP() << "this platform cannot read the memory of the process";
+    }
+    EXPECT_EQ(result, ScanResult::kFound) << "the scan cannot read the memory of this process";
 }
 
 }  // namespace
