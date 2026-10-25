@@ -453,7 +453,7 @@ Windows / macOS / Linux 各做一遍，逐项打勾并留下记录。
 | 关联信息的系统凭据库 | ✅ **三个平台** | `src/credential/SecretStore.{h,cpp}`：Windows 走 **Credential Manager**（`CredWriteW`/`CredReadW`），macOS 走 **Keychain**（`SecItemAdd`/`SecItemCopyMatching`），Linux 走 **Libsecret**（freedesktop.org 的 Secret Service，GLib 库，用 pkg-config 找）。接口只有"一个名字一个秘密"，不做查询语言：一个能装很多东西的地方，早晚会装进不该装的东西。run **#40196044623** 的日志里能看到 Windows 与 macOS **真的写了又读回来**（`TheSystemStoreKeepsASecret` Windows 16 ms / macOS 15 ms，**没有 skip**——这一步专门用 `ctest -V` 跑，就是为了让"跑过"和"验过"分得开）。**Linux 上 CI 没有 secret service 守护进程**，那里的用例会说明并跳过，**不假装验过** |
 | P2-T8 的提供者与界面接线 | ✅ | `src/credential/keepasshttp/KeePassHttpProvider.cpp`：KeePassHTTP 客户端套进凭据接口，**双模这才真的是双模**——本地 .kdbx 与运行中的 KeePass 都从同一个接口取口令，会话层不知道口令从哪来。会话绑定多了一种 `keepass-http`（按主机匹配）；Tools 菜单多了一个 **Pair with KeePass...**（插件自己在 KeePass 里弹确认框），配对信息存进系统凭据库。run **#40196044623**（`unit_keepasshttp_client` 的提供者用例通过：口令从 mock 插件那里解出来，进的是锁定内存） |
 | P2-T9 条目选择器与四策略绑定 | ✅ | `src/credential/kdbx/KdbxCredentialResolver.cpp`（**纯逻辑、无 Qt**，可无头测）+ `src/ui/workspace/KeePassSelectorDialog.cpp`（选择器，**只给 uuid，从不碰口令**）。四策略：Session Saved / Prompt Every Time / KeePass by UUID / KeePass by Host（自动匹配会剥掉 scheme 与端口，`.example.local` 这类也算同一台机器）。**绑定本身是配置**，所以 `SessionProfile` 与 INI 往返都保住它（`cred-source` / `cred-uuid` / `cred-host`）；**口令仍然不在配置里**。run **#40141633909**（`unit_kdbx_credential_resolver` 9 个用例 + `unit_config_manager` 往返用例通过） |
-| P2-T10 界面布局（第一部分：Command Window） | 🟡 | `src/ui/workspace/CommandWindow.cpp`：底部命令条，默认发给当前会话，勾上 **Broadcast** 则发给全部会话。**顺序是这条功能的要点**：会话按打开顺序依次收到，所以"对所有机器执行"在每台机器上是同一个顺序。run **#40141633909**（`unit_command_window` 通过：20 个会话全部收到、字节一致、顺序一致——这是 P2-A6 机器可判的那一半） |
+| P2-T10 界面布局（第一部分：Command Window） | ✅ | `src/ui/workspace/CommandWindow.cpp`：底部命令条，默认发给当前会话，勾上 **Broadcast** 则发给全部会话。**顺序是这条功能的要点**：会话按打开顺序依次收到，所以"对所有机器执行"在每台机器上是同一个顺序。run **#40141633909**（`unit_command_window`：20 个会话全部收到、字节一致、顺序一致——派发逻辑）＋ run **#40217841310**（`unit_command_window_broadcast_ssh`：**20 个真 SSH 会话**，同一条命令、同一个顺序、**20 个都答了回来**，3.53 s，日志里写着 `[p2-a6] 20 real SSH sessions, 20 of them ran the command`）。macOS / Windows 的 CI 里没有服务器，那里跳过 ✔（R15）✔ |
 | P2-T10 界面布局（第二部分：四向分屏 + 多分组 Button Bar） | ✅ | `src/ui/workspace/WorkspacePanes.cpp`：窗格是一棵 splitter 树——向右分屏把新窗格放在正在用的那个旁边，向下分屏放在下面；当上面的 splitter 是另一个方向时，两个窗格进一个嵌套的 splitter，于是左列可以再分而不动右列。**Tile 是四格**，而且是**移动窗格而不是搬会话**。跨窗格的会话保持**一个全局顺序**（广播要靠它才可复现），已关闭会话的指针**从不读**（它的"closed"信号到达时对象已经没了，靠名字找）。`src/ui/workspace/ButtonBar.cpp`：底部的按钮行，**多分组**（右键标签栏建组、右键组内空白处建按钮），每组一个模型、存在会话文件里、随窗口回来。发送串认 SecureCRT 的转义符（`\r` `\n` `\p` `\v`），**`\p` 是一次独立的步骤而不是 sleep**（sleep 会把窗口冻住一秒）。run **#40144230620**（`unit_workspace_panes` + `unit_button_bar` 通过） |
 | 凭据接线（绑定 → 会话） | ✅ | 这一段之前是**接不上的**：绑定是配置，但 `effectiveProfile()` 只解析 host/port/user/protocol/key，把三个凭据字段丢了——会话打开的那一刻它看起来像没绑定，注入口根本不会触发。现在绑定随会话的**有效配置**一起走（**不从祖先继承**：子会话多半连的是另一台机器，继承父会话的 KeePass 条目等于把父会话的口令送到那台机器上去）；树要能改写（`update()` 原地替换，不打乱顺序）；选择器接进菜单（Tools > Bind Session to KeePass Entry...）。取密分三种结果：**取消 / 让服务器问 / 有口令**，认不出来的绑定**报错**而不是悄悄连上没有口令。run **#40144230620** |
 | P2-T11 SecureCRT 配置导入器 | ✅ | `src/config/importers/SecureCrtConfigImporter.cpp`：读 SecureCRT 的 `Sessions` 目录树（文件夹 = 目录，每个文件夹一个 `__FolderData__.ini` 列出会话与子文件夹）。**格式与我的记忆不符**：SecureCRT 的会话文件不是 `[Connection]` 那种 INI，而是**扁平的带类型前缀的键值**（`S:"Hostname"=...` 字符串、`D:"[SSH2] Port"=00000016` 十六进制数字）。三方对齐后才动手：SecureCRT 自己产出的真实文件 + 两个**互相独立**的实现（RustConn 的导出器、oryxis 的导入器）；事实与出处记在 `docs/evidence/securecrt-config-notes.md`（真实文件因来源仓库无许可证而**不入库**，本地留副本核对）。**口令不导入**（用安装实例的密钥加密，没有可拿的东西），会话照常导入并说明。run **#40145160590** |
@@ -462,10 +462,80 @@ Windows / macOS / Linux 各做一遍，逐项打勾并留下记录。
 | P2-A3 内存无明文 | ✅ **实测** | `tests/unit/MemoryScanTest.cpp`：把一个**随机**标记放进 `SecureByteArray`，然后**读进程自己的内存**（Linux `/proc/self/mem` + `pread`、macOS `mach_vm_region` + `mach_vm_read_overwrite`、Windows `VirtualQuery` + `ReadProcessMemory`），只读**可写**的映射——明文只可能写在可写内存里，库文件占大头且读一遍要 600 s。控制断言先证明扫描**确实看得见**那个缓冲区（否则这条用例可以什么都没看就"通过"），缓冲一擦掉，标记必须消失。run **#40211959352**（**三个平台都真跑过**：`unit_memory_scan` macOS 1.54 s / Linux 0.02 s / Windows 0.01 s，**没有 skip**）。macOS 这条腿是补上的，坑记在 `docs/POSTMORTEM.md` 9.8：出参传 `nullptr` 会被 MIG 生成的客户端桩直接往里写 → 段错误，**三轮才定位**（探针一行都没打出来 = 崩在被调用内部） |
 | P2-A4 解锁不卡 UI | ✅ **实测** | 派生在**后台线程**上做（`KdbxVault::openAsync`），窗口上是带进度的对话框 + 嵌套事件循环，所以解锁期间窗口还在响应。用例量的是**事件循环最长没回应的时长**（取的是上界：连两轮之间的休眠也算进去）：打开一个 KDBX 4 库（Argon2 要几秒），主线程最长**不超过 50 ms**。run **#40201582144**（`unit_kdbx_vault` 通过） |
 | P2-A5 解锁结果缓存 | ✅ | vault 数着派生的次数（`derivationCount()`）：开库派生一次，之后**十个会话**依次取同一条目的口令，计数**仍是 1**。文件变了会再读一次、再派生一次——那种情况下第二次派生是对的。run **#40145160590** |
-| P2-A6 广播到 20 个会话 | ✅ | run **#40141633909**（`unit_command_window`：20 个会话全部收到、字节一致、顺序一致）——这是 P2-A6 机器可判的那一半 |
+| P2-A6 广播到 20 个会话 | ✅ **对着真服务器** | 判据原文是"向 **20 个并发 SSH 会话**同步下发命令" ✔。先前只做到"20 个会话替身"（`unit_command_window`：20 个 sink，字节一致、顺序一致）✔——那证明的是命令窗口派发的逻辑，**证明不了二十台机器真的跑了命令** ✔。现在补的是真的：run **#40217841310** 的 Linux 腿开 **20 个真 SSH 会话**（对着 CI 那台 sshd），把同一条命令广播过去，**每一个会话都把结果答了回来** ✔——日志里写着 `[p2-a6] 20 real SSH sessions, 20 of them ran the command` ✔（该用例单独跑一遍，3.53 s）✔。macOS / Windows 的 CI 里没有服务器，用例按同样方式跳过 ✔（R15）✔ |
 | P2-A8 文件变了自动刷新 | ✅ | run **#40136172244**（`unit_kdbx_vault`："文件变了会重读"与"修改前后的条目查询结果分别正确"） |
 | KDBX 字节级事实 | ✅ | `docs/evidence/kdbx-format-notes.md`：每条事实带出处（官方规范 / KeePass 参考实现 / 独立实现 pykeepass / 真实样本十六进制）。**记错的七次**（版本号 `0x03040000`、3.1 的第二签名、复合密钥少一层哈希、AES-KDF 的形态、块 HMAC 的键、3.1 没有内层头部、保护流要用 `_xor` 变体）都记在那份文件里，作为"格式跟 Win32 默认行为一样，凭记忆必错"的证据。**其中三次是真实文件纠正的**，不是文档纠正的 |
 | SecureCRT 会话文件格式 | ✅ | `docs/evidence/securecrt-config-notes.md`：每条事实带出处（**真实文件** / 两个独立实现）。**记错的三次**（`[Connection]` 那种 INI、`HostName` 的拼写、十进制端口）都记在那份文件里，作为同一件事的第二个证据 |
+
+### 5.7 Phase 2 阶段出口归档（§9.2 要求"缺一不可"的那五样）
+
+**① CI 运行链接**
+
+| 腿 | run | 结论 |
+| :--- | :--- | :--- |
+| format (ubuntu-24.04) | [#40217841310](https://github.com/WengerChan/openSCRT/actions/runs/40217841310) | ✅ |
+| build-test (ubuntu-24.04) | 同上 | ✅ 34 个测试目标全绿 |
+| build-test (windows-2022) | 同上 | ✅（Windows 走 Qt 6.7，见决定 0001） |
+| build-test (macos-14) | 同上 | ✅（arm64） |
+
+**② 覆盖率报告**（run #40217841310 的 Linux leg，报告以 `coverage-linux` artifact 上传）
+
+| 范围 | lines | functions | branches |
+| :--- | :--- | :--- | :--- |
+| 合计（core + terminal + protocols + credential） | **78.2%**（3150/4026） | 92.1%（362/393） | 65.7%（2084/3173） |
+| `src/core` | 88.7%（126/142） | 90.9%（30/33） | 70.3%（52/74） |
+| `src/terminal` | 82.7%（1112/1344） | 93.8%（150/160） | 71.0%（648/913） |
+| `src/credential` | 75.5%（1335/1768） | 90.9%（120/132） | 63.9%（964/1508） |
+
+CI 门禁是 lines ≥40% ✔，**通过** ✔。但**计划书写的 Phase 2 目标是 ≥80%，实际 78.2%，没达到** ✔
+——原因写在这里，而不是藏起来：**在把 `src/credential` 计入之前，这个数字是 80.8%** ✔
+（run #40212467575），而那个 80.8% 量的是 **Phase 1 写的代码** ✔：Phase 2 新增的整整一层
+（KDBX 读取器、KeePassHTTP 客户端、系统凭据库）**根本没有进过滤器** ✔。CI 的过滤器已经补上
+（run #40217255583），逐库统计也进了流水线 ✔（见 R13）✔。
+
+**③ 性能基线对比表**（Phase 2 vs Phase 1 基线；两个 run 都在 Linux leg 的 perf 层实测）
+
+| 指标 | Phase 1 基线 | Phase 2（run #40217841310） | 差 | 结论 |
+| :--- | :--- | :--- | :--- | :--- |
+| 解析 100 万行 | 9,043.1 ms（9.043 µs/行、110,581 行/秒、1,847 行/帧） | 9,220.1 ms（9.220 µs/行、108,459 行/秒、1,811 行/帧） | +1.96% | ✅ 无回归 |
+| 全屏重绘 | 1.31 ms（765.5 FPS 等效） | 1.33 ms（751.1 FPS 等效） | +1.5% | ✅ |
+| 增量 / 全屏重绘比 | 0.90 ms vs 6.17 ms（6.9×） | 0.86 ms vs 6.04 ms（7.0×） | — | ✅ |
+| 600 ms 饱和输出 | 38 帧 | 38 帧（63.3 FPS） | 一致 | ✅ |
+| 流式输出内存增长 | 4.0 MB | 4.0 MB | 一致 | ✅ |
+| scrollback push | 0.341 µs/行 | 0.310 µs/行 | −9.1% | ✅ |
+| scrollback 查找 p99 | 0.661 µs | 0.581 µs | −12% | ✅ |
+| scrollback 内存 | 16.1 MB / 131,072 行 | 16.1 MB / 131,072 行 | 一致 | ✅ |
+| Widget 帧时间 p95 | 1.11 ms（run #39979970617） | 0.70 ms（均值 0.62、最坏 0.74） | −37% | ✅ |
+
+**绝对值只能同 run 内比** ✔：同一个二进制在连续两轮里给出 9.220 与 10.660 µs/行 ✔
+（run #40217841310 与 #40217255583）——**15.6% 的差距来自共享 runner 的负载，不是代码** ✔。
+被测的两条路径（`src/terminal`、`src/ui/renderer`）**从 Phase 1 到现在一个字节都没改** ✔
+（`git diff 9a57b05..HEAD -- src/terminal src/ui/renderer` 为空）✔。这正是 P1-A3c 写下的
+判据口径：**比值对负载不敏感，绝对值只用于同一 run 内** ✔。
+
+**④ 人工验收记录**
+
+**空** ✔。本阶段没有一条【人工】判据留下过记录 ✔（P2-A2 的真服务端那一半在 ⑤ 里）✔。
+**没有把没做的事写成做了** ✔。
+
+**⑤ 遗留问题登记（Phase 2）**
+
+| # | 遗留问题 | 类别 | 是否阻塞下一阶段 |
+| :--- | :--- | :--- | :--- |
+| R12 | **P2-A2：真 KeePass 2 + KeePassHttp 插件配对没做**——mock 那一半是端到端的（associate / test-associate / get-logins 全流程），真服务端那一半要一台装了插件的机器 | 人工 | 否——Phase 3 的协议栈不依赖它 |
+| R13 | **覆盖率目标没达到**：合计 78.2% 低于计划书写的 Phase 2 ≥80%；三个核心库也都低于计划书写的 ≥90%（core 88.7% / terminal 82.7% / credential 75.5%）。过滤器已补上 `src/credential`（run #40217255583），剩下的差额是**补测试**的事 | CI | 否——但 Phase 3 开工前要补账 |
+| R14 | **Linux 上的 Libsecret 运行时没验**：CI 没有 secret service 守护进程，用例在那里跳过并说明 | 人工 | 否 |
+| R15 | **P2-A6 的真并发广播只在 Linux 腿上验过**：macOS / Windows 的 CI 里没有 SSH 服务器，用例按同样方式跳过（0.02 s，与其它 SSH 用例一致）；Linux 腿是 20 个真会话、3.53 s、日志里写着 `20 real SSH sessions, 20 of them ran the command` | 人工 + CI | 否——但"三端都验过"这句话不能写 |
+| R16 | **性能绝对值跨 run 不可比**（同一份代码两轮相差 15.6%），判据只能用车内比值 | CI-Perf | 否——已写进归档与 P1-A3c |
+| R17 | **P1-A7 三端真机人工验收**与 **Windows 1607 真机验收**仍未做（Phase 1 的 R1 / R10 已挂账，1607 是硬要求） | 人工 | 否（按 D7 暂不执行）——但 1607 那笔账**发布前要还** |
+
+**结论：Phase 2 工程完成，阶段出口未签收。** T1–T11 全部落地，P2-A1 / P2-A3 / P2-A4 / P2-A5 /
+P2-A6 / P2-A8 满足（其中 P2-A6 现在是**对着 20 个真 SSH 会话**证明的，不再是替身）✔；
+P2-A2 只满足 mock 那一半 ✔；P2-A7 的平台相关观测（macOS / Windows 的锁页计数）**没有等价手段**，
+如实跳过 ✔；覆盖率**未达计划目标** ✔（R13）✔；人工验收记录**空** ✔。
+**因此阶段出口未签收** ✔——与 Phase 1 同样的措辞、同样的理由：**能由机器判的都判完了，
+剩下的要人在真机上做** ✔。它不阻塞 Phase 3（按 D7 的先例）✔，但 R12 / R13 / R17 三笔账
+必须在对应的地方还上 ✔。
 
 ---
 
@@ -622,7 +692,7 @@ Windows / macOS / Linux 各做一遍，逐项打勾并留下记录。
 | :--- | :--- | :--- | :--- | :--- |
 | Phase 0 | 6 | 0 | 1 | 三平台绿 + 覆盖率 ≥40% |
 | Phase 1 | 5 | 2 | 2 | 连接真实服务器 + 刷屏 ≥60 FPS；**出口未签收**——两个【人工】项里，P1-A7 按 D7 暂不执行，Phase 2 照常开工 |
-| Phase 2 | 6 | 1 | 1 | 20 会话广播 + 内存无明文 |
+| Phase 2 | 6 | 1 | 1 | 20 会话广播 + 内存无明文；**出口未签收**——P2-A2 的真服务端一半、覆盖率目标与三端真机/1607 真机验收仍未做（见 §5.7 的遗留登记 R12/R13/R17）；**它不阻塞 Phase 3**（按 D7 的先例） |
 | Phase 3 | 5 | 1 | 3 | Zmodem 100MB MD5 一致 |
 | Phase 4 | 5 | 2 | 1 | 50 正则下帧率衰减 ≤5% |
 | Phase 5 | 5 | 2 | 3 | 10 官方脚本零修改通过 + 72h 稳定 |
