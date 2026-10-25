@@ -434,6 +434,7 @@ Windows / macOS / Linux 各做一遍，逐项打勾并留下记录。
 | :--- | :--- | :--- | :--- |
 | D8 | **P2-T2 的安全内存容器留在 `src/core/SecureByteArray`，没有迁到计划书写的 `src/credential/memory/`** | Phase 1 的 P1-T14（密码认证）已经需要它，于是它落在 `src/core/`，并被 `protocols`（`SshConnectionOptions::password`）、`ui`（`QuickConnectDialog` / `TerminalSession` / `WorkspaceTabs`）共同依赖。而 `credential` 是**依赖** `core` 的一层（`openscrt_credential` 链 `openscrt_core`）：把基元搬到上层，会让 `core` 反过来依赖 `credential`，也逼 `protocols` / `ui` 改依赖方向 | **复用，不复制。** `src/credential/` 只放 KeePass 专有的东西（KDBX 解析、HTTP 客户端、条目选择器）。P2-A7 的两条断言落在 `tests/unit/SecureByteArrayTest.cpp`：① 析构后 `VmLck` 页计数回到基线（**只有 Linux 有这个观测手段**——`/proc/self/status`；macOS / Windows 无对应计数器，测试显式 skip 并说明原因，不假装验过）；② `mlock` 失败时走降级路径而不是崩溃（`locked()` 诚实性） |
 | D9 | **Argon2 派生走 OpenSSL 的 ARGON2 KDF，而不是路线图写的 libsodium** | 路线图 §3.5 写的是"libsodium（`crypto_pwhash_argon2id`）"。但 **libsodium 没有 Argon2d**：它的常量只有 `crypto_pwhash_ALG_ARGON2I13` 与 `crypto_pwhash_ALG_ARGON2ID13`，`crypto_pwhash_ALG_ARGON2D13` 不存在。而 **KeePass 默认写的就是 Argon2d**（真实样本的 `$UUID` = `EF636DDF…`），所以"用 libsodium"这条路在 KDBX 4 上根本走不通 | 改用 **OpenSSL 3.2+ 自带的 ARGON2 KDF**（`EVP_KDF_fetch` 的 "ARGON2D" / "ARGON2I" / "ARGON2ID" 三个变体都有）。参数：`pass`（复合密钥）、`salt`、`iter`、`lanes`、`version`，以及 `memcost`——**它的单位是 1 KiB 块**，所以文件里的 `M`（字节）要 ÷ 1024（`67108864` → `65536`）。CI 装的是 **OpenSSL 3.5.2** ✔。libsodium 仍用于 `sodium_memzero` 与 ChaCha20 |
+| D10 | **Phase 2 的阶段出口未签收，但 Phase 3 照常开工** | 机器能判的判据都满足了（P2-A1 / A3 / A4 / A5 / A6 / A8，其中 P2-A6 现在是对着 **20 个真 SSH 会话**实测的）✔；**没满足的是必须人做的那一半** ✔：P2-A2 的真 KeePass 2 + KeePassHttp 插件配对、三端真机人工验收、Windows 1607 真机验收；再加上覆盖率 **78.2%** 低于计划书写的 ≥80%（R13）✔。**D7 的授权只覆盖"P1-A7 暂不执行"与"Phase 2 照常开工"，不覆盖 Phase 2 自己的出口** ✔ —— 这条由用户决定，不由执行者代写 ✔ | **记为遗留，往下走**（用户 2026-10-26 的决定，与 Phase 1 同样的处理方式）✔：Phase 2 出口保持"**未签收**" ✔，R12 / R13 / R17 挂在 §5.7 的遗留表里 ✔。**R13 当场还掉**：覆盖率补测试补到目标（整体 ≥80%、三个核心库各 ≥90%），不往后拖 ✔ |
 
 ### 5.6 任务完成度与验收取证
 
@@ -534,10 +535,10 @@ P2-A6 / P2-A8 满足（其中 P2-A6 现在是**对着 20 个真 SSH 会话**证�
 P2-A2 只满足 mock 那一半 ✔；P2-A7 的平台相关观测（macOS / Windows 的锁页计数）**没有等价手段**，
 如实跳过 ✔；覆盖率**未达计划目标** ✔（R13）✔；人工验收记录**空** ✔。
 **因此阶段出口未签收** ✔——与 Phase 1 同样的措辞、同样的理由：**能由机器判的都判完了，
-剩下的要人在真机上做** ✔。**放行 Phase 3 的口径待用户决定** ✔：按 AGENTS.md 的门禁纪律
-（"门禁的标准不满足时，先问用户怎么收口，不要替他决定"）✔，**D7 的授权只覆盖"P1-A7 暂不执行"
-与"Phase 2 照常开工"，不覆盖 Phase 2 自己的出口** ✔ —— 这句话不能由执行者代写 ✔。
-而 R12 / R13 / R17 三笔账，无论怎么收口，都得在对应的地方还上 ✔。
+剩下的要人在真机上做** ✔。**2026-10-26 的决定（D10）：记为遗留，往下走** ✔ —— Phase 2 的出口
+保持"**未签收**" ✔，R12 / R13 / R17 挂在上面那张表里 ✔，**Phase 3 照常开工** ✔。
+（**D7 的授权只覆盖"P1-A7 暂不执行"与"Phase 2 照常开工"，不覆盖 Phase 2 自己的出口** ✔ ——
+所以这一条是用户定的，不是执行者代写的 ✔。）**R13 当场还掉**：覆盖率补测试补到目标 ✔。
 
 ---
 
@@ -694,7 +695,7 @@ P2-A2 只满足 mock 那一半 ✔；P2-A7 的平台相关观测（macOS / Windo
 | :--- | :--- | :--- | :--- | :--- |
 | Phase 0 | 6 | 0 | 1 | 三平台绿 + 覆盖率 ≥40% |
 | Phase 1 | 5 | 2 | 2 | 连接真实服务器 + 刷屏 ≥60 FPS；**出口未签收**——两个【人工】项里，P1-A7 按 D7 暂不执行，Phase 2 照常开工 |
-| Phase 2 | 6 | 1 | 1 | 20 会话广播 + 内存无明文；**出口未签收**——P2-A2 的真服务端一半、覆盖率目标与三端真机/1607 真机验收仍未做（见 §5.7 的遗留登记 R12/R13/R17）；**是否放行 Phase 3 待用户决定**（D7 只授权了 P1-A7 的暂缓与 Phase 2 的开工，不覆盖 Phase 2 自己的出口） |
+| Phase 2 | 6 | 1 | 1 | 20 会话广播 + 内存无明文；**出口未签收**——P2-A2 的真服务端一半、覆盖率目标与三端真机/1607 真机验收仍未做（见 §5.7 的遗留登记 R12/R13/R17）；**2026-10-26 决定（D10）：记为遗留，往下走，Phase 3 照常开工** |
 | Phase 3 | 5 | 1 | 3 | Zmodem 100MB MD5 一致 |
 | Phase 4 | 5 | 2 | 1 | 50 正则下帧率衰减 ≤5% |
 | Phase 5 | 5 | 2 | 3 | 10 官方脚本零修改通过 + 72h 稳定 |

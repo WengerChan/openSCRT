@@ -91,6 +91,13 @@ openscrt_add_test(unit_kdbx_header_parser
     SOURCES unit/KdbxHeaderParserTest.cpp
     LIBS openscrt_credential)
 
+# The refusal paths of the same parser: a header that stops in the middle, a field with
+# the wrong length, a variant dictionary with a value type this build does not know.
+openscrt_add_test(unit_kdbx_header_parser_edges
+    LABEL unit
+    SOURCES unit/KdbxHeaderParserEdgesTest.cpp
+    LIBS openscrt_credential)
+
 # The KDBX 4.x reader (P2-T4).
 #
 # The test reads a real KeePass database from tests/fixtures/kdbx and compares the
