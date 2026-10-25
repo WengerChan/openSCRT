@@ -137,10 +137,12 @@ set_tests_properties(unit_button_bar PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The SecureCRT importer (P2-T11): the session files and the folder tree.
+# Qt6::Core is named here because the test uses a temporary directory of its own, and
+# openscrt_config keeps Qt as a private dependency.
 openscrt_add_test(unit_securecrt_importer
     LABEL unit
     SOURCES unit/SecureCrtConfigImporterTest.cpp
-    LIBS openscrt_config)
+    LIBS openscrt_config Qt6::Core)
 
 # The credential binding of a session (P2-T9).
 openscrt_add_test(unit_kdbx_credential_resolver
