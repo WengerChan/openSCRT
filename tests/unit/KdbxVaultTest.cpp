@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <fstream>
 #include <iterator>
 #include <memory>
@@ -102,9 +103,10 @@ TEST_F(VaultFixture, TheUnlockDoesNotBlockTheThreadThatDraws) {
     // P2-A4: the derivation of the key of a KDBX 4 file takes seconds on purpose, and
     // the thread that draws the window may not wait for it.
     //
-    // The number measured is the longest the event loop was not answering. It is taken
-    // between the end of one round and the end of the next, so it is an upper bound: it
-    // also counts the sleep between the rounds.
+    // What is measured is how long the event loop was *busy*. The gap between two rounds
+    // is reported but not asserted: it also counts the sleep of the test itself, and on
+    // Windows a sleep of a millisecond can take fifteen, because the clock of the system
+    // has that granularity. A stall that is ours shows up as a busy event loop.
     KdbxVault vault;
     bool reported = false;
     QObject::connect(&vault, &KdbxVault::opened, &vault,
@@ -117,13 +119,16 @@ TEST_F(VaultFixture, TheUnlockDoesNotBlockTheThreadThatDraws) {
                     reinterpret_cast<const std::uint8_t*>(blank_password.data()),
                     blank_password.size(), {});
 
-    std::chrono::steady_clock::duration longest = std::chrono::steady_clock::duration::zero();
+    std::chrono::steady_clock::duration longest_busy = std::chrono::steady_clock::duration::zero();
+    std::chrono::steady_clock::duration longest_gap = std::chrono::steady_clock::duration::zero();
     auto previous = std::chrono::steady_clock::now();
     while (!reported) {
+        const auto before = std::chrono::steady_clock::now();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
-        const auto now = std::chrono::steady_clock::now();
-        longest = std::max(longest, now - previous);
-        previous = now;
+        const auto after = std::chrono::steady_clock::now();
+        longest_busy = std::max(longest_busy, after - before);
+        longest_gap = std::max(longest_gap, after - previous);
+        previous = after;
         if (std::chrono::steady_clock::now() - started > std::chrono::seconds(180)) {
             break;
         }
@@ -131,8 +136,14 @@ TEST_F(VaultFixture, TheUnlockDoesNotBlockTheThreadThatDraws) {
     }
 
     ASSERT_TRUE(reported) << "the vault never reported back";
-    const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(longest).count();
-    EXPECT_LE(millis, 50) << "the window was unresponsive for " << millis << " ms";
+    const auto busy_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(longest_busy).count();
+    const auto gap_ms = std::chrono::duration_cast<std::chrono::milliseconds>(longest_gap).count();
+    std::fprintf(stderr,
+                 "the event loop was busy for %lld ms at the longest, the gap between the "
+                 "rounds was %lld ms\n",
+                 static_cast<long long>(busy_ms), static_cast<long long>(gap_ms));
+    EXPECT_LE(busy_ms, 50) << "the window was unresponsive for " << busy_ms << " ms";
 }
 
 TEST_F(VaultFixture, TheDatabaseCanBeUnlockedOnAWorkerThread) {
