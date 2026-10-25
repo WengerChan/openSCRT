@@ -130,9 +130,13 @@ std::vector<Region> readableRegions() {
         mach_vm_size_t size = 0;
         vm_region_basic_info_data_64_t info{};
         mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
+        // The port name is an out parameter, and the generated client stub writes
+        // through the pointer without asking. A null pointer there is a crash, so it
+        // gets a real one -- the kernel leaves it null for the basic flavor.
+        mach_port_t object_name = MACH_PORT_NULL;
         const kern_return_t status =
             mach_vm_region(mach_task_self(), &address, &size, VM_REGION_BASIC_INFO_64,
-                           reinterpret_cast<vm_region_info_t>(&info), &count, nullptr);
+                           reinterpret_cast<vm_region_info_t>(&info), &count, &object_name);
         std::fprintf(stderr, "probe walk: status=%d addr=%llx size=%llu prot=%d count=%u\n",
                      static_cast<int>(status), static_cast<unsigned long long>(address),
                      static_cast<unsigned long long>(size), static_cast<int>(info.protection),
@@ -275,6 +279,7 @@ class SecureByteArrayMemoryTest : public ::testing::Test {};
 TEST_F(SecureByteArrayMemoryTest, APlaintextThatWasUsedIsNotInTheMemoryAfterwards) {
     // The marker is random: a word of the source would be in the binary too, and the
     // scan would find it there whether the buffer had it or not.
+    std::fprintf(stderr, "probe test: begin\n");
     std::array<std::uint8_t, 32> marker{};
     {
         std::random_device device;
@@ -286,6 +291,7 @@ TEST_F(SecureByteArrayMemoryTest, APlaintextThatWasUsedIsNotInTheMemoryAfterward
     if (std::all_of(marker.begin(), marker.end(), [](std::uint8_t byte) { return byte == 0; })) {
         GTEST_SKIP() << "the random source gave nothing to look for";
     }
+    std::fprintf(stderr, "probe test: marker ready\n");
 
     {
         SecureByteArray buffer;
