@@ -452,7 +452,7 @@ std::optional<core::SecureByteArray> MainWindow::credentialFor(
                                            : result.message;
             return std::nullopt;
         }
-        if (!credential::takeSecret(result, password)) {
+        if (!credential::takeSecret(result, *password)) {
             error = "KeePass has no password for that session";
             return std::nullopt;
         }

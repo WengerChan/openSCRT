@@ -89,9 +89,11 @@ class MacKeychainStore final : public ISecretStore {
     [[nodiscard]] bool store(const std::string& name, const std::vector<std::uint8_t>& secret,
                              std::string& error) override {
         // The keychain refuses to add an item that is already there, and the caller is
-        // allowed to store the same name again.
+        // allowed to store the same name again. There not being an old item is the
+        // normal case, so the answer of the removal is not interesting -- but it has to
+        // be cast away, because the interface says a caller has to look at it.
         std::string ignored;
-        remove(name, ignored);
+        static_cast<void>(remove(name, ignored));
 
         CFStringRef service = copyString(kServiceName);
         CFStringRef account = copyString(name);
