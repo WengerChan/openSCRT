@@ -30,6 +30,9 @@
 #include "core/SecureByteArray.h"
 
 #if defined(__linux__)
+#include <fcntl.h>
+#include <unistd.h>
+
 #include <cstdio>
 #include <cstdlib>
 #endif
@@ -48,10 +51,13 @@ enum class ScanResult {
 
 // Looks for the needle in the readable memory of this process.
 //
-// The memory is read in blocks, and the blocks overlap by the length of the needle, so
-// a marker that sits on the border of two blocks is still found. The block is wiped
-// after every search: a marker that was found in it must not be found again in the
-// next block.
+// The memory is read with pread, not with a stream: a stream keeps a buffer of its own,
+// and that buffer would hold a copy of whatever was found -- so the second scan of this
+// test would find the marker in the buffer of the first one and report a plaintext that
+// is not there.
+//
+// The blocks overlap by the length of the needle, so a marker that sits on the border of
+// two blocks is still found, and the block is wiped after every search.
 ScanResult scanProcessMemoryFor(const std::uint8_t* needle, std::size_t needle_size) {
     if (needle == nullptr || needle_size == 0) {
         return ScanResult::kCouldNotLook;
@@ -61,8 +67,8 @@ ScanResult scanProcessMemoryFor(const std::uint8_t* needle, std::size_t needle_s
     if (!maps) {
         return ScanResult::kCouldNotLook;
     }
-    std::ifstream memory("/proc/self/mem", std::ios::binary);
-    if (!memory) {
+    const int memory = ::open("/proc/self/mem", O_RDONLY);
+    if (memory < 0) {
         return ScanResult::kCouldNotLook;
     }
 
@@ -97,10 +103,8 @@ ScanResult scanProcessMemoryFor(const std::uint8_t* needle, std::size_t needle_s
         auto address = begin;
         while (address < end) {
             const std::size_t wanted = std::min(kBlock, static_cast<std::size_t>(end - address));
-            memory.seekg(static_cast<std::streamoff>(address));
-            memory.read(reinterpret_cast<char*>(block.data() + needle_size),
-                        static_cast<std::streamsize>(wanted));
-            const auto got = static_cast<std::size_t>(memory.gcount());
+            const auto got = static_cast<std::size_t>(
+                ::pread(memory, block.data() + needle_size, wanted, static_cast<off_t>(address)));
             if (got == 0) {
                 break;
             }
@@ -108,8 +112,14 @@ ScanResult scanProcessMemoryFor(const std::uint8_t* needle, std::size_t needle_s
             const auto found = std::search(block.begin(), block.begin() + needle_size + got, needle,
                                            needle + needle_size);
             if (found != block.begin() + needle_size + got) {
+                // Where it was found, so that a leftover can be traced to the region it
+                // sits in.
+                const auto offset = static_cast<std::size_t>(found - block.begin());
+                std::fprintf(stderr, "the marker sits at %llx\n",
+                             static_cast<unsigned long long>(address - needle_size + offset));
                 std::fill(block.begin(), block.end(), 0);
                 std::fill(overlap.begin(), overlap.end(), 0);
+                ::close(memory);
                 return ScanResult::kFound;
             }
             std::copy(block.begin() + needle_size + got - needle_size,
@@ -119,6 +129,7 @@ ScanResult scanProcessMemoryFor(const std::uint8_t* needle, std::size_t needle_s
     }
     std::fill(block.begin(), block.end(), 0);
     std::fill(overlap.begin(), overlap.end(), 0);
+    ::close(memory);
     return ScanResult::kNotFound;
 }
 
