@@ -32,10 +32,13 @@ class WindowsCredentialStore final : public ISecretStore {
  public:
     [[nodiscard]] bool store(const std::string& name, const std::vector<std::uint8_t>& secret,
                              std::string& error) override {
-        const std::wstring target = widen(name);
+        std::wstring target = widen(name);
+        wchar_t comment[] = L"openSCRT";
+        wchar_t user_name[] = L"openSCRT";
         CREDENTIALW credential{};
         credential.Type = CRED_TYPE_GENERIC;
-        credential.TargetName = target.c_str();
+        // The API takes the target as a writable pointer, and does not change it.
+        credential.TargetName = const_cast<LPWSTR>(target.c_str());
         credential.CredentialBlobSize = static_cast<DWORD>(secret.size());
         // The API writes the blob but does not change it. An empty secret still needs a
         // pointer the API can look at.
@@ -43,8 +46,8 @@ class WindowsCredentialStore final : public ISecretStore {
                                           : reinterpret_cast<const BYTE*>(secret.data());
         credential.CredentialBlob = const_cast<BYTE*>(blob);
         credential.Persist = CRED_PERSIST_LOCAL_MACHINE;
-        credential.Comment = L"openSCRT";
-        credential.UserName = L"openSCRT";
+        credential.Comment = comment;
+        credential.UserName = user_name;
         if (!CredWriteW(&credential, 0)) {
             error = "the credential manager refused the secret";
             return false;

@@ -232,7 +232,8 @@ TEST_F(KeePassHttpFixture, TheProviderAnswersWithThePasswordOfTheEntry) {
     CredentialRequest request;
     request.host = "10.20.30.40";
     request.port = 22;
-    const CredentialResult result = provider.lookup(request);
+    // The result gives the password up, so it cannot be a const one.
+    CredentialResult result = provider.lookup(request);
     ASSERT_EQ(result.status, CredentialStatus::kFound);
     EXPECT_EQ(result.entry.login, "netops");
 
