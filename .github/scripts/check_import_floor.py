@@ -35,7 +35,7 @@ Two floors, two jobs
 `--package-floor` is the floor of the *shipped package*: the Qt libraries are shipped
 with us, so their floor is ours too. That floor is normally only reported, because it
 is the product's floor and not a mistake in our code -- but a release notes promise
-("Windows 10 1809 or later") is only worth something if something checks it. A Qt
+("Windows 10 1607 or later") is only worth something if something checks it. A Qt
 upgrade that raises the package floor would otherwise sail through CI, and the promise
 would break silently, in the loader, on a user's machine.
 """

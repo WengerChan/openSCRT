@@ -443,7 +443,9 @@ CI 照样全绿，而承诺（"Windows 10 1809 or later"）是在用户机器的
 
 **预防**：凡是文档里出现"由 CI 保证""由门禁实测""CI 会拦住"这种措辞，就去核对那个 CI 步骤
 到底是 `--strict` 还是 `--report`；报告和门禁的差别只有一行，但差别就是承诺能不能兑现。
-`--package-floor 1809` 就是为这条加的（`8769bde`），它让发布包的地板也变成会红的门禁。
+`--package-floor` 就是为这条加的（`8769bde`），它让发布包的地板也变成会红的门禁。
+（阈值后来随决定 0001 一起从 1809 变成 **1607**：Windows 2016 要能用，Windows 的构建因此
+改用 Qt 6.7 —— 门禁的数字必须跟承诺的那个数字一致 ✔。）
 
 **同一条纪律的第三种形状：门禁存在，但它在别人的机器上跑。** clang-format 的门禁每轮都在，
 我每轮都知道它在那儿——但推之前没有在本地跑一次格式化，于是 Phase 2 的第一个提交
@@ -626,7 +628,7 @@ macOS 那条腿在 `ClosingAPaneClosesTheSessionsInIt` 里卡了十分钟，被�
 | 7.1（sanitizer 与覆盖率不同构建） | 独立的 `linux-tsan` preset（coverage OFF）+ 单独的 `unit_spsc_ring_buffer_tsan` 目标，job 末尾单独跑 |
 | 7.3（空指针防护） | `SpscRingBuffer::write()/read()` 显式拒绝空指针，入口处就断掉 fortified libc 的未定义行为 |
 | 7.4（冒烟标记不可恒真） | 远端标记用插值形式（`openscrt-ssh-ok`）而非命令文本本身，PTY 回显匹配不上 |
-| 报告 ≠ 门禁（Windows 地板） | 导入表门禁的两个阈值：自有二进制 `--floor 1607 --strict`（超了构建失败），发布包整体 `--package-floor 1809`（超了同样失败）——README 与发布说明里写的数字，就是这两个阈值 |
+| 报告 ≠ 门禁（Windows 地板） | 导入表门禁的两个阈值：自有二进制 `--floor 1607 --strict`（超了构建失败），发布包整体 `--package-floor 1607`（超了同样失败）——README 与发布说明里写的数字，就是这两个阈值。阈值随决定 0001 从 1809 降到 1607（Windows 2016 要能用，Windows 改用 Qt 6.7） |
 | 触发器按内容分工（第五轮） | `on.push` 的 `paths-ignore`：`**.md` / `docs/**` / `.proxy.sh`——纯文档提交**不产生 run**，省掉一整轮三平台矩阵；`pull_request` 刻意不加过滤，免得 required status check 永远 pending |
 
 **唯一没有自动化的**是根因二和根因三——它们需要判断力，只能靠 `AGENTS.md` 里的行为约束。

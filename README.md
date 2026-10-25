@@ -15,28 +15,31 @@ Milestones and task breakdown live in [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPM
 
 | Platform | Requirement |
 | --- | --- |
-| Windows | **Windows 10 1809 (build 17763) or later.** |
+| Windows | **Windows 10 1607 (build 14393) or later** — that is Windows Server 2016 and every Windows 10 release from 2016 onwards. |
 | macOS | macOS 12 or later (Qt 6.8 requirement) |
 | Linux | glibc 2.34 or later, a Wayland or X11 session |
 
-**Why Windows 10 1809.** The floor is measured, not declared: a CI gate reads the
+**Why Windows 10 1607.** The floor is measured, not declared: a CI gate reads the
 import tables of the built binaries on every Windows build and fails the build when one
-of them imports a kernel32 export newer than the target system — our own binaries may
-not exceed 1607, and the shipped package may not exceed 1809. A program that breaks
-that rule dies in the loader — before `main()`, with a dialog that says "the procedure
-entry point could not be located" and nothing else.
+of them imports a kernel32 export newer than the target system — and the whole package
+must not need anything newer than 1607 either. A program that breaks that rule dies in
+the loader — before `main()`, with a dialog that says "the procedure entry point could
+not be located" and nothing else.
 
 The measurement says two different things, and both are worth knowing:
 
 - `openscrt.exe` needs **1607** (build 14393) on its own. The three ConPTY entry
   points are resolved at run time, so they are not in the import table.
-- The **package** needs **1709** (build 16299), because `Qt6Core.dll` imports
-  `SetThreadDescription`. That number comes from a symbol-to-build table rather than
-  from a machine we ran it on, and Qt 6.8 supports 1809 and later — so **1809 is what
-  we promise**. A 1709 machine will very likely start the program; it is not a
-  configuration we support or test.
+- The **Qt libraries** have a floor of their own, and that floor is the package's
+  floor. Qt 6.8 imports `SetThreadDescription`, which a real 1607 kernel32 does not
+  export, so it would raise the floor to 1709. **The Windows build therefore uses
+  Qt 6.7**, the newest Qt whose floor is 1607. The floor of every Qt series was
+  measured from the kernel32 export table (run #40205287033): 6.5, 6.6 and 6.7 are at
+  1607, and 6.8 is at 1709.
 
 Full evidence, including every kernel32 import: [`docs/evidence/windows-import-tables.md`](docs/evidence/windows-import-tables.md).
+The decision behind the Qt version is written down in
+[`docs/decisions/0001-windows-floor-and-qt-matrix.md`](docs/decisions/0001-windows-floor-and-qt-matrix.md).
 
 The 0.1.0 and 0.1.1 releases are **command-line programs with no window**: running the binary
 prints its version and exits. **0.1.2 is the first release with a window** — it carries the Qt

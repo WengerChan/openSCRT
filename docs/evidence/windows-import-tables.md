@@ -56,6 +56,14 @@ symbol-to-build table, not from a machine anyone ran this on, and Qt 6.8 support
 1809 and later. The CI gate now enforces both: our own binaries may not exceed 1607,
 and the package may not exceed 1809 (`--package-floor 1809`).
 
+> **Superseded on 2026-10-25.** The paragraph above describes the Qt 6.8 build. The
+> Windows build now uses **Qt 6.7**, whose floor is 1607, so the package's floor and
+> the supported baseline are the same number: **1607**. The gate is now
+> `--floor 1607 --strict` for our own binaries and `--package-floor 1607` for the
+> package. The floors of the Qt series were measured from the kernel32 export table
+> (run #40205287033): 6.5, 6.6 and 6.7 are at 1607, and 6.8 is at 1709. See
+> [`docs/decisions/0001-windows-floor-and-qt-matrix.md`](../decisions/0001-windows-floor-and-qt-matrix.md).
+
 ## The floor, per binary
 
 This table is the **v0.1.1** package, kept because it is the one that shows the

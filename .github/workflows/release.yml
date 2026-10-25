@@ -104,10 +104,15 @@ jobs:
           (cd "$VCPKG_ROOT_DIR" && ./bootstrap-vcpkg.sh -disableMetrics)
           "$VCPKG_ROOT_DIR/vcpkg" version
 
-      - name: Install Qt 6.8 + qtserialport
+      - name: Install Qt 6.7 + qtserialport (Windows)
         uses: jurplel/install-qt-action@v4
         with:
-          version: 6.8.3
+          # 6.7 is the newest Qt whose package floor is Windows 10 1607 (build 14393),
+          # and Windows 2016 has to keep working. Qt 6.8 imports SetThreadDescription
+          # from kernel32, which a real 1607 kernel32 does not export, so a 6.8 build
+          # dies in the loader before main(). Measured, not believed: run #40205287033
+          # measured 6.5, 6.6 and 6.7 at 1607 and 6.8 at 1709.
+          version: '6.7'
           modules: qtserialport
           cache: true
 
@@ -956,9 +961,11 @@ jobs:
             workspace and the Quick Connect dialog; `openscrt.exe --version` still prints
             the build details for a bug report.
 
-            Requires Windows 10 1809 or later: the Qt runtime in the package imports
-            kernel32 exports that older systems do not export, and the loader stops the
-            program before it can say so itself.
+            Requires Windows 10 1607 or later (that is Windows Server 2016 and every
+            Windows 10 release from 2016 onwards). The Windows build uses Qt 6.7, whose
+            own floor is 1607: a newer Qt imports kernel32 exports that a 1607 system
+            does not export, and the loader stops the program before it can say so
+            itself.
 
             | Artifact | Platform | Install |
             | --- | --- | --- |

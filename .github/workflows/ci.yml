@@ -153,8 +153,22 @@ jobs:
           # "aqtinstall3.1.0". Leaving it unset installs the latest aqtinstall.
           cache: true
 
-      - name: Install Qt 6.8 + qtserialport (Linux/Windows)
-        if: runner.os != 'macOS'
+      - name: Install Qt 6.7 + qtserialport (Windows)
+        if: runner.os == 'Windows'
+        uses: jurplel/install-qt-action@v4
+        with:
+          # 6.7 is the newest Qt whose package floor is Windows 10 1607 (build 14393),
+          # and Windows 2016 has to keep working. Qt 6.8 imports SetThreadDescription
+          # from kernel32, and a real 1607 kernel32 does not export it, so a 6.8 build
+          # dies in the loader before main() -- with a dialog and no other message.
+          # The floor is measured, not believed: run #40205287033 measured 6.5, 6.6 and
+          # 6.7 at 1607 and 6.8 at 1709. See docs/decisions/0001-windows-floor-and-qt-matrix.md.
+          version: '6.7'
+          modules: qtserialport
+          cache: true
+
+      - name: Install Qt 6.8 + qtserialport (Linux/macOS)
+        if: runner.os != 'Windows'
         uses: jurplel/install-qt-action@v4
         with:
           version: 6.8.3
@@ -456,11 +470,11 @@ jobs:
       # system we support, so no test can catch that; the import table can.
       #
       # Our own binaries must not need anything newer than 1607. The Qt libraries in the
-      # package have their own floor, which is reported rather than enforced: that floor is
-      # the product's floor, and it is not ours to fix. But the package floor is still a
-      # gate -- against 1809, the baseline the README and the release notes promise --
-      # so a Qt upgrade that raises it cannot pass CI unnoticed and break the promise in
-      # the loader, on a user's machine.
+      # package have their own floor -- which is why the Windows build uses Qt 6.7, the
+      # newest one whose floor is 1607 -- so the package floor is the same number. It is
+      # still a gate, and now against 1607, the baseline the README and the release notes
+      # promise: a Qt upgrade that raises the floor cannot pass CI unnoticed and break
+      # the promise in the loader, on a user's machine.
       #
       # It runs after the tests on purpose: a floor that is too high is worth knowing
       # about, but not at the cost of the test evidence.
@@ -476,7 +490,7 @@ jobs:
           fi
           python .github/scripts/check_import_floor.py \
             --floor 1607 \
-            --package-floor 1809 \
+            --package-floor 1607 \
             --strict "$EXE" \
             --report "$QT_ROOT_DIR/bin/Qt6Core.dll" \
             --report "$QT_ROOT_DIR/bin/Qt6Gui.dll" \
