@@ -39,7 +39,7 @@ openSCRT — C++20 + Qt 6 的 SecureCRT 对标终端。读代码前先读
 
 | 规则 | 提交前/发版前实际要做的 |
 | --- | --- |
-| 0（红着不推） | 推之前先查**最近一次真实 run** 的结论：`curl -s -H "Authorization: Bearer $TOKEN" "https://api.github.com/repos/WengerChan/openSCRT/actions/runs?per_page=1" \| jq -r '.workflow_runs[0] \| "\(.head_sha[0:7]) \(.status) \(.conclusion)"'`。**红或还在跑，就先等**；实在要推，提交信息里写明为什么安全。**注意**：CI 触发器现在有 `paths-ignore`，纯文档提交**不产生 run**——所以这条查的是"最近一次真实 run"，它对应的 SHA 可能不是你要推的那个提交；要看某个提交自己的结论，就用 `?head_sha=<sha>` 查。 |
+| 0（红着不推） | **推之前跑 `tools/pre_push_check.sh`**（它读最近一次真实 run 的结论：绿就放行；红或还在跑，就检查这次提交的信息里有没有"为什么安全"那句，没有就退出非零）✔。手工查法：`curl -s -H "Authorization: Bearer $TOKEN" "https://api.github.com/repos/WengerChan/openSCRT/actions/runs?per_page=1" \| jq -r '.workflow_runs[0] \| "\(.head_sha[0:7]) \(.status) \(.conclusion)"'`。**红或还在跑，就先等**；实在要推，提交信息里写明为什么安全。**注意**：CI 触发器现在有 `paths-ignore`，纯文档提交**不产生 run**——所以这条查的是"最近一次真实 run"，它对应的 SHA 可能不是你要推的那个提交；要看某个提交自己的结论，就用 `?head_sha=<sha>` 查。 |
 | 2（Python 走 uv） | 要跑 Python 就 `uv run python ...`（`UV_CACHE_DIR=$PWD/.cache/uv`），不要 `python3`；改文件优先用编辑工具而不是脚本。 |
 | 3（外网走代理） | 每一条访问外网的命令都 `source ./.proxy.sh`——**包括 `api.github.com`**，哪怕它直连也能通。 |
 | 8（不动用户机器） | 验证一律走 CI runner；不要在用户的桌面启动应用。 |
