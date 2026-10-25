@@ -80,10 +80,9 @@ TEST(CredentialVocabularyTest, EveryFieldHasAName) {
 
 TEST(CredentialVocabularyTest, EverySourceRoundTripsThroughItsName) {
     const CredentialSource sources[] = {
-        CredentialSource::kSessionSaved,
-        CredentialSource::kPromptEveryTime,
-        CredentialSource::kKeePassUuid,
-        CredentialSource::kKeePassAutoMatch,
+        CredentialSource::kSessionSaved, CredentialSource::kPromptEveryTime,
+        CredentialSource::kKeePassUuid,  CredentialSource::kKeePassAutoMatch,
+        CredentialSource::kKeePassHttp,
     };
     for (const CredentialSource source : sources) {
         const std::optional<CredentialSource> parsed = credentialSourceFromString(toString(source));
