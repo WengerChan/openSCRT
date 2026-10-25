@@ -488,6 +488,14 @@ jobs:
             echo "::error::openscrt.exe was not found under out/build/windows-ci"
             exit 1
           fi
+          # The vcpkg libraries that ship as DLLs are part of the package too, so their
+          # floor is the package's floor. Most vcpkg ports are static and never reach
+          # this list; the ones that are not are the ones that can raise it.
+          VCPKG_REPORTS=()
+          for dll in "$VCPKG_INSTALLED_DIR/$VCPKG_TARGET_TRIPLET/bin/"*.dll; do
+            [ -f "$dll" ] || continue
+            VCPKG_REPORTS+=(--report "$dll")
+          done
           python .github/scripts/check_import_floor.py \
             --floor 1607 \
             --package-floor 1607 \
@@ -495,7 +503,8 @@ jobs:
             --report "$QT_ROOT_DIR/bin/Qt6Core.dll" \
             --report "$QT_ROOT_DIR/bin/Qt6Gui.dll" \
             --report "$QT_ROOT_DIR/bin/Qt6Widgets.dll" \
-            --report "$QT_ROOT_DIR/bin/Qt6Network.dll"
+            --report "$QT_ROOT_DIR/bin/Qt6Network.dll" \
+            ${VCPKG_REPORTS[@]+"${VCPKG_REPORTS[@]}"}
 
       # P1-A4: the SPSC ring buffer under ThreadSanitizer.
       #
