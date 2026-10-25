@@ -360,14 +360,19 @@ jobs:
       # the dialog's fields go through the window, into a transport, and the output has
       # to land on the screen. It runs the case by name so the log shows what was proven
       # instead of only reporting that the target passed.
-      - name: Connect dialog against the real server (Linux)
+      #
+      # The second case is the one of P2-A1: the password comes out of a KeePass
+      # database and logs into the same server. It needs the same server and the same
+      # environment, so it runs here and not in the ordinary test pass -- where it would
+      # skip itself, because the server is not there.
+      - name: Connect against the real server (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euo pipefail
           QT_QPA_PLATFORM=offscreen \
             out/build/linux-ci/bin/unit_main_window \
-            --gtest_filter='*ReachesARealServerThroughTheWindow*'
+            --gtest_filter='*ReachesARealServerThroughTheWindow*:*ThePasswordFromTheDatabaseLogsIn*'
 
       - name: Test (perf tier, Linux only)
         if: runner.os == 'Linux'
