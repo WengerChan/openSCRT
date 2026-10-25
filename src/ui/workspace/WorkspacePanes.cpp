@@ -250,10 +250,14 @@ void WorkspacePanes::closeActivePane() {
     // when its canvas disappears is a thread that outlives its widget.
     pane->closeAll();
 
-    if (auto* parent = qobject_cast<QSplitter*>(pane->parentWidget())) {
-        // QSplitter has no removeWidget. Handing the slot back with a null widget is
-        // what takes the pane out of the splitter; the pane itself is deleted below.
-        parent->replaceWidget(parent->indexOf(pane), nullptr);
+    if (qobject_cast<QSplitter*>(pane->parentWidget()) != nullptr) {
+        // QSplitter has no removeWidget, and replaceWidget refuses a null widget -- it
+        // answers "QSplitter::replaceWidget: Widget can't be null" and keeps the old
+        // one. So the pane is taken out of the splitter by reparenting it to nothing:
+        // the splitter then drops the handle and the slot with it. A pane that was only
+        // removed from the list would stay in the tree, and the layout would keep
+        // giving it space.
+        pane->setParent(nullptr);
     }
     panes_.erase(std::remove(panes_.begin(), panes_.end(), pane), panes_.end());
     if (active_pane_ == pane) {

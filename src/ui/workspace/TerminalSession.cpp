@@ -15,6 +15,11 @@ namespace {
 // worker is detached: it owns a reference to the channel, so it can finish on its own
 // without the session pulling the channel out from under it.
 constexpr auto kConnectDrainTimeout = std::chrono::milliseconds(500);
+// The wait for a callback that is already on its way. It has a deadline like every
+// other wait in this repository: a callback that never comes back must not freeze the
+// window. The callback only copies bytes and posts an event, so half a second is
+// already far longer than it can need.
+constexpr auto kCallbackDrainTimeout = std::chrono::milliseconds(500);
 
 // Builds the channel for the profile's protocol. Returns null and fills `error` for the
 // protocols that have no implementation yet: Telnet and Serial arrive with their own
@@ -180,14 +185,15 @@ void TerminalSession::close() {
     }
 
     // Clearing the callbacks stops new ones from starting, and the guard makes the ones
-    // already on their way wait for the session to finish tearing down. The wait cannot
-    // hang: a transport callback only copies bytes and posts an event.
+    // already on their way wait for the session to finish tearing down. The wait has a
+    // deadline: a callback that never comes back must not freeze the window.
     channel_->setDataCallback(nullptr);
     channel_->setStateCallback(nullptr);
     {
         std::unique_lock lock(guard_->mutex);
         guard_->alive = false;
-        guard_->idle.wait(lock, [this] { return guard_->in_flight == 0; });
+        guard_->idle.wait_for(lock, kCallbackDrainTimeout,
+                              [this] { return guard_->in_flight == 0; });
     }
 
     bool worker_done = true;

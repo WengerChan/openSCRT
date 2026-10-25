@@ -511,11 +511,17 @@ TransportResult LocalPtyChannel::disconnect() {
         platform_->process.hProcess = nullptr;
     }
 #else
+    // The reader polls the master descriptor, so the descriptor must not be closed while
+    // the reader is still using it. Closing a descriptor under a blocked read is
+    // undefined, and the number can be handed to somebody else in the meantime -- the
+    // reader then waits on a file that has nothing to do with this shell, and the join
+    // below never returns. The reader is stopped first; it notices the stop within one
+    // poll interval, and the descriptor is closed after it is gone.
+    stopReader();
     if (platform_->master >= 0) {
         ::close(platform_->master);
         platform_->master = -1;
     }
-    stopReader();
     if (platform_->child > 0) {
         // The child has to be reaped, but it does not have to die quickly: a shell that
         // ignores the hangup keeps waitpid waiting forever, and this wait happens on the

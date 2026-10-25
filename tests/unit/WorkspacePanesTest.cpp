@@ -184,6 +184,22 @@ TEST_F(WorkspacePanesTest, ThereIsAlwaysAPaneToWorkIn) {
     EXPECT_GE(panes_->paneCount(), 1) << "the workspace never ends up without a pane";
 }
 
+TEST_F(WorkspacePanesTest, AClosedPaneLeavesTheSplitter) {
+    // QSplitter::replaceWidget refuses a null widget ("Widget can't be null"), so a pane
+    // that was only removed from the list would stay in the tree, and the layout would
+    // keep giving it space. The splitter has to lose the pane, not just the list.
+    panes_->split(Qt::Horizontal);
+    ASSERT_EQ(panes_->paneCount(), 2);
+    auto* splitter = panes_->findChild<QSplitter*>();
+    ASSERT_NE(splitter, nullptr);
+    ASSERT_EQ(splitter->count(), 2);
+
+    panes_->closeActivePane();
+
+    EXPECT_EQ(panes_->paneCount(), 1);
+    EXPECT_EQ(splitter->count(), 1) << "the closed pane is still in the splitter";
+}
+
 TEST_F(WorkspacePanesTest, ClosingASessionLeavesThePaneItWasIn) {
     openLocal("one");
     panes_->split(Qt::Horizontal);
