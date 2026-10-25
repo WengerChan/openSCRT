@@ -150,6 +150,12 @@ openscrt_add_test(unit_secret_store
     SOURCES unit/SecretStoreTest.cpp
     LIBS openscrt_credential)
 
+# The memory scan (P2-A3): a plaintext that was used is not in the memory afterwards.
+openscrt_add_test(unit_memory_scan
+    LABEL unit
+    SOURCES unit/MemoryScanTest.cpp
+    LIBS openscrt_core)
+
 # The credential binding of a session (P2-T9).
 openscrt_add_test(unit_kdbx_credential_resolver
     LABEL unit

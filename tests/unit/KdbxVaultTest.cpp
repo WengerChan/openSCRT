@@ -10,6 +10,7 @@
 #include <QFile>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <fstream>
@@ -17,6 +18,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include "credential/kdbx/KdbxVault.h"
@@ -94,6 +96,43 @@ TEST_F(VaultFixture, TenSessionsDoNotDeriveTheKeyAgain) {
     }
 
     EXPECT_EQ(vault.derivationCount(), 1u) << "ten sessions must not derive the key again";
+}
+
+TEST_F(VaultFixture, TheUnlockDoesNotBlockTheThreadThatDraws) {
+    // P2-A4: the derivation of the key of a KDBX 4 file takes seconds on purpose, and
+    // the thread that draws the window may not wait for it.
+    //
+    // The number measured is the longest the event loop was not answering. It is taken
+    // between the end of one round and the end of the next, so it is an upper bound: it
+    // also counts the sleep between the rounds.
+    KdbxVault vault;
+    bool reported = false;
+    QObject::connect(&vault, &KdbxVault::opened, &vault,
+                     [&](bool, const QString&) { reported = true; });
+
+    // The blank database is a KDBX 4 file, so opening it derives the key with Argon2.
+    const std::string_view blank_password = "password";
+    const auto started = std::chrono::steady_clock::now();
+    vault.openAsync(kBlankDatabasePath,
+                    reinterpret_cast<const std::uint8_t*>(blank_password.data()),
+                    blank_password.size(), {});
+
+    std::chrono::steady_clock::duration longest = std::chrono::steady_clock::duration::zero();
+    auto previous = std::chrono::steady_clock::now();
+    while (!reported) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        const auto now = std::chrono::steady_clock::now();
+        longest = std::max(longest, now - previous);
+        previous = now;
+        if (std::chrono::steady_clock::now() - started > std::chrono::seconds(180)) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    ASSERT_TRUE(reported) << "the vault never reported back";
+    const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(longest).count();
+    EXPECT_LE(millis, 50) << "the window was unresponsive for " << millis << " ms";
 }
 
 TEST_F(VaultFixture, TheDatabaseCanBeUnlockedOnAWorkerThread) {
