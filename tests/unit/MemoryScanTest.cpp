@@ -114,9 +114,12 @@ std::size_t readMemoryAt(std::uintptr_t address, std::size_t size, std::uint8_t*
 // leg of CI said so, three times, in three different ways.
 std::vector<Region> readableRegions() {
     std::vector<Region> regions;
-    vm_address_t address = 0;
+    // The address and the size are the mach_vm ones, not the vm ones: they are both 64
+    // bits, but they are different types, and the pointer to the address is not
+    // convertible into a pointer to the other one.
+    mach_vm_address_t address = 0;
     for (;;) {
-        vm_size_t size = 0;
+        mach_vm_size_t size = 0;
         vm_region_basic_info_data_64_t info;
         mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
         const kern_return_t status =
@@ -139,8 +142,9 @@ std::vector<Region> readableRegions() {
 
 std::size_t readMemoryAt(std::uintptr_t address, std::size_t size, std::uint8_t* out) {
     mach_msg_type_number_t count = static_cast<mach_msg_type_number_t>(size);
-    const kern_return_t status = mach_vm_read(mach_task_self(), static_cast<vm_address_t>(address),
-                                              size, reinterpret_cast<vm_offset_t*>(out), &count);
+    const kern_return_t status =
+        mach_vm_read(mach_task_self(), static_cast<mach_vm_address_t>(address), size,
+                     reinterpret_cast<vm_offset_t*>(out), &count);
     if (status != KERN_SUCCESS) {
         return 0;
     }
