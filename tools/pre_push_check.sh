@@ -67,8 +67,20 @@ fi
 
 echo "last run: $run_id  $status/$conclusion  $sha"
 
+# The decision goes into the repository, so that "the checkpoint was consulted" is
+# something a reader can see rather than something somebody claims. A push that is not
+# in this table did not go through the checkpoint -- the gap is the evidence.
+record_decision() {
+    local decision="$1"
+    printf '| %s | %s | %s %s/%s | %s |\n' "$(date '+%Y-%m-%d %H:%M')" \
+        "$(git rev-parse --short "$commit" 2>/dev/null || echo "$commit")" \
+        "$run_id" "$status" "$conclusion" "$decision" >> docs/push-log.md
+    echo "recorded in docs/push-log.md (it rides along with the next commit)"
+}
+
 if [ "$status" = "completed" ] && [ "$conclusion" = "success" ]; then
     echo "the last run is green: the push may go"
+    record_decision "绿，放行"
     exit 0
 fi
 
@@ -79,6 +91,7 @@ echo "  ($MARKER_ZH)" >&2
 if printf '%s\n' "$message" | grep -qE "$MARKER_EN|$MARKER_ZH"; then
     echo "the message of $commit carries it:"
     printf '%s\n' "$message" | grep -E "$MARKER_EN|$MARKER_ZH"
+    record_decision "非绿，提交信息里有理由"
     exit 0
 fi
 echo "the message of $commit does not carry it, so the push may not go" >&2
