@@ -352,11 +352,12 @@ void MainWindow::openCredentialStore() {
     QString message;
     // The dialog is the context of the connection, so the connection goes away with it
     // and a second unlock does not pile up on the first.
-    connect(&vault_, &KdbxVault::opened, &progress, [&](bool ok, const QString& text) {
-        opened = ok;
-        message = text;
-        progress.close();
-    });
+    connect(&vault_, &credential::kdbx::KdbxVault::opened, &progress,
+            [&](bool ok, const QString& text) {
+                opened = ok;
+                message = text;
+                progress.close();
+            });
 
     const QByteArray master_utf8 = master.toUtf8();
     const std::uint8_t* bytes = reinterpret_cast<const std::uint8_t*>(master_utf8.constData());
