@@ -21,7 +21,6 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -116,10 +115,11 @@ std::size_t readMemoryAt(std::uintptr_t address, std::size_t size, std::uint8_t*
 // address and handed over as that pointer.
 //
 // The read is mach_vm_read_overwrite and not mach_vm_read on purpose. mach_vm_read
-// takes an out array whose element is eight bytes wide and counts in elements, so a
-// count that is given in bytes makes the kernel write eight times as much as the
-// buffer holds. mach_vm_read_overwrite takes the address of the buffer and gives back
-// the number of bytes, so there is no unit to get wrong.
+// takes an out array and a count, and its header calls the count a number of
+// elements of a type that is eight bytes wide, while the kernel side hands back a
+// number of bytes. The two ends do not describe the same unit, so the API that takes
+// the address of the buffer and gives back the number of bytes is the one to use:
+// mach_vm_read_overwrite.
 std::vector<Region> readableRegions() {
     std::vector<Region> regions;
     // The address and the size are the mach_vm ones, not the vm ones: they are both 64
@@ -137,10 +137,6 @@ std::vector<Region> readableRegions() {
         const kern_return_t status =
             mach_vm_region(mach_task_self(), &address, &size, VM_REGION_BASIC_INFO_64,
                            reinterpret_cast<vm_region_info_t>(&info), &count, &object_name);
-        std::fprintf(stderr, "probe walk: status=%d addr=%llx size=%llu prot=%d count=%u\n",
-                     static_cast<int>(status), static_cast<unsigned long long>(address),
-                     static_cast<unsigned long long>(size), static_cast<int>(info.protection),
-                     static_cast<unsigned int>(count));
         if (status != KERN_SUCCESS) {
             break;
         }
@@ -161,13 +157,9 @@ std::vector<Region> readableRegions() {
 
 std::size_t readMemoryAt(std::uintptr_t address, std::size_t size, std::uint8_t* out) {
     mach_vm_size_t copied = 0;
-    std::fprintf(stderr, "probe read: addr=%llx size=%zu dst=%p\n",
-                 static_cast<unsigned long long>(address), size, static_cast<void*>(out));
     const kern_return_t status = mach_vm_read_overwrite(
         mach_task_self(), static_cast<mach_vm_address_t>(address),
         static_cast<mach_vm_size_t>(size), reinterpret_cast<mach_vm_address_t>(out), &copied);
-    std::fprintf(stderr, "probe read: status=%d copied=%llu\n", static_cast<int>(status),
-                 static_cast<unsigned long long>(copied));
     if (status != KERN_SUCCESS) {
         return 0;
     }
@@ -279,7 +271,6 @@ class SecureByteArrayMemoryTest : public ::testing::Test {};
 TEST_F(SecureByteArrayMemoryTest, APlaintextThatWasUsedIsNotInTheMemoryAfterwards) {
     // The marker is random: a word of the source would be in the binary too, and the
     // scan would find it there whether the buffer had it or not.
-    std::fprintf(stderr, "probe test: begin\n");
     std::array<std::uint8_t, 32> marker{};
     {
         std::random_device device;
@@ -291,7 +282,6 @@ TEST_F(SecureByteArrayMemoryTest, APlaintextThatWasUsedIsNotInTheMemoryAfterward
     if (std::all_of(marker.begin(), marker.end(), [](std::uint8_t byte) { return byte == 0; })) {
         GTEST_SKIP() << "the random source gave nothing to look for";
     }
-    std::fprintf(stderr, "probe test: marker ready\n");
 
     {
         SecureByteArray buffer;
