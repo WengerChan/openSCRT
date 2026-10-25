@@ -212,7 +212,8 @@ class LibsecretStore final : public ISecretStore {
             return false;
         }
         const std::size_t length = std::strlen(found);
-        secret.assign(reinterpret_cast<const std::uint8_t*>(found), length);
+        const auto* bytes = reinterpret_cast<const std::uint8_t*>(found);
+        secret.assign(bytes, bytes + length);
         secret_password_free(found);
         return true;
     }
