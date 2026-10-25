@@ -524,6 +524,58 @@ ubuntu / windows / macos 三个 leg 上重新走 vcpkg 与 Qt，最贵的一腿 
 
 ---
 
+## 第六轮：Phase 2 的四个新坑（2026-10-25）
+
+### 9.1 一轮 CI 只报第一个错误，后面的错误藏在后面
+
+Phase 2 的一次推送里有两个错：导入器的测试没点名 `Qt6::Core`（`No such file or
+directory: 'QDir'`），窗口里的 `KdbxVault::opened` 少写了命名空间。
+
+**Windows 和 Linux 两条腿只报了第一个**——构建在那个目标上停住，轮到
+`MainWindow.cpp` 的编译根本没开始；只有 macOS 那条腿把两个都报了出来。
+
+同一个错在三条腿上表现不同，**看起来像三个不同的错**。差点按"平台差异"去查，而真相
+是 ninja 在第一个失败处停下（`-k 1`）。
+
+**做法**：一轮失败后把日志里**所有**编译错误一次修完再推，不要一个一个改一个推。
+分平台"表现不同"的编译错误，先怀疑是"谁先失败"，不是"平台不一样"。
+
+### 9.2 Qt 的类里埋着会撞车的成员名
+
+`QWidget` 有个 protected 成员就叫 `data`（`qwidget.h`）。在 `QWidget` 的子类里写一个
+叫 `data` 的局部变量或参数，`-Wshadow` 会直接拦下——而本仓库 `-Werror`，于是就是编译
+失败。
+
+缓冲区改叫 `payload` / `bytes`。**教训**：Qt 的头文件里埋着这种名字，`-Wshadow` 比人
+眼更容易撞上它们；本地不编译的仓库里，"看起来无害的变量名"是一整轮 CI 的价钱。
+
+### 9.3 成员的类型名不进入作用域；私有依赖要由用到它的测试自己点名
+
+两件小事，一件是名字，一件是链接：
+
+* `MainWindow` 有个成员 `credential::kdbx::KdbxVault vault_;`，但**成员不会把类型的
+  名字带进作用域**。写 `&KdbxVault::opened` 是不行的，要写全
+  `&credential::kdbx::KdbxVault::opened`。
+* `openscrt_config` 把 `Qt6::Core` 链成 **PRIVATE**（它自己的头文件不提 Qt，这是对的）。
+  于是**用到 Qt 的测试必须自己点名 Qt**——测试不属于库的"使用者"，库不会替它把 Qt 的
+  include 路径带过去。
+
+### 9.4 格式跟记忆不符时，基线要由独立实现产出（第二次吃到这个亏）
+
+写 SecureCRT 导入器时，我记的是"`[Connection]` 段的 INI、键名 `HostName`、十进制端口"。
+核对下来**三条全错**：SecureCRT 的会话文件是扁平的带类型前缀的键值
+（`S:"Hostname"=…`、`D:"[SSH2] Port"=00000016`），端口是十六进制的 DWORD。
+
+这和 KDBX 那次是同一件事（`docs/evidence/kdbx-format-notes.md` 记了七次记错的），
+所以用了同一套做法：**真实文件 + 两个互相独立的实现**（RustConn 的导出器、oryxis 的
+导入器）三方对齐后才动手，每条事实带出处记进
+`docs/evidence/securecrt-config-notes.md`。
+
+真实文件因为来源仓库**没有许可证**而没有入库，只在本地留副本核对——测试用的夹具是按
+核对出来的格式自己写的。
+
+---
+
 ## 落到 CI 上的自动化防线
 
 上面六条里有五条已经固化成流水线里的自动检查，改坏了会红：

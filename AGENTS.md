@@ -59,6 +59,14 @@ openSCRT — C++20 + Qt 6 的 SecureCRT 对标终端。读代码前先读
   `replaceWidget` / `insertWidget`）；把窗格从 splitter 里拿掉是把槽位交还成
   `replaceWidget(index, nullptr)`。凭记忆写出来的 Qt 调用几乎必错，而本仓库本地不编译，
   一次写错就是一轮 CI。
+- **成员的类型名不进入作用域。** 窗口里有个 `credential::kdbx::KdbxVault` 成员，
+  写 `&KdbxVault::opened` 是不行的，要写全 `&credential::kdbx::KdbxVault::opened`。
+- **库把 Qt 链成 PRIVATE 时，用到 Qt 的测试要自己点名 Qt。** `openscrt_config` 的
+  PRIVATE 依赖不会传给测试，测试不会因此拿到 Qt 的 include 路径——症状是
+  `No such file or directory: 'QDir'`。
+- **一轮 CI 只报第一个错误。** ninja 在第一个失败处停下，别的目标根本没编，
+  所以**后面的错误藏在后面**。一次失败要把日志里**所有**编译错误修完再推；
+  同一批错误在三条腿上表现不同，先怀疑"谁先失败"，不是"平台不一样"。
 - **"工具报告成功"不等于"产物在预期位置"。** 下游找不到时，第一反应是 `ls -R <路径>`，
   顺序永远是：产物存在吗 → 路径对吗 → 工具怎么找。**跳过第一步是最大的浪费来源。**
 - **同一处失败连修两轮而症状不变 → 停止推理，进观测模式。** 加一行 `ls` / `printenv`
