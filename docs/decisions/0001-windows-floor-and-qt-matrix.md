@@ -42,7 +42,7 @@ C 的代价是：Windows 发布作业多一条腿 ✔、CI 的 Windows 腿要同
 | Qt 6.8 的地板 | **1709** | 同一个 run ✔；`Qt6Core.dll` 导入 `SetThreadDescription` ✔，真机 1607 不导出它 ✔ |
 | 代码是否用了 6.8 专有 API | **没有** ✔ | `QKeyCombination`、`QStringDecoder` 等都搜不到 ✔ |
 | 构建是否写死了 Qt 最低版本 | **没有** ✔ | `find_package(Qt6 REQUIRED COMPONENTS Core)` ✔ |
-| CI 是否能对着 6.7 跑 | **能** ✔ | run **#40206146819**：Windows 上用 Qt 6.7.3 完整构建并跑完单测（33 个测试二进制 100% 通过 ✔），同一轮量出 **Qt 6.7 包的导入地板 = build 14393 = 1607** ✔ |
+| CI 是否能对着 6.7 跑 | **能** ✔ | run **#40206146819**：Windows 上用 Qt 6.7.3 完整构建并跑完单测（33 个测试二进制 100% 通过 ✔），同一轮量出 **Qt 6.7 包的导入地板 = build 14393 = 1607** ✔。现在 **CI 的 Windows 腿每个 push 都是 6.7** ✔（run **#40206652403**：门禁报出 `package floor: Windows 10.0 build 14393`，整个包 —— exe、四个 Qt 库、vcpkg 的动态库 —— 全在 1607 ✔） |
 
 ## 剩下的
 
