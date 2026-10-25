@@ -420,6 +420,10 @@ jobs:
 
       # P0-A5: coverage report with an enforced floor. gcovr filters to the libraries that carry
       # unit tests and drops src/app (a non-test executable that would report a permanent 0%).
+      #
+      # The credential library is in the filter because Phase 2 put a whole layer there (the
+      # KDBX reader, the KeePassHTTP client, the system secret store). A report that leaves
+      # it out measures the code Phase 1 wrote and says nothing about the code Phase 2 wrote.
       - name: Coverage
         if: runner.os == 'Linux'
         shell: bash
@@ -428,12 +432,22 @@ jobs:
           GCOVR=$(command -v gcovr || echo "$HOME/.local/bin/gcovr")
           mkdir -p out/coverage
           "$GCOVR" --root . --filter 'src/core/' --filter 'src/terminal/' \
-                   --filter 'src/protocols/' --exclude 'src/app/' \
+                   --filter 'src/protocols/' --filter 'src/credential/' --exclude 'src/app/' \
                    --exclude-unreachable-branches --exclude-throw-branches \
                    --xml out/coverage/coverage.xml \
                    --html-details out/coverage/index.html \
                    --print-summary \
                    --fail-under-line 40
+
+          # The plan asks for the libraries to be counted on their own. gcovr prints one
+          # summary per run, so each library gets a run of its own. These numbers are
+          # printed, not gated: the gate above is the one the CI enforces.
+          for library in core terminal credential; do
+            echo "coverage of src/$library:"
+            "$GCOVR" --root . --filter "src/$library/" \
+                     --exclude-unreachable-branches --exclude-throw-branches \
+                     --print-summary
+          done
 
       - name: Upload coverage report
         if: runner.os == 'Linux'
