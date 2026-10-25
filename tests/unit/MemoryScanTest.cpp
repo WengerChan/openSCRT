@@ -77,6 +77,7 @@ ScanResult scanProcessMemoryFor(const std::uint8_t* needle, std::size_t needle_s
     std::vector<std::uint8_t> overlap(needle_size);
 
     std::string line;
+    std::size_t scanned = 0;
     while (std::getline(maps, line)) {
         // "7f...-7f... r--p 00000000 00:00 0 [heap]"
         const std::size_t dash = line.find('-');
@@ -99,6 +100,12 @@ ScanResult scanProcessMemoryFor(const std::uint8_t* needle, std::size_t needle_s
         if (permissions.find('r') == std::string::npos) {
             continue;
         }
+        // Only the writable memory is read. A plaintext that was written has to be in
+        // a mapping that can be written, and the libraries -- which are most of the
+        // address space -- are not.
+        if (permissions.find('w') == std::string::npos) {
+            continue;
+        }
 
         auto address = begin;
         while (address < end) {
@@ -108,6 +115,7 @@ ScanResult scanProcessMemoryFor(const std::uint8_t* needle, std::size_t needle_s
             if (got == 0) {
                 break;
             }
+            scanned += got;
             std::copy(overlap.begin(), overlap.end(), block.begin());
             const auto found = std::search(block.begin(), block.begin() + needle_size + got, needle,
                                            needle + needle_size);
@@ -130,6 +138,7 @@ ScanResult scanProcessMemoryFor(const std::uint8_t* needle, std::size_t needle_s
     std::fill(block.begin(), block.end(), 0);
     std::fill(overlap.begin(), overlap.end(), 0);
     ::close(memory);
+    std::fprintf(stderr, "scanned %zu bytes of writable memory\n", scanned);
     return ScanResult::kNotFound;
 }
 
