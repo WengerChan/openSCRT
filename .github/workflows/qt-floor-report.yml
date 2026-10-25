@@ -7,10 +7,12 @@ name: Qt floor report
 # answer is a measurement and not an opinion: the same script that gates our own binaries
 # reports the floor of a Qt that was never built here.
 #
-# This workflow runs on demand and weekly. It must never gate anything: the answer
-# decides what to do next, and a job that goes red would block every push until the
-# decision is made. Every job is continue-on-error for the same reason -- a Qt version
-# that aqt stops offering is a gap in the answer, not a failure of the project.
+# This workflow runs on demand and weekly. It cannot gate anything: it is a workflow of
+# its own, not a job of the main one, so a red run never blocks a push.
+#
+# It is allowed to be red, though. A Qt version that aqt stops offering is a hole in the
+# answer, and it has to look like a hole -- a run that is always green because its
+# failures are swallowed is not a report.
 
 on:
   workflow_dispatch:
@@ -27,8 +29,6 @@ jobs:
     name: Qt ${{ matrix.qt }} floor
     runs-on: windows-2022
     timeout-minutes: 30
-    # A Qt version that cannot be installed is a hole in the answer, not a red build.
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:

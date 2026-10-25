@@ -8,9 +8,10 @@ name: Qt 6.7 compatibility
 # 1607, and the code has to work with it. The measurement said the Qt exists; this
 # says whether the code does.
 #
-# It runs on demand and weekly, and it never gates a push: whether a 1607 package
-# should be shipped is still a product decision, and a red job here would only mean
-# "the option is closed for now", not "the project is broken".
+# It runs on demand and weekly. It never blocks a push -- it is a workflow of its own,
+# not a job of the main one -- but it is allowed to be red: a red run here means "the
+# code no longer builds against a 1607 Qt", and that is information the decision needs.
+# A run that is always green because its failures are swallowed is not a report.
 
 on:
   workflow_dispatch:
@@ -21,13 +22,23 @@ on:
 permissions:
   contents: read
 
+env:
+  # The same places the main CI puts them: vcpkg lives outside the tracked source tree,
+  # and the installed tree has to be exactly $VCPKG_ROOT_DIR/vcpkg_installed, because that
+  # is where vcpkg puts it in classic mode and CMake is pointed there.
+  VCPKG_ROOT_DIR: ${{ github.workspace }}/.cache/vcpkg
+  VCPKG_INSTALLED_DIR: ${{ github.workspace }}/.cache/vcpkg/vcpkg_installed
+  VCPKG_BINARY_CACHE: ${{ github.workspace }}/.cache/vcpkg/binary
+
 jobs:
   build:
     name: build and test against Qt 6.7
     runs-on: windows-2022
     timeout-minutes: 60
-    # A failure here means the 1607 option closed, not that the project broke.
-    continue-on-error: true
+    # No continue-on-error here. A red run of this workflow means "the code no longer
+    # builds against a 1607 Qt", which is information -- and a report that is always
+    # green because its failures are swallowed is not a report. It still cannot block a
+    # push: this is a workflow of its own, not a job of the main one.
     env:
       VCPKG_TARGET_TRIPLET: x64-windows
     steps:
