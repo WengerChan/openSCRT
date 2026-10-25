@@ -517,8 +517,28 @@ TransportResult LocalPtyChannel::disconnect() {
     }
     stopReader();
     if (platform_->child > 0) {
+        // The child has to be reaped, but it does not have to die quickly: a shell that
+        // ignores the hangup keeps waitpid waiting forever, and this wait happens on the
+        // thread that draws the window. So the wait has a deadline, and the child is
+        // killed when it is still there.
+        //
+        // The pid cannot have been reused: a child that was not reaped is a zombie, and
+        // the kernel does not hand a zombie's pid to anybody else.
         int status = 0;
-        waitpid(platform_->child, &status, 0);
+        bool reaped = false;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (std::chrono::steady_clock::now() < deadline) {
+            const pid_t result = ::waitpid(platform_->child, &status, WNOHANG);
+            if (result == platform_->child || result < 0) {
+                reaped = true;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        if (!reaped) {
+            ::kill(platform_->child, SIGKILL);
+            ::waitpid(platform_->child, &status, 0);
+        }
         platform_->child = -1;
     }
 #endif
