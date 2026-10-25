@@ -120,6 +120,17 @@ openscrt_add_test(unit_command_window
 set_tests_properties(unit_command_window PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+# The same broadcast, but against twenty real SSH servers (P2-A6). The test above proves
+# the dispatch order with twenty stand-ins; this one proves that twenty concurrent
+# sessions really get the command and really run it. It needs the transport layer, and it
+# skips itself where there is no server to talk to.
+openscrt_add_test(unit_command_window_broadcast_ssh
+    LABEL unit
+    SOURCES unit/CommandWindowBroadcastSshTest.cpp
+    LIBS openscrt_ui openscrt_protocols Qt6::Gui Qt6::Widgets)
+set_tests_properties(unit_command_window_broadcast_ssh PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # The split workspace (P2-T10): panes, tiles, and the order the sessions keep.
 openscrt_add_test(unit_workspace_panes
     LABEL unit
