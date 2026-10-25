@@ -356,6 +356,21 @@ jobs:
           out/build/linux-ci/bin/unit_secure_byte_array \
             --gtest_filter='*TheDestructorGivesTheLockedPagesBack*'
 
+      # The secret store of the system (P2-T8): it writes a secret, reads it back and
+      # removes it.
+      #
+      # ctest hides the output of a passing test, so this one runs with -V: the log has
+      # to show what the store of this platform answered. A keychain in a runner without
+      # a desktop may refuse to be talked to, and the case then skips and says so --
+      # which is the honest outcome, and the difference between "passed" and "proved".
+      # Linux has no store wired up yet, so the case skips there by design.
+      - name: The secret store of the system
+        if: runner.os != 'Linux'
+        shell: bash
+        run: >
+          ctest --test-dir out/build/${{ matrix.preset }} -C Release
+          -R unit_secret_store -V --output-on-failure --timeout 600
+
       # The connect dialog against a real server is the part of P1-A7 that CI can judge:
       # the dialog's fields go through the window, into a transport, and the output has
       # to land on the screen. It runs the case by name so the log shows what was proven
