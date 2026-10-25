@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -127,11 +128,15 @@ std::vector<Region> readableRegions() {
     mach_vm_address_t address = 0;
     for (;;) {
         mach_vm_size_t size = 0;
-        vm_region_basic_info_data_64_t info;
+        vm_region_basic_info_data_64_t info{};
         mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
         const kern_return_t status =
             mach_vm_region(mach_task_self(), &address, &size, VM_REGION_BASIC_INFO_64,
                            reinterpret_cast<vm_region_info_t>(&info), &count, nullptr);
+        std::fprintf(stderr, "probe walk: status=%d addr=%llx size=%llu prot=%d count=%u\n",
+                     static_cast<int>(status), static_cast<unsigned long long>(address),
+                     static_cast<unsigned long long>(size), static_cast<int>(info.protection),
+                     static_cast<unsigned int>(count));
         if (status != KERN_SUCCESS) {
             break;
         }
@@ -152,9 +157,13 @@ std::vector<Region> readableRegions() {
 
 std::size_t readMemoryAt(std::uintptr_t address, std::size_t size, std::uint8_t* out) {
     mach_vm_size_t copied = 0;
+    std::fprintf(stderr, "probe read: addr=%llx size=%zu dst=%p\n",
+                 static_cast<unsigned long long>(address), size, static_cast<void*>(out));
     const kern_return_t status = mach_vm_read_overwrite(
         mach_task_self(), static_cast<mach_vm_address_t>(address),
         static_cast<mach_vm_size_t>(size), reinterpret_cast<mach_vm_address_t>(out), &copied);
+    std::fprintf(stderr, "probe read: status=%d copied=%llu\n", static_cast<int>(status),
+                 static_cast<unsigned long long>(copied));
     if (status != KERN_SUCCESS) {
         return 0;
     }
