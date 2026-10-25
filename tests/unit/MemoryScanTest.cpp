@@ -118,7 +118,7 @@ std::vector<Region> readableRegions() {
         mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
         const kern_return_t status =
             mach_vm_region(mach_task_self(), &address, &size, VM_REGION_BASIC_INFO_64,
-                           reinterpret_cast<vm_region_info_t>(info), &count, nullptr);
+                           reinterpret_cast<vm_region_info_t>(&info), &count, nullptr);
         if (status != KERN_SUCCESS) {
             break;
         }
