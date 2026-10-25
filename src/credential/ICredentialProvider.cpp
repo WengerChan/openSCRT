@@ -28,6 +28,8 @@ const char* toString(CredentialSource source) noexcept {
             return "keepass-uuid";
         case CredentialSource::kKeePassAutoMatch:
             return "keepass-auto-match";
+        case CredentialSource::kKeePassHttp:
+            return "keepass-http";
     }
     return "session-saved";
 }
@@ -44,6 +46,9 @@ std::optional<CredentialSource> credentialSourceFromString(std::string_view text
     }
     if (text == "keepass-auto-match") {
         return CredentialSource::kKeePassAutoMatch;
+    }
+    if (text == "keepass-http") {
+        return CredentialSource::kKeePassHttp;
     }
     return std::nullopt;
 }

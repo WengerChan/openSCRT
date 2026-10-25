@@ -12,12 +12,15 @@
 
 #include <QMainWindow>
 #include <QString>
+#include <memory>
 #include <optional>
 #include <string>
 
 #include "config/SessionProfile.h"
 #include "core/SecureByteArray.h"
+#include "credential/SecretStore.h"
 #include "credential/kdbx/KdbxVault.h"
+#include "credential/keepasshttp/KeePassHttpProvider.h"
 
 class QCloseEvent;
 class QLabel;
@@ -68,6 +71,10 @@ class MainWindow : public QMainWindow {
 
     // Imports the sessions of a SecureCRT Sessions folder into the session tree.
     void importSecureCrtSessions();
+
+    // Pairs this program with a running KeePass over the KeePassHTTP protocol. The
+    // plugin asks the user to confirm, in KeePass itself.
+    void pairWithKeePass();
 
     [[nodiscard]] WorkspacePanes* workspace() const noexcept { return workspace_; }
     [[nodiscard]] ButtonBar* buttonBar() const noexcept { return button_bar_; }
@@ -122,6 +129,12 @@ class MainWindow : public QMainWindow {
     // The KeePass database the sessions take their credentials from. It holds the
     // master key while it is open and nothing once it is locked.
     credential::kdbx::KdbxVault vault_;
+    // The other half of the dual mode: a running KeePass, asked over the KeePassHTTP
+    // protocol. It is null until the program is paired with one.
+    std::unique_ptr<credential::keepasshttp::KeePassHttpProvider> http_provider_;
+    // Where the pairing is kept. It holds a key, so it goes into the store of the
+    // system and not into a file of ours.
+    std::unique_ptr<credential::ISecretStore> secret_store_;
     SessionManagerWidget* session_manager_{nullptr};
     QListWidget* active_sessions_{nullptr};
     QLabel* status_label_{nullptr};

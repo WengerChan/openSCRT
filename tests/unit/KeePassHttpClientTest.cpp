@@ -20,9 +20,12 @@
 #include <string>
 #include <vector>
 
+#include "core/SecureByteArray.h"
+#include "credential/ICredentialProvider.h"
 #include "credential/keepasshttp/HttpTransport.h"
 #include "credential/keepasshttp/KeePassHttpClient.h"
 #include "credential/keepasshttp/KeePassHttpCrypto.h"
+#include "credential/keepasshttp/KeePassHttpProvider.h"
 
 namespace openscrt::credential::keepasshttp {
 namespace {
@@ -214,6 +217,42 @@ TEST_F(KeePassHttpFixture, TheEntriesComeBackDecrypted) {
     EXPECT_EQ(entries.front().password, "s3cret");
     ASSERT_EQ(entries.front().string_fields.size(), 1u);
     EXPECT_EQ(entries.front().string_fields.front().second, "the value");
+}
+
+TEST_F(KeePassHttpFixture, TheProviderAnswersWithThePasswordOfTheEntry) {
+    // The provider is the other half of the dual mode: the session layer above it asks
+    // for a credential and never learns where it came from.
+    Association association;
+    std::string error;
+    ASSERT_TRUE(client_->associate(association, error)) << error;
+
+    KeePassHttpProvider provider(transport_, association);
+    EXPECT_TRUE(provider.isAvailable());
+
+    CredentialRequest request;
+    request.host = "10.20.30.40";
+    request.port = 22;
+    const CredentialResult result = provider.lookup(request);
+    ASSERT_EQ(result.status, CredentialStatus::kFound);
+    EXPECT_EQ(result.entry.login, "netops");
+
+    // The password comes out in a locked buffer, and the result gives it up.
+    core::SecureByteArray secret;
+    ASSERT_TRUE(takeSecret(result, secret));
+    char plain[16] = {};
+    EXPECT_EQ(secret.copyOut(plain, sizeof(plain)), 6u);
+    EXPECT_STREQ(plain, "s3cret");
+}
+
+TEST_F(KeePassHttpFixture, AProviderWithoutAPairingSaysSo) {
+    KeePassHttpProvider provider(transport_, Association{});
+    EXPECT_FALSE(provider.isAvailable());
+
+    CredentialRequest request;
+    request.host = "10.20.30.40";
+    const CredentialResult result = provider.lookup(request);
+    EXPECT_EQ(result.status, CredentialStatus::kUnavailable);
+    EXPECT_FALSE(result.message.empty()) << "a refusal has to say why";
 }
 
 TEST_F(KeePassHttpFixture, APluginThatIsNotThereIsReported) {

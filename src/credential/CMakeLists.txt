@@ -43,6 +43,7 @@ add_library(openscrt_credential STATIC
     keepasshttp/KeePassHttpAssociation.cpp
     keepasshttp/KeePassHttpClient.cpp
     keepasshttp/KeePassHttpCrypto.cpp
+    keepasshttp/KeePassHttpProvider.cpp
     keepasshttp/HttpTransport.cpp)
 
 target_include_directories(openscrt_credential PUBLIC ${PROJECT_SOURCE_DIR}/src)

@@ -30,6 +30,9 @@
 #include "config/importers/SecureCrtConfigImporter.h"
 #include "core/BuildInfo.h"
 #include "credential/kdbx/KdbxCredentialResolver.h"
+#include "credential/keepasshttp/HttpTransport.h"
+#include "credential/keepasshttp/KeePassHttpAssociation.h"
+#include "credential/keepasshttp/KeePassHttpClient.h"
 #include "protocols/ITransportChannel.h"
 #include "ui/workspace/ButtonBar.h"
 #include "ui/workspace/CommandWindow.h"
@@ -84,6 +87,17 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     buildDocks();
     buildMenus();
     buildStatusBar();
+
+    // The store of the system, and the pairing that may be in it from a previous run.
+    secret_store_ = credential::systemSecretStore();
+    if (secret_store_ != nullptr) {
+        credential::keepasshttp::Association association;
+        std::string error;
+        if (credential::keepasshttp::loadAssociation(*secret_store_, association, error)) {
+            http_provider_ = std::make_unique<credential::keepasshttp::KeePassHttpProvider>(
+                std::make_shared<credential::keepasshttp::QtHttpTransport>(), association);
+        }
+    }
 
     connect(workspace_, &WorkspacePanes::sessionOpened, this,
             [this](const QString&, const QString& title) {
@@ -197,6 +211,7 @@ void MainWindow::buildMenus() {
 
     QMenu* tools_menu = menuBar()->addMenu(tr("Tools"));
     tools_menu->addAction(tr("Open KeePass Database..."), this, &MainWindow::openCredentialStore);
+    tools_menu->addAction(tr("Pair with KeePass..."), this, &MainWindow::pairWithKeePass);
     tools_menu->addAction(tr("Bind Session to KeePass Entry..."), this,
                           [this]() { chooseKeePassEntry(); });
 
@@ -323,6 +338,33 @@ void MainWindow::importSecureCrtSessions() {
     }
 }
 
+void MainWindow::pairWithKeePass() {
+    // The plugin listens on the loopback and asks the user to confirm in KeePass
+    // itself, so this call waits for a human -- but only for the confirmation.
+    auto transport = std::make_shared<credential::keepasshttp::QtHttpTransport>();
+    credential::keepasshttp::KeePassHttpClient client(transport);
+
+    credential::keepasshttp::Association association;
+    std::string error;
+    if (!client.associate(association, error)) {
+        QMessageBox::warning(this, tr("KeePass"), QString::fromStdString(error));
+        return;
+    }
+
+    // The association holds the key of the session with the plugin, so it goes into the
+    // store of the system. A platform without one keeps it in memory, and the next
+    // start asks again.
+    if (secret_store_ != nullptr) {
+        if (!credential::keepasshttp::saveAssociation(*secret_store_, association, error)) {
+            QMessageBox::warning(this, tr("KeePass"), QString::fromStdString(error));
+            return;
+        }
+    }
+    http_provider_ =
+        std::make_unique<credential::keepasshttp::KeePassHttpProvider>(transport, association);
+    setStatus(tr("Paired with KeePass"));
+}
+
 void MainWindow::openCredentialStore() {
     const QString path =
         QFileDialog::getOpenFileName(this, tr("Open KeePass Database"), QString(),
@@ -391,6 +433,29 @@ std::optional<core::SecureByteArray> MainWindow::credentialFor(
     std::optional<core::SecureByteArray> password{core::SecureByteArray{}};
     if (!profile.credential_source) {
         // The session asks the server itself.
+        return password;
+    }
+    if (*profile.credential_source == "keepass-http") {
+        // The other half of the dual mode: a running KeePass, asked over the
+        // KeePassHTTP protocol. The plugin matches the entries against the host.
+        if (http_provider_ == nullptr || !http_provider_->isAvailable()) {
+            error = "this program is not paired with a running KeePass yet";
+            return std::nullopt;
+        }
+        credential::CredentialRequest request;
+        request.host = profile.host.value_or(std::string());
+        request.port = profile.port.value_or(22);
+        request.user = profile.user.value_or(std::string());
+        credential::CredentialResult result = http_provider_->lookup(request);
+        if (result.status != credential::CredentialStatus::kFound) {
+            error = result.message.empty() ? "KeePass has no password for that session"
+                                           : result.message;
+            return std::nullopt;
+        }
+        if (!credential::takeSecret(result, password)) {
+            error = "KeePass has no password for that session";
+            return std::nullopt;
+        }
         return password;
     }
     KdbxBinding binding;

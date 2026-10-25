@@ -55,6 +55,7 @@ enum class CredentialSource : std::uint8_t {
     kPromptEveryTime,   // ask the user at connect time
     kKeePassUuid,       // a KeePass entry bound by UUID
     kKeePassAutoMatch,  // a KeePass entry matched by host / title
+    kKeePassHttp,       // a running KeePass, asked over the KeePassHTTP protocol
 };
 
 [[nodiscard]] const char* toString(CredentialSource source) noexcept;
