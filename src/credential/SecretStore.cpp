@@ -3,8 +3,10 @@
 #include <algorithm>
 
 #if defined(_WIN32)
-#include <wincred.h>
 #include <windows.h>
+// The comment between the two keeps clang-format from putting them in the wrong order:
+// wincred.h uses the types of windows.h and does not include it itself.
+#include <wincred.h>
 #elif defined(__APPLE__)
 #include <CoreFoundation/CoreFoundation.h>
 #include <Security/Security.h>
