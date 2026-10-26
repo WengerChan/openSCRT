@@ -186,5 +186,44 @@ TEST(SecureByteArrayTest, TheDestructorGivesTheLockedPagesBack) {
 }
 #endif
 
+// The edges of the container that the other tests do not reach: a buffer that is asked
+// to hold nothing, and a copy-out into a place that does not exist.
+TEST(SecureByteArrayTest, ABufferOfAGivenSizeIsUsable) {
+    SecureByteArray buffer(16);
+    EXPECT_EQ(buffer.size(), 16u);
+    EXPECT_FALSE(buffer.empty());
+}
+
+TEST(SecureByteArrayTest, AssigningNothingWipesTheBuffer) {
+    SecureByteArray buffer;
+    buffer.assign("something", 9);
+    ASSERT_EQ(buffer.size(), 9u);
+
+    buffer.assign(nullptr, 4);
+
+    EXPECT_EQ(buffer.size(), 0u) << "assigning nothing must not leave the old bytes";
+}
+
+TEST(SecureByteArrayTest, WithCStringOfAnEmptyBufferIsRefused) {
+    SecureByteArray buffer;
+    bool called = false;
+    const bool result = buffer.withCString([&called](const char*) {
+        called = true;
+        return true;
+    });
+    EXPECT_FALSE(result) << "an empty buffer has no string to hand over";
+    EXPECT_FALSE(called) << "the action must not run for an empty buffer";
+}
+
+TEST(SecureByteArrayTest, CopyingOutIntoNothingCopiesNothing) {
+    SecureByteArray buffer;
+    buffer.assign("something", 9);
+
+    std::uint8_t destination[4] = {1, 2, 3, 4};
+    EXPECT_EQ(buffer.copyOut(nullptr, 4), 0u);
+    EXPECT_EQ(buffer.copyOut(destination, 0), 0u);
+    EXPECT_EQ(destination[0], 1u) << "nothing was written";
+}
+
 }  // namespace
 }  // namespace openscrt::core

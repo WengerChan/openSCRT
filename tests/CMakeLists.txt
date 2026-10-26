@@ -146,6 +146,13 @@ openscrt_add_test(unit_terminal_paths
     SOURCES unit/TerminalPathsTest.cpp
     LIBS openscrt_terminal)
 
+# The logic under the credential library: the base64 the protocol is built on, the way a
+# binding is resolved against an index, and the names the modules answer with.
+openscrt_add_test(unit_credential_logic_paths
+    LABEL unit
+    SOURCES unit/CredentialLogicPathsTest.cpp
+    LIBS openscrt_credential openscrt_core openscrt_terminal openscrt_protocols)
+
 # The paths of the credential library that the other tests do not walk: a key derivation
 # function this build does not have, a payload that is not GZip, a stream id from a
 # KeePass version this build does not support.
