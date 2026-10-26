@@ -85,10 +85,13 @@ add_library(openscrt_protocols STATIC
     serial/SerialPortSettings.cpp
     serial/SerialSettings.cpp
     ssh/Ssh2Channel.cpp
-    ssh/SshComKey.cpp)
+    ssh/SshComKey.cpp
+    telnet/SocketChannel.cpp
+    telnet/TelnetCodec.cpp)
 
 target_include_directories(openscrt_protocols PUBLIC ${PROJECT_SOURCE_DIR}/src)
 
 target_link_libraries(openscrt_protocols
     PUBLIC openscrt_warnings
-    PRIVATE openscrt_core openscrt_terminal openscrt_ssh OpenSSL::Crypto Qt6::SerialPort)
+    PRIVATE openscrt_core openscrt_terminal openscrt_ssh OpenSSL::Crypto Qt6::SerialPort
+            Qt6::Network)

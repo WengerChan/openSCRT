@@ -15,6 +15,10 @@ const char* toString(Protocol protocol) noexcept {
             return "Serial";
         case Protocol::kLocalShell:
             return "Local";
+        case Protocol::kRawTcp:
+            return "RawTcp";
+        case Protocol::kRlogin:
+            return "Rlogin";
     }
     return "SSH2";
 }
@@ -31,6 +35,12 @@ std::optional<Protocol> protocolFromString(const std::string& text) {
     }
     if (text == "Local") {
         return Protocol::kLocalShell;
+    }
+    if (text == "RawTcp") {
+        return Protocol::kRawTcp;
+    }
+    if (text == "Rlogin") {
+        return Protocol::kRlogin;
     }
     return std::nullopt;
 }

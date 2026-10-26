@@ -259,6 +259,24 @@ openscrt_add_test(unit_local_pty_channel
     SOURCES unit/LocalPtyChannelTest.cpp
     LIBS openscrt_protocols)
 
+# The Telnet state machine (P3-T3). It is pure logic over bytes, so it needs no
+# server and no display.
+openscrt_add_test(unit_telnet_codec
+    LABEL unit
+    SOURCES unit/TelnetCodecTest.cpp
+    LIBS openscrt_protocols)
+
+# The socket transports against a real server (P3-T3). This target brings its own
+# main() because a socket wants an application object around it, and
+# openscrt_add_test links gtest_main, which already has one.
+add_executable(unit_socket_channel unit/SocketChannelTest.cpp)
+target_include_directories(unit_socket_channel PRIVATE ${PROJECT_SOURCE_DIR}/src
+                                                        ${PROJECT_SOURCE_DIR}/tests)
+target_link_libraries(unit_socket_channel PRIVATE GTest::gtest openscrt_protocols
+                                                  openscrt_warnings Qt6::Core Qt6::Network)
+add_test(NAME unit_socket_channel COMMAND unit_socket_channel)
+set_tests_properties(unit_socket_channel PROPERTIES LABELS "unit" TIMEOUT 600)
+
 # The serial channel and the parameter matrix P3-A2 names (P3-T1).
 #
 # This target brings its own main() because QSerialPort wants an application object

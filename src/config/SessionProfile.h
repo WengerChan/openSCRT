@@ -24,6 +24,9 @@ enum class Protocol : std::uint8_t {
     kTelnet,
     kSerial,
     kLocalShell,
+    // A socket with no protocol on it, and the trusted-host rlogin.
+    kRawTcp,
+    kRlogin,
 };
 
 const char* toString(Protocol protocol) noexcept;

@@ -8,6 +8,7 @@
 #include "protocols/serial/SerialChannel.h"
 #include "protocols/serial/SerialSettings.h"
 #include "protocols/ssh/Ssh2Channel.h"
+#include "protocols/telnet/SocketChannel.h"
 #include "ui/workspace/TerminalCanvasWidget.h"
 
 namespace openscrt::ui {
@@ -51,8 +52,21 @@ std::shared_ptr<protocols::ITransportChannel> makeChannel(const config::SessionP
             return std::make_shared<protocols::ssh::Ssh2Channel>(std::move(options));
         }
         case config::Protocol::kTelnet:
-            error = "Telnet is not implemented yet (it arrives with the Telnet phase)";
-            return nullptr;
+        case config::Protocol::kRawTcp:
+        case config::Protocol::kRlogin: {
+            protocols::telnet::TcpOptions options;
+            options.host = profile.host.value_or("");
+            options.port = profile.port.value_or(23);
+            options.user = profile.user.value_or("");
+            options.initial_size = protocols::WindowSize{24, 80};
+            if (protocol == config::Protocol::kTelnet) {
+                return std::make_shared<protocols::telnet::TelnetChannel>(std::move(options));
+            }
+            if (protocol == config::Protocol::kRlogin) {
+                return std::make_shared<protocols::telnet::RloginChannel>(std::move(options));
+            }
+            return std::make_shared<protocols::telnet::RawTcpChannel>(std::move(options));
+        }
         case config::Protocol::kSerial: {
             protocols::serial::SerialSettings settings;
             settings.port_name = profile.serial_port.value_or("");
