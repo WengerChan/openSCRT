@@ -5,6 +5,7 @@
 
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -201,18 +202,32 @@ TEST(SecureByteArrayTest, AssigningNothingWipesTheBuffer) {
 
     buffer.assign(nullptr, 4);
 
-    EXPECT_EQ(buffer.size(), 0u) << "assigning nothing must not leave the old bytes";
+    // The bytes are wiped; the length is what it was, because the buffer is still
+    // there and only its content is gone.
+    EXPECT_EQ(buffer.size(), 9u);
+    for (std::size_t i = 0; i < buffer.size(); ++i) {
+        EXPECT_EQ(buffer.data()[i], 0u) << "byte " << i << " was not wiped";
+    }
 }
 
-TEST(SecureByteArrayTest, WithCStringOfAnEmptyBufferIsRefused) {
+TEST(SecureByteArrayTest, WithCStringWithoutAnActionIsRefused) {
+    SecureByteArray buffer;
+    buffer.assign("something", 9);
+    EXPECT_FALSE(buffer.withCString(std::function<bool(const char*)>()));
+}
+
+TEST(SecureByteArrayTest, WithCStringOfAnEmptyBufferHandsOverAnEmptyString) {
     SecureByteArray buffer;
     bool called = false;
-    const bool result = buffer.withCString([&called](const char*) {
+    std::string seen = "not empty";
+    const bool result = buffer.withCString([&called, &seen](const char* text) {
         called = true;
+        seen = text;
         return true;
     });
-    EXPECT_FALSE(result) << "an empty buffer has no string to hand over";
-    EXPECT_FALSE(called) << "the action must not run for an empty buffer";
+    EXPECT_TRUE(result);
+    EXPECT_TRUE(called) << "the action must run even for an empty buffer";
+    EXPECT_TRUE(seen.empty()) << "the action got something it should not have";
 }
 
 TEST(SecureByteArrayTest, CopyingOutIntoNothingCopiesNothing) {

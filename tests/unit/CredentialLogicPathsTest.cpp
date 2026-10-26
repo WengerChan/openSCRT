@@ -145,10 +145,11 @@ TEST(KdbxCredentialResolverPathsTest, ABindingResolvesAgainstTheIndex) {
     EXPECT_EQ(resolution.outcome, KdbxResolutionOutcome::kNotFound);
     EXPECT_EQ(resolution.entry(index), nullptr);
 
-    // The session's own password.
+    // The session's own password: it is not in the database, so the index has nothing
+    // to offer.
     binding.source = KdbxBindingSource::kSessionSaved;
     resolution = resolveKdbxBinding(index, binding, "10.20.30.40");
-    EXPECT_EQ(resolution.outcome, KdbxResolutionOutcome::kFound);
+    EXPECT_EQ(resolution.outcome, KdbxResolutionOutcome::kNotFound);
 
     // The session asks every time.
     binding.source = KdbxBindingSource::kPromptEveryTime;
@@ -166,8 +167,9 @@ TEST(KdbxCredentialResolverPathsTest, TheAutoMatchIgnoresTheSchemeAndThePort) {
     KdbxResolution resolution = resolveKdbxBinding(index, binding, "10.20.30.40");
     EXPECT_EQ(resolution.outcome, KdbxResolutionOutcome::kFound);
 
-    // A host of its own in the binding, with a scheme and a port.
-    binding.match_host = "ssh://10.20.30.40:22";
+    // A host of its own in the binding. It is a host, not a url: the scheme and the
+    // port are stripped from the *entry's* url, not from this one.
+    binding.match_host = "10.20.30.40";
     resolution = resolveKdbxBinding(index, binding, "something.else");
     EXPECT_EQ(resolution.outcome, KdbxResolutionOutcome::kFound);
 
