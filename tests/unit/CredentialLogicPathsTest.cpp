@@ -94,6 +94,7 @@ TEST(KeePassHttpCryptoPathsTest, AFieldWithTheWrongKeyOrNonceIsRefused) {
     EXPECT_FALSE(out.empty());
 }
 
+}  // namespace
 }  // namespace openscrt::credential::keepasshttp
 
 namespace openscrt::credential::kdbx {
