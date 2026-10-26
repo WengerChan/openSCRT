@@ -216,7 +216,9 @@ TEST(TerminalEmulatorPathsTest, TheResetSequencePutsTheScreenBack) {
     emulator.write("hello");
     emulator.write("\x1b[31m");  // red
 
-    emulator.write("\x1bc");
+    emulator.write(
+        "\x1b"
+        "c");
 
     EXPECT_EQ(grid.at(0, 0).codepoint, 0u) << "the reset did not clear the screen";
     EXPECT_FALSE(emulator.style().hasAttribute(cellattr::kInverse));
@@ -300,11 +302,15 @@ TEST(TerminalEmulatorPathsTest, CursorNextLineAndPreviousLine) {
     ASSERT_EQ(grid.cursorRow(), 2);
     ASSERT_EQ(grid.cursorColumn(), 4);
 
-    emulator.write("\x1bE");  // CNL: down one line, column zero
+    emulator.write(
+        "\x1b"
+        "E");  // CNL: down one line, column zero
     EXPECT_EQ(grid.cursorRow(), 3);
     EXPECT_EQ(grid.cursorColumn(), 0);
 
-    emulator.write("\x1bF");  // CPL: up one line, column zero
+    emulator.write(
+        "\x1b"
+        "F");  // CPL: up one line, column zero
     EXPECT_EQ(grid.cursorRow(), 2);
     EXPECT_EQ(grid.cursorColumn(), 0);
 }
