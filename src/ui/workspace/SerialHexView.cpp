@@ -40,12 +40,12 @@ SerialHexView::SerialHexView(std::size_t capacity, QWidget* parent)
 
 SerialHexView::~SerialHexView() = default;
 
-void SerialHexView::append(const std::uint8_t* data, std::size_t size) {
-    if (data == nullptr || size == 0) {
+void SerialHexView::append(const std::uint8_t* payload, std::size_t size) {
+    if (payload == nullptr || size == 0) {
         return;
     }
     for (std::size_t index = 0; index < size; ++index) {
-        bytes_.push_back(data[index]);
+        bytes_.push_back(payload[index]);
     }
     // The oldest bytes fall out of the window. The deque is trimmed from the front,
     // which is where it is cheap.

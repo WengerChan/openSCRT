@@ -36,7 +36,7 @@ class SerialHexView : public QWidget {
 
     // Adds bytes to the window. The oldest bytes fall out of it once the window is
     // full.
-    void append(const std::uint8_t* data, std::size_t size);
+    void append(const std::uint8_t* payload, std::size_t size);
     void append(std::string_view text);
 
     void clear();
