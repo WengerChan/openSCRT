@@ -157,6 +157,44 @@ TEST(KdbxCredentialResolverPathsTest, ABindingResolvesAgainstTheIndex) {
     EXPECT_EQ(resolution.outcome, KdbxResolutionOutcome::kNeedsPrompt);
 }
 
+TEST(KdbxCredentialResolverPathsTest, TheAutoMatchAlsoMatchesANameThatEndsWithTheHost) {
+    // "router.example" and "router.example.local" are the same machine as far as a
+    // password is concerned.
+    KdbxIndex index;
+    KdbxEntry entry;
+    entry.uuid = "ZW50cnk=";
+    entry.url = "ssh://router.example.local:22";
+    index.entries.push_back(entry);
+
+    KdbxBinding binding;
+    binding.source = KdbxBindingSource::kKeePassAutoMatch;
+
+    KdbxResolution resolution = resolveKdbxBinding(index, binding, "router.example");
+    EXPECT_EQ(resolution.outcome, KdbxResolutionOutcome::kFound);
+
+    // The other way round: the session's host is the longer one.
+    resolution = resolveKdbxBinding(index, binding, "router.example.local");
+    EXPECT_EQ(resolution.outcome, KdbxResolutionOutcome::kFound);
+
+    // A host that is not the same machine at all.
+    resolution = resolveKdbxBinding(index, binding, "somewhere.else");
+    EXPECT_EQ(resolution.outcome, KdbxResolutionOutcome::kNotFound);
+}
+
+TEST(KdbxCredentialResolverPathsTest, TheAutoMatchIgnoresThePathOfTheUrl) {
+    KdbxIndex index;
+    KdbxEntry entry;
+    entry.uuid = "ZW50cnk=";
+    entry.url = "ssh://10.20.30.40:22/some/path";
+    index.entries.push_back(entry);
+
+    KdbxBinding binding;
+    binding.source = KdbxBindingSource::kKeePassAutoMatch;
+
+    const KdbxResolution resolution = resolveKdbxBinding(index, binding, "10.20.30.40");
+    EXPECT_EQ(resolution.outcome, KdbxResolutionOutcome::kFound);
+}
+
 TEST(KdbxCredentialResolverPathsTest, TheAutoMatchIgnoresTheSchemeAndThePort) {
     const KdbxIndex index = indexWithOneEntry();
 

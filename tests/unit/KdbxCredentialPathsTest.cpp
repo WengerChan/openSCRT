@@ -288,6 +288,99 @@ TEST(KdbxXmlIndexPathsTest, AProtectedPasswordIsDecodedBeforeItIsRevealed) {
     EXPECT_EQ(std::string(reinterpret_cast<const char*>(out.data()), out.size()), "secret");
 }
 
+TEST(KdbxXmlIndexPathsTest, AProtectedPasswordWithPaddingIsDecoded) {
+    // The padding is what tells the length apart, and a decoder that drops the wrong
+    // number of bytes turns one byte into three.
+    const std::vector<std::string> encoded = {"YQ==", "YWI=", "YWJj"};
+    for (const std::string& text : encoded) {
+        KdbxEntry entry;
+        entry.password = text;
+        entry.password_is_protected = true;
+        const std::uint8_t key[] = {1, 2, 3, 4};
+        KdbxProtectedStream stream(0, key, sizeof(key));
+
+        core::SecureByteArray out;
+        std::string error;
+        ASSERT_TRUE(revealKdbxPassword(entry, stream, out, error)) << error;
+        EXPECT_FALSE(out.empty()) << text;
+    }
+}
+
+TEST(KdbxXmlIndexPathsTest, AFieldWithoutAValueIsSkipped) {
+    const std::string_view xml = R"(<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<KeePassFile>
+  <Root>
+    <Group>
+      <UUID>cm9vdA==</UUID>
+      <Name>Root</Name>
+      <Entries>
+        <Entry>
+          <UUID>ZW50cnk=</UUID>
+          <String><Key>Title</Key></String>
+          <String><Key>Password</Key><Value>c2VjcmV0</Value></String>
+        </Entry>
+      </Entries>
+    </Group>
+  </Root>
+</KeePassFile>)";
+    const auto* data = reinterpret_cast<const std::uint8_t*>(xml.data());
+    const KdbxIndexResult result = indexKdbxXml(data, xml.size());
+    ASSERT_TRUE(result.ok()) << result.error;
+    ASSERT_EQ(result.index.entries.size(), 1u);
+    // The field without a value is skipped; the one with a value is there.
+    EXPECT_TRUE(result.index.entries.front().title.empty());
+    EXPECT_EQ(result.index.entries.front().password, "c2VjcmV0");
+}
+
+TEST(KdbxXmlIndexPathsTest, AGroupInsideAGroupKeepsThePath) {
+    const std::string_view xml = R"(<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<KeePassFile>
+  <Root>
+    <Group>
+      <UUID>cm9vdA==</UUID>
+      <Name>Root</Name>
+      <Group>
+        <UUID>c3Vi</UUID>
+        <Name>Sub</Name>
+        <Entries>
+          <Entry>
+            <UUID>ZW50cnk=</UUID>
+            <String><Key>Title</Key><Value>A login</Value></String>
+          </Entry>
+        </Entries>
+      </Group>
+    </Group>
+  </Root>
+</KeePassFile>)";
+    const auto* data = reinterpret_cast<const std::uint8_t*>(xml.data());
+    const KdbxIndexResult result = indexKdbxXml(data, xml.size());
+    ASSERT_TRUE(result.ok()) << result.error;
+    ASSERT_EQ(result.index.entries.size(), 1u);
+    EXPECT_EQ(result.index.entries.front().group_path, "Root/Sub");
+}
+
+TEST(KdbxXmlIndexPathsTest, AnXmlThatIsNotXmlIsRefused) {
+    const std::string_view xml = "<";
+    const auto* data = reinterpret_cast<const std::uint8_t*>(xml.data());
+    const KdbxIndexResult result = indexKdbxXml(data, xml.size());
+    EXPECT_FALSE(result.ok());
+    EXPECT_FALSE(result.error.empty());
+}
+
+TEST(KdbxXmlIndexPathsTest, AProtectedPasswordThatTheStreamCannotOpenIsRefused) {
+    KdbxEntry entry;
+    entry.password = "c2VjcmV0";
+    entry.password_is_protected = true;
+    // Stream 1 is the ARCFOUR variant, which this build does not have.
+    const std::uint8_t key[] = {1, 2, 3, 4};
+    KdbxProtectedStream stream(1, key, sizeof(key));
+
+    core::SecureByteArray out;
+    std::string error;
+    EXPECT_FALSE(revealKdbxPassword(entry, stream, out, error));
+    EXPECT_FALSE(error.empty());
+}
+
 // ------------------------------------------------------------------ the 4.x reader
 
 // The blank database is a KDBX 4 file with the public password "password". It holds no
@@ -379,6 +472,20 @@ TEST(KdbxVaultPathsTest, AFileThatIsNotThereIsRefused) {
                             {}, error));
     EXPECT_NE(error.find("could not be read"), std::string::npos) << error;
     EXPECT_FALSE(vault.isOpen());
+}
+
+TEST(KdbxVaultPathsTest, ADatabaseWithTheWrongPasswordIsRefused) {
+    // The real database, opened with a password that is not its own: the header
+    // authentication does not match.
+    const std::string path =
+        std::string(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/blank_database.kdbx";
+    const std::string wrong = "not the password";
+    KdbxVault vault;
+    std::string error;
+    EXPECT_FALSE(vault.open(QString::fromStdString(path),
+                            reinterpret_cast<const std::uint8_t*>(wrong.data()), wrong.size(), {},
+                            error));
+    EXPECT_FALSE(error.empty());
 }
 
 TEST(KdbxVaultPathsTest, AnEntryThatIsNotThereIsNotFound) {

@@ -65,6 +65,10 @@ class MockKeePassHttpServer final {
     std::string login = "netops";
     std::string password = "s3cret";
 
+    // When this is set, the mock answers with it verbatim instead of the protocol's
+    // answer. That is how a plugin that does not speak the protocol looks.
+    std::string raw_answer;
+
  private:
     void start() {
         server_ = new QTcpServer();
@@ -97,8 +101,13 @@ class MockKeePassHttpServer final {
         const QByteArray body = buffer_.mid(separator + 4, length);
         buffer_.remove(0, separator + 4 + length);
 
-        json response = answer(json::parse(body.toStdString()));
-        const QByteArray payload = QByteArray::fromStdString(response.dump());
+        std::string answer_text;
+        if (!raw_answer.empty()) {
+            answer_text = raw_answer;
+        } else {
+            answer_text = answer(json::parse(body.toStdString())).dump();
+        }
+        const QByteArray payload = QByteArray::fromStdString(answer_text);
         QByteArray reply = "HTTP/1.1 200 OK\r\n";
         reply += "Content-Type: application/json\r\n";
         reply += "Content-Length: " + QByteArray::number(payload.size()) + "\r\n";
@@ -196,6 +205,47 @@ TEST_F(KeePassHttpFixture, TheAssociationCanBeTested) {
     std::string error;
     ASSERT_TRUE(client_->associate(association, error)) << error;
     EXPECT_TRUE(client_->testAssociate(association, error)) << error;
+}
+
+TEST_F(KeePassHttpFixture, APluginThatDoesNotAnswerWithJsonIsRefused) {
+    // The protocol is JSON. A plugin that answers with something else -- a proxy error
+    // page, a version of the protocol this build does not know -- must be refused, not
+    // read as if it were an answer.
+    server_->raw_answer = "this is not JSON at all";
+    Association association;
+    std::string error;
+    EXPECT_FALSE(client_->associate(association, error));
+    EXPECT_NE(error.find("JSON"), std::string::npos) << error;
+}
+
+TEST_F(KeePassHttpFixture, APluginThatAssignsNoIdIsRefused) {
+    server_->raw_answer = R"({"RequestType":"associate"})";
+    Association association;
+    std::string error;
+    EXPECT_FALSE(client_->associate(association, error));
+    EXPECT_NE(error.find("id"), std::string::npos) << error;
+}
+
+TEST_F(KeePassHttpFixture, APluginThatDoesNotAnswerWithJsonIsRefusedWhenTheAssociationIsTested) {
+    Association association;
+    std::string error;
+    ASSERT_TRUE(client_->associate(association, error)) << error;
+
+    server_->raw_answer = "this is not JSON at all";
+    EXPECT_FALSE(client_->testAssociate(association, error));
+    EXPECT_NE(error.find("JSON"), std::string::npos) << error;
+}
+
+TEST_F(KeePassHttpFixture, APluginThatDoesNotAnswerWithJsonIsRefusedWhenTheEntriesAreAskedFor) {
+    Association association;
+    std::string error;
+    ASSERT_TRUE(client_->associate(association, error)) << error;
+
+    server_->raw_answer = "this is not JSON at all";
+    std::vector<KeePassHttpEntry> entries;
+    EXPECT_FALSE(
+        client_->getLogins(association, "ssh://10.20.30.40:22", "10.20.30.40", entries, error));
+    EXPECT_NE(error.find("JSON"), std::string::npos) << error;
 }
 
 TEST_F(KeePassHttpFixture, TheEntriesComeBackDecrypted) {
