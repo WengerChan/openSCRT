@@ -250,6 +250,20 @@ openscrt_add_test(unit_sftp_subsystem
     SOURCES unit/SftpSubsystemTest.cpp
     LIBS openscrt_protocols openscrt_transfer)
 
+# The SFTP command mode and the two-pane file manager (P3-T5). The pane is a
+# widget, so the target brings its own main() and runs on the offscreen platform.
+add_executable(unit_sftp_shell unit/SftpShellTest.cpp)
+target_include_directories(unit_sftp_shell PRIVATE ${PROJECT_SOURCE_DIR}/src
+                                                     ${PROJECT_SOURCE_DIR}/tests)
+target_link_libraries(unit_sftp_shell PRIVATE GTest::gtest openscrt_ui openscrt_protocols
+                                                openscrt_transfer openscrt_warnings Qt6::Core
+                                                Qt6::Gui Qt6::Widgets)
+add_test(NAME unit_sftp_shell COMMAND unit_sftp_shell)
+set_tests_properties(unit_sftp_shell PROPERTIES
+    LABELS "unit"
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 600)
+
 # P1-T11: the ssh.com (VanDyke) private key format.
 #
 # The test drives libssh directly, to check that the converted key is one libssh can

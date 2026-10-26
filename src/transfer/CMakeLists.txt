@@ -15,6 +15,7 @@ endif()
 
 add_library(openscrt_transfer STATIC
     ModuleInfo.cpp
+    sftp/SftpShell.cpp
     sftp/SftpSubsystem.cpp)
 
 target_include_directories(openscrt_transfer PUBLIC ${PROJECT_SOURCE_DIR}/src)

@@ -22,6 +22,7 @@ add_library(openscrt_ui STATIC
     workspace/QuickConnectDialog.cpp
     workspace/SessionManagerWidget.cpp
     workspace/SerialHexView.cpp
+    workspace/SftpDualPaneWidget.cpp
     workspace/TerminalCanvasWidget.cpp
     workspace/TerminalSession.cpp
     workspace/WorkspacePanes.cpp
@@ -39,4 +40,4 @@ target_include_directories(openscrt_ui PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(openscrt_ui
     PUBLIC openscrt_warnings Qt6::Core Qt6::Gui Qt6::Widgets
     PRIVATE openscrt_core openscrt_terminal openscrt_config openscrt_protocols
-            openscrt_credential)
+            openscrt_credential openscrt_transfer)
