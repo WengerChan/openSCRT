@@ -22,15 +22,15 @@ QSerialPort::Parity toQSerialPortParity(SerialParity parity) noexcept {
 QSerialPort::DataBits toQSerialPortDataBits(SerialDataBits bits) noexcept {
     switch (bits) {
         case SerialDataBits::k5:
-            return QSerialPort::Data5Bits;
+            return QSerialPort::Data5;
         case SerialDataBits::k6:
-            return QSerialPort::Data6Bits;
+            return QSerialPort::Data6;
         case SerialDataBits::k7:
-            return QSerialPort::Data7Bits;
+            return QSerialPort::Data7;
         case SerialDataBits::k8:
-            return QSerialPort::Data8Bits;
+            return QSerialPort::Data8;
     }
-    return QSerialPort::Data8Bits;
+    return QSerialPort::Data8;
 }
 
 QSerialPort::StopBits toQSerialPortStopBits(SerialStopBits bits) noexcept {
@@ -50,9 +50,9 @@ QSerialPort::FlowControl toQSerialPortFlowControl(SerialFlowControl flow) noexce
         case SerialFlowControl::kNone:
             return QSerialPort::NoFlowControl;
         case SerialFlowControl::kRtsCts:
-            return QSerialPort::HardwareFlowControl;
+            return QSerialPort::HardwareControl;
         case SerialFlowControl::kXonXoff:
-            return QSerialPort::SoftwareFlowControl;
+            return QSerialPort::SoftwareControl;
     }
     return QSerialPort::NoFlowControl;
 }

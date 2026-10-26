@@ -66,10 +66,10 @@ const ParityCase kParityCases[] = {
 };
 
 const DataBitsCase kDataBitsCases[] = {
-    {serial::SerialDataBits::k5, QSerialPort::Data5Bits},
-    {serial::SerialDataBits::k6, QSerialPort::Data6Bits},
-    {serial::SerialDataBits::k7, QSerialPort::Data7Bits},
-    {serial::SerialDataBits::k8, QSerialPort::Data8Bits},
+    {serial::SerialDataBits::k5, QSerialPort::Data5},
+    {serial::SerialDataBits::k6, QSerialPort::Data6},
+    {serial::SerialDataBits::k7, QSerialPort::Data7},
+    {serial::SerialDataBits::k8, QSerialPort::Data8},
 };
 
 const StopBitsCase kStopBitsCases[] = {
@@ -80,8 +80,8 @@ const StopBitsCase kStopBitsCases[] = {
 
 const FlowControlCase kFlowControlCases[] = {
     {serial::SerialFlowControl::kNone, QSerialPort::NoFlowControl},
-    {serial::SerialFlowControl::kRtsCts, QSerialPort::HardwareFlowControl},
-    {serial::SerialFlowControl::kXonXoff, QSerialPort::SoftwareFlowControl},
+    {serial::SerialFlowControl::kRtsCts, QSerialPort::HardwareControl},
+    {serial::SerialFlowControl::kXonXoff, QSerialPort::SoftwareControl},
 };
 
 // Baud rates, including one that no standard table lists. The roadmap asks for

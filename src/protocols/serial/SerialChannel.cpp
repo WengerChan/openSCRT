@@ -2,6 +2,7 @@
 
 #include <QByteArray>
 #include <QSerialPort>
+#include <QString>
 #include <cstddef>
 #include <utility>
 #include <vector>
@@ -120,7 +121,7 @@ TransportResult SerialChannel::connectAsync() {
 
 void SerialChannel::runReader(std::shared_ptr<OpenOutcome> outcome) {
     QSerialPort port;
-    port.setPortName(settings_.port_name);
+    port.setPortName(QString::fromStdString(settings_.port_name));
 
     if (!port.open(QIODevice::ReadWrite)) {
         std::string message = port.errorString().toStdString();
