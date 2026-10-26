@@ -62,10 +62,27 @@ endif()
 # ends up with "undefined reference to BN_new".
 find_package(OpenSSL REQUIRED)
 
+# Qt6::SerialPort for the serial channel (P3-T1). The serial port is the one transport
+# that is not a socket, so it needs the one Qt module that is not about sockets.
+#
+# The dependency is PRIVATE on purpose: the channel's own headers keep Qt out of the
+# protocols layer's public surface (see src/protocols/serial/SerialSettings.h), so a
+# consumer of ITransportChannel does not need Qt's include directories. The link
+# requirement still reaches the executable, because a static library's private
+# dependencies are propagated to whoever links it.
+if(NOT OPENCRT_QT_SERIALPORT_AVAILABLE)
+    message(FATAL_ERROR
+        "openscrt_protocols needs Qt6::SerialPort for the serial channel (P3-T1). The CI "
+        "Qt step installs the qtserialport module; see docs/DEVELOPMENT_PLAN.md D2.")
+endif()
+
 add_library(openscrt_protocols STATIC
     ModuleInfo.cpp
     ITransportChannel.cpp
     local/LocalPtyChannel.cpp
+    serial/SerialChannel.cpp
+    serial/SerialPortSettings.cpp
+    serial/SerialSettings.cpp
     ssh/Ssh2Channel.cpp
     ssh/SshComKey.cpp)
 
@@ -73,4 +90,4 @@ target_include_directories(openscrt_protocols PUBLIC ${PROJECT_SOURCE_DIR}/src)
 
 target_link_libraries(openscrt_protocols
     PUBLIC openscrt_warnings
-    PRIVATE openscrt_core openscrt_terminal openscrt_ssh OpenSSL::Crypto)
+    PRIVATE openscrt_core openscrt_terminal openscrt_ssh OpenSSL::Crypto Qt6::SerialPort)

@@ -532,6 +532,7 @@ jobs:
             --report "$QT_ROOT_DIR/bin/Qt6Gui.dll" \
             --report "$QT_ROOT_DIR/bin/Qt6Widgets.dll" \
             --report "$QT_ROOT_DIR/bin/Qt6Network.dll" \
+            --report "$QT_ROOT_DIR/bin/Qt6SerialPort.dll" \
             ${VCPKG_REPORTS[@]+"${VCPKG_REPORTS[@]}"}
 
       # P1-A4: the SPSC ring buffer under ThreadSanitizer.
