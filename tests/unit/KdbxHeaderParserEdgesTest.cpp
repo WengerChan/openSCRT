@@ -332,6 +332,18 @@ TEST(KdbxHeaderParserEdgesTest, AValueOfTheWrongSizeIsRejected) {
     }
 }
 
+TEST(KdbxHeaderParserEdgesTest, AStringValueIsReadAsText) {
+    // The KDF parameters may carry values this build has no use for. A string among
+    // them has to be read as text and skipped, not refused.
+    const std::vector<std::uint8_t> dictionary =
+        variantDictionary({{kTypeString, "Comment", std::vector<std::uint8_t>{'h', 'i'}}});
+    const std::vector<std::uint8_t> bytes = headerWithKdfDictionary(dictionary);
+    const KdbxHeaderParseResult result = parseKdbxHeader(bytes.data(), bytes.size());
+    EXPECT_FALSE(result.ok());
+    // It still fails, because the dictionary has no $UUID -- but not because of the string.
+    EXPECT_NE(result.error.find("$UUID"), std::string::npos) << result.error;
+}
+
 TEST(KdbxHeaderParserEdgesTest, AValueTypeThisBuildDoesNotKnowIsRejected) {
     // A dictionary that names a type this build has no reader for must be refused
     // rather than read as something else.
