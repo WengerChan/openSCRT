@@ -95,6 +95,52 @@ TEST_F(ConfigManagerTest, TheCredentialBindingSurvivesARoundTrip) {
     EXPECT_EQ(loaded_profile->credential_match_host, std::optional<std::string>("10.20.30.40"));
 }
 
+TEST_F(ConfigManagerTest, TheSerialSettingsSurviveARoundTrip) {
+    // The serial port and its parameters are configuration: a session that points at a
+    // device has to still point at it after the tree is written and read back.
+    auto leaf = profile("leaf");
+    leaf.protocol = Protocol::kSerial;
+    leaf.serial_port = std::string("/dev/ttyUSB0");
+    leaf.serial_baud_rate = 115200;
+    leaf.serial_data_bits = std::string("7");
+    leaf.serial_parity = std::string("odd");
+    leaf.serial_stop_bits = std::string("2");
+    leaf.serial_flow_control = std::string("rts-cts");
+
+    SessionTree original;
+    ASSERT_TRUE(original.add(std::move(leaf)));
+    ASSERT_TRUE(ConfigManager::saveTree(original, path_));
+
+    const SessionTree loaded = ConfigManager::loadTree(path_);
+    const SessionProfile* loaded_profile = loaded.find("leaf");
+    ASSERT_NE(loaded_profile, nullptr);
+    EXPECT_EQ(loaded_profile->serial_port, std::optional<std::string>("/dev/ttyUSB0"));
+    EXPECT_EQ(loaded_profile->serial_baud_rate, std::optional<int>(115200));
+    EXPECT_EQ(loaded_profile->serial_data_bits, std::optional<std::string>("7"));
+    EXPECT_EQ(loaded_profile->serial_parity, std::optional<std::string>("odd"));
+    EXPECT_EQ(loaded_profile->serial_stop_bits, std::optional<std::string>("2"));
+    EXPECT_EQ(loaded_profile->serial_flow_control, std::optional<std::string>("rts-cts"));
+}
+
+TEST_F(ConfigManagerTest, TheSerialSettingsDoNotComeFromTheParent) {
+    // A child session usually sits on another device. Inheriting the parent's port
+    // name would open the wrong one, so the serial settings are per session -- the
+    // same rule the credential binding follows.
+    auto parent = profile("parent");
+    parent.serial_port = std::string("/dev/ttyUSB0");
+    parent.serial_baud_rate = 115200;
+
+    auto child = profile("child", "parent");
+
+    SessionTree original;
+    ASSERT_TRUE(original.add(std::move(parent)));
+    ASSERT_TRUE(original.add(std::move(child)));
+
+    const SessionProfile effective = original.effectiveProfile("child");
+    EXPECT_FALSE(effective.serial_port.has_value());
+    EXPECT_FALSE(effective.serial_baud_rate.has_value());
+}
+
 TEST_F(ConfigManagerTest, AFieldThatWasNeverOverriddenStaysInherited) {
     // The whole point: after a save/load cycle an inheriting session must still inherit,
     // otherwise a later template edit would stop reaching it.

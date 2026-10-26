@@ -24,6 +24,9 @@ constexpr std::chrono::seconds kOpenTimeout{5};
 
 constexpr std::size_t kRingCapacity = 64 * 1024;
 
+// The longest break QSerialPort accepts, and the same limit the hardware has.
+constexpr int kMaxBreakMilliseconds = 1000;
+
 }  // namespace
 
 SerialChannel::SerialChannel(SerialSettings settings)
@@ -175,6 +178,7 @@ void SerialChannel::runReader(std::shared_ptr<OpenOutcome> outcome) {
         // Whatever the UI thread queued goes out before the next wait, so a keystroke
         // is not held back by a poll interval.
         drainOutbox(port);
+        applyPendingBreak(port);
 
         if (port.waitForReadyRead(kPollTimeoutMs)) {
             const QByteArray chunk = port.readAll();
@@ -236,6 +240,31 @@ void SerialChannel::drainOutbox(QSerialPort& port) {
                    pending.end());
 }
 
+void SerialChannel::applyPendingBreak(QSerialPort& port) {
+    int duration = 0;
+    {
+        std::lock_guard<std::mutex> lock(outbox_mutex_);
+        if (!break_requested_) {
+            return;
+        }
+        break_requested_ = false;
+        duration = break_duration_ms_;
+    }
+    // Qt 6.7 and 6.8 have no timed break: the line is put into the break condition and
+    // stays there until it is taken out again. So the break gets its length here, by
+    // holding the condition for the asked time and then letting go. The wait has a
+    // deadline -- it is the length of the break, and a break cannot be longer than a
+    // second.
+    if (!port.setBreakEnabled(true)) {
+        // The state does not change: the port is still open and still usable. The
+        // detail says what happened, which is what the status bar shows.
+        setState(state_.load(), "the serial port refused the break signal");
+        return;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(duration));
+    port.setBreakEnabled(false);
+}
+
 void SerialChannel::stopReader() noexcept {
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -276,6 +305,16 @@ void SerialChannel::send(const std::uint8_t* data, std::size_t size) {
 
 void SerialChannel::send(std::string_view text) {
     send(reinterpret_cast<const std::uint8_t*>(text.data()), text.size());
+}
+
+bool SerialChannel::sendBreak(int duration_ms) {
+    if (duration_ms < 0 || duration_ms > kMaxBreakMilliseconds) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(outbox_mutex_);
+    break_requested_ = true;
+    break_duration_ms_ = duration_ms;
+    return true;
 }
 
 bool SerialChannel::resizeWindow(const WindowSize& size) {

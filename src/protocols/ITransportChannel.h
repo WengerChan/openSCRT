@@ -91,6 +91,19 @@ class ITransportChannel {
     // transports with no window concept (serial).
     virtual bool resizeWindow(const WindowSize& size) = 0;
 
+    // Sends a break to the far end, for the transports that have one (P3-T2).
+    //
+    // This is a virtual with a default and not a pure virtual on purpose. The interface
+    // was frozen at P1-T9, and a pure virtual added now would break every transport that
+    // has no break to send. A channel that cannot do it says so by returning false.
+    //
+    // `duration_ms` is how long the break lasts. Zero means "as short as the hardware
+    // allows".
+    virtual bool sendBreak(int duration_ms) {
+        static_cast<void>(duration_ms);
+        return false;
+    }
+
     [[nodiscard]] virtual std::string remoteAddress() const = 0;
 
  protected:

@@ -21,6 +21,7 @@ add_library(openscrt_ui STATIC
     workspace/KeePassSelectorDialog.cpp
     workspace/QuickConnectDialog.cpp
     workspace/SessionManagerWidget.cpp
+    workspace/SerialHexView.cpp
     workspace/TerminalCanvasWidget.cpp
     workspace/TerminalSession.cpp
     workspace/WorkspacePanes.cpp

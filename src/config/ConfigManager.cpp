@@ -65,6 +65,26 @@ void writeProfile(QSettings& settings, const SessionProfile& profile, bool is_te
     if (profile.credential_match_host) {
         put("cred-host", QString::fromStdString(*profile.credential_match_host));
     }
+    // The serial port and its parameters (P3-T1). Like the credential binding, these
+    // are the session's own and do not inherit.
+    if (profile.serial_port) {
+        put("serial-port", QString::fromStdString(*profile.serial_port));
+    }
+    if (profile.serial_baud_rate) {
+        put("serial-baud", QString::number(*profile.serial_baud_rate));
+    }
+    if (profile.serial_data_bits) {
+        put("serial-data", QString::fromStdString(*profile.serial_data_bits));
+    }
+    if (profile.serial_parity) {
+        put("serial-parity", QString::fromStdString(*profile.serial_parity));
+    }
+    if (profile.serial_stop_bits) {
+        put("serial-stop", QString::fromStdString(*profile.serial_stop_bits));
+    }
+    if (profile.serial_flow_control) {
+        put("serial-flow", QString::fromStdString(*profile.serial_flow_control));
+    }
 }
 
 std::string readString(QSettings& settings, const QString& key) {
@@ -149,6 +169,26 @@ SessionTree ConfigManager::loadTree(const std::string& ini_path) {
         if (settings.contains(sessionKey(profile.id, "cred-host"))) {
             profile.credential_match_host =
                 readString(settings, sessionKey(profile.id, "cred-host"));
+        }
+        if (settings.contains(sessionKey(profile.id, "serial-port"))) {
+            profile.serial_port = readString(settings, sessionKey(profile.id, "serial-port"));
+        }
+        if (settings.contains(sessionKey(profile.id, "serial-baud"))) {
+            profile.serial_baud_rate =
+                settings.value(sessionKey(profile.id, "serial-baud")).toInt();
+        }
+        if (settings.contains(sessionKey(profile.id, "serial-data"))) {
+            profile.serial_data_bits = readString(settings, sessionKey(profile.id, "serial-data"));
+        }
+        if (settings.contains(sessionKey(profile.id, "serial-parity"))) {
+            profile.serial_parity = readString(settings, sessionKey(profile.id, "serial-parity"));
+        }
+        if (settings.contains(sessionKey(profile.id, "serial-stop"))) {
+            profile.serial_stop_bits = readString(settings, sessionKey(profile.id, "serial-stop"));
+        }
+        if (settings.contains(sessionKey(profile.id, "serial-flow"))) {
+            profile.serial_flow_control =
+                readString(settings, sessionKey(profile.id, "serial-flow"));
         }
         pending.push_back(Pending{std::move(profile)});
     }

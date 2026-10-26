@@ -268,13 +268,27 @@ openscrt_add_test(unit_local_pty_channel
 # Qt6::SerialPort is named here because the test includes <QSerialPort> itself: the
 # protocols library keeps Qt as a private dependency, so its include directories do not
 # reach this test on their own.
-add_executable(unit_serial_channel unit/SerialChannelTest.cpp)
+add_executable(unit_serial_channel unit/SerialChannelTest.cpp
+                              unit/SerialPortEnumeratorTest.cpp)
 target_include_directories(unit_serial_channel PRIVATE ${PROJECT_SOURCE_DIR}/src
                                                         ${PROJECT_SOURCE_DIR}/tests)
 target_link_libraries(unit_serial_channel PRIVATE GTest::gtest openscrt_protocols
                                                   openscrt_warnings Qt6::Core Qt6::SerialPort)
 add_test(NAME unit_serial_channel COMMAND unit_serial_channel)
 set_tests_properties(unit_serial_channel PROPERTIES LABELS "unit" TIMEOUT 600)
+
+# The hex monitor of a serial line (P3-T2). It is a widget, so it needs the offscreen
+# platform.
+add_executable(unit_serial_hex_view unit/SerialHexViewTest.cpp)
+target_include_directories(unit_serial_hex_view PRIVATE ${PROJECT_SOURCE_DIR}/src
+                                                          ${PROJECT_SOURCE_DIR}/tests)
+target_link_libraries(unit_serial_hex_view PRIVATE GTest::gtest openscrt_ui openscrt_warnings
+                                                  Qt6::Core Qt6::Gui Qt6::Widgets)
+add_test(NAME unit_serial_hex_view COMMAND unit_serial_hex_view)
+set_tests_properties(unit_serial_hex_view PROPERTIES
+    LABELS "unit"
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 600)
 
 openscrt_add_test(unit_damage_tracker
     LABEL unit

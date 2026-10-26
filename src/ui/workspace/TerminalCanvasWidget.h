@@ -92,6 +92,8 @@ class TerminalCanvasWidget : public QWidget {
     void windowSizeChanged(int rows, int columns);
     // A key that the terminal should act on itself, such as Ctrl+C.
     void interruptRequested();
+    // Alt+B: a break on the line, for the transports that have one (P3-T2).
+    void breakRequested();
 
  protected:
     void paintEvent(QPaintEvent* event) override;

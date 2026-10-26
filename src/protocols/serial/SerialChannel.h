@@ -62,6 +62,15 @@ class SerialChannel final : public ITransportChannel {
     [[nodiscard]] std::size_t readAvailable(std::uint8_t* destination, std::size_t max,
                                             std::chrono::milliseconds timeout);
 
+    // Sends a break to the device: the line is held in the break condition for
+    // `duration_ms`, which is how a serial console interrupts a device that is not
+    // listening for an escape character.
+    //
+    // The request is queued and carried out by the reader thread, because the port
+    // belongs to that thread. Returns false when the duration is out of range; the
+    // device's own refusal is reported through the state callback.
+    bool sendBreak(int duration_ms) override;
+
     [[nodiscard]] const SerialSettings& settings() const noexcept { return settings_; }
 
  private:
@@ -79,6 +88,7 @@ class SerialChannel final : public ITransportChannel {
     void stopReader() noexcept;
     void setState(TransportState state, const std::string& detail);
     void drainOutbox(QSerialPort& port);
+    void applyPendingBreak(QSerialPort& port);
 
     SerialSettings settings_;
     core::ByteRingBuffer ring_;
@@ -93,6 +103,11 @@ class SerialChannel final : public ITransportChannel {
     // Guarded by outbox_mutex_ because the UI thread writes and the reader reads.
     std::mutex outbox_mutex_;
     std::deque<std::uint8_t> outbox_;
+    // A break that was asked for and has not been carried out yet. It travels with the
+    // same lock as the outbound bytes: both are requests from the UI thread to the
+    // reader thread.
+    bool break_requested_{false};
+    int break_duration_ms_{0};
 
     std::mutex callback_mutex_;
     DataCallback data_callback_;

@@ -56,6 +56,8 @@ class TerminalSession : public QObject {
     bool connectSession(std::string& error);
 
     void sendInput(const std::vector<std::uint8_t>& bytes);
+    // Sends a break on the line (P3-T2). Only a serial port has one.
+    void sendBreak();
     void close();
 
  signals:

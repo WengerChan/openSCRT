@@ -81,6 +81,7 @@ add_library(openscrt_protocols STATIC
     ITransportChannel.cpp
     local/LocalPtyChannel.cpp
     serial/SerialChannel.cpp
+    serial/SerialPortEnumerator.cpp
     serial/SerialPortSettings.cpp
     serial/SerialSettings.cpp
     ssh/Ssh2Channel.cpp

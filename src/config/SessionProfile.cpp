@@ -278,6 +278,14 @@ SessionProfile SessionTree::effectiveProfile(const std::string& id) const {
         source != nullptr ? source->credential_entry_uuid : std::nullopt;
     profile.credential_match_host =
         source != nullptr ? source->credential_match_host : std::nullopt;
+    // The serial settings are the session's own for the same reason: a child session
+    // usually sits on another device.
+    profile.serial_port = source != nullptr ? source->serial_port : std::nullopt;
+    profile.serial_baud_rate = source != nullptr ? source->serial_baud_rate : std::nullopt;
+    profile.serial_data_bits = source != nullptr ? source->serial_data_bits : std::nullopt;
+    profile.serial_parity = source != nullptr ? source->serial_parity : std::nullopt;
+    profile.serial_stop_bits = source != nullptr ? source->serial_stop_bits : std::nullopt;
+    profile.serial_flow_control = source != nullptr ? source->serial_flow_control : std::nullopt;
     return profile;
 }
 
@@ -285,6 +293,9 @@ void SessionTree::inheritEverythingBelow(const std::string& id) {
     // The credential binding is deliberately left alone: it is not part of the
     // inheritance chain, so there is nothing for it to fall back to. Clearing it would
     // throw away a binding the user picked by hand.
+    //
+    // The serial settings are left alone for the same reason: they are the session's
+    // own, and there is no default port to fall back to.
     for (SessionProfile& profile : profiles_) {
         if (profile.id == id) {
             profile.host.reset();

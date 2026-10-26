@@ -158,6 +158,43 @@ TEST(CanvasKeyEncodingTest, UnmappedKeysProduceNothing) {
     EXPECT_TRUE(TerminalCanvasWidget::encodeKey(Qt::Key_F5, Qt::NoModifier, QString()).empty());
 }
 
+TEST_F(CanvasWidgetTest, AltBAcksForABreakAndSendsNoBytes) {
+    std::vector<std::uint8_t> received;
+    widget_->setInputSink([&received](const std::vector<std::uint8_t>& bytes) {
+        received.insert(received.end(), bytes.begin(), bytes.end());
+    });
+
+    int breaks = 0;
+    QObject::connect(widget_.get(), &TerminalCanvasWidget::breakRequested,
+                     [&breaks]() { ++breaks; });
+
+    QKeyEvent press(QEvent::KeyPress, Qt::Key_B, Qt::AltModifier, QStringLiteral("b"));
+    QCoreApplication::sendEvent(widget_.get(), &press);
+
+    EXPECT_EQ(breaks, 1) << "Alt+B is a break on the line";
+    EXPECT_TRUE(received.empty()) << "a break is not a byte to send";
+}
+
+TEST_F(CanvasWidgetTest, AltGrIsNotABreak) {
+    // On Windows, AltGr is reported as Control+Alt. AltGr+B is a character, and a
+    // character must not be swallowed as a break.
+    std::vector<std::uint8_t> received;
+    widget_->setInputSink([&received](const std::vector<std::uint8_t>& bytes) {
+        received.insert(received.end(), bytes.begin(), bytes.end());
+    });
+
+    int breaks = 0;
+    QObject::connect(widget_.get(), &TerminalCanvasWidget::breakRequested,
+                     [&breaks]() { ++breaks; });
+
+    const Qt::KeyboardModifiers altgr =
+        Qt::AltModifier | Qt::ControlModifier | Qt::GroupSwitchModifier;
+    QKeyEvent press(QEvent::KeyPress, Qt::Key_B, altgr, QString());
+    QCoreApplication::sendEvent(widget_.get(), &press);
+
+    EXPECT_EQ(breaks, 0);
+}
+
 TEST_F(CanvasWidgetTest, KeyPressesReachTheInputSink) {
     std::vector<std::uint8_t> received;
     widget_->setInputSink([&received](const std::vector<std::uint8_t>& bytes) {

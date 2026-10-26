@@ -59,6 +59,22 @@ struct SessionProfile {
     std::optional<std::string> credential_entry_uuid;
     std::optional<std::string> credential_match_host;
 
+    // The serial port this session talks to, and how it is configured (P3-T1).
+    //
+    // Like the credential binding, these are the session's own and do NOT come from the
+    // chain: a child session usually sits on another device, and inheriting the
+    // parent's port name would open the wrong one.
+    //
+    // The four strings hold the names the protocols layer uses ("8", "none", "1",
+    // "rts-cts"), so a session file written here means the same thing to the code that
+    // opens the port.
+    std::optional<std::string> serial_port;
+    std::optional<int> serial_baud_rate;
+    std::optional<std::string> serial_data_bits;
+    std::optional<std::string> serial_parity;
+    std::optional<std::string> serial_stop_bits;
+    std::optional<std::string> serial_flow_control;
+
     // True when the session overrides nothing that can be inherited. The credential
     // binding is not part of the inheritance chain, so it does not count here.
     [[nodiscard]] bool inheritsEverything() const noexcept {

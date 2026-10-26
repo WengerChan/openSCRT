@@ -163,6 +163,15 @@ void TerminalCanvasWidget::keyPressEvent(QKeyEvent* event) {
         event->accept();
         return;
     }
+    // Alt+B is a break on the line. It is not a byte to send: the transport that has a
+    // break carries it out itself. Control is excluded because on Windows AltGr is
+    // reported as Control+Alt, and AltGr+B is a character, not a break.
+    if (event->modifiers().testFlag(Qt::AltModifier) &&
+        !event->modifiers().testFlag(Qt::ControlModifier) && event->key() == Qt::Key_B) {
+        emit breakRequested();
+        event->accept();
+        return;
+    }
     const std::vector<std::uint8_t> bytes = keySequenceFor(*event);
     if (!bytes.empty()) {
         if (input_sink_) {

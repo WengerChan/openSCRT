@@ -183,6 +183,17 @@ TEST(SerialChannelTest, ASerialPortHasNoWindow) {
     EXPECT_FALSE(channel.resizeWindow(size));
 }
 
+TEST(SerialChannelTest, ABreakIsAcceptedAndAnImpossibleOneIsNot) {
+    serial::SerialSettings settings;
+    settings.port_name = "COM1";
+    serial::SerialChannel channel(settings);
+
+    EXPECT_TRUE(channel.sendBreak(100));
+    EXPECT_TRUE(channel.sendBreak(0)) << "zero means as short as the hardware allows";
+    EXPECT_FALSE(channel.sendBreak(-1));
+    EXPECT_FALSE(channel.sendBreak(1001)) << "a break cannot last longer than a second";
+}
+
 TEST(SerialChannelTest, TheChannelSaysWhichPortItIs) {
     serial::SerialSettings settings;
     settings.port_name = "/dev/ttyS7";

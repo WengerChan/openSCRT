@@ -5,6 +5,8 @@
 #include <utility>
 
 #include "protocols/local/LocalPtyChannel.h"
+#include "protocols/serial/SerialChannel.h"
+#include "protocols/serial/SerialSettings.h"
 #include "protocols/ssh/Ssh2Channel.h"
 #include "ui/workspace/TerminalCanvasWidget.h"
 
@@ -20,10 +22,13 @@ constexpr auto kConnectDrainTimeout = std::chrono::milliseconds(500);
 // window. The callback only copies bytes and posts an event, so half a second is
 // already far longer than it can need.
 constexpr auto kCallbackDrainTimeout = std::chrono::milliseconds(500);
+// How long the break signal lasts. A tenth of a second is long enough for the device
+// to notice it and short enough that nobody waits for it.
+constexpr int kBreakMilliseconds = 100;
 
 // Builds the channel for the profile's protocol. Returns null and fills `error` for the
-// protocols that have no implementation yet: Telnet and Serial arrive with their own
-// phases, and a dialog that silently does nothing is worse than one that says so.
+// protocols that have no implementation yet: Telnet arrives with the Telnet phase, and
+// a dialog that silently does nothing is worse than one that says so.
 std::shared_ptr<protocols::ITransportChannel> makeChannel(const config::SessionProfile& profile,
                                                           core::SecureByteArray password,
                                                           std::string& error) {
@@ -48,9 +53,43 @@ std::shared_ptr<protocols::ITransportChannel> makeChannel(const config::SessionP
         case config::Protocol::kTelnet:
             error = "Telnet is not implemented yet (it arrives with the Telnet phase)";
             return nullptr;
-        case config::Protocol::kSerial:
-            error = "Serial ports are not implemented yet (they arrive with the serial phase)";
-            return nullptr;
+        case config::Protocol::kSerial: {
+            protocols::serial::SerialSettings settings;
+            settings.port_name = profile.serial_port.value_or("");
+            settings.baud_rate = profile.serial_baud_rate.value_or(9600);
+            // A session file that names a value this build does not know falls back to
+            // the default rather than to something else: a wrong baud rate is a wrong
+            // baud rate, and a refused one is a refused one.
+            if (profile.serial_data_bits) {
+                const auto bits =
+                    protocols::serial::serialDataBitsFromString(*profile.serial_data_bits);
+                if (bits) {
+                    settings.data_bits = *bits;
+                }
+            }
+            if (profile.serial_parity) {
+                const auto parity =
+                    protocols::serial::serialParityFromString(*profile.serial_parity);
+                if (parity) {
+                    settings.parity = *parity;
+                }
+            }
+            if (profile.serial_stop_bits) {
+                const auto stops =
+                    protocols::serial::serialStopBitsFromString(*profile.serial_stop_bits);
+                if (stops) {
+                    settings.stop_bits = *stops;
+                }
+            }
+            if (profile.serial_flow_control) {
+                const auto flow =
+                    protocols::serial::serialFlowControlFromString(*profile.serial_flow_control);
+                if (flow) {
+                    settings.flow_control = *flow;
+                }
+            }
+            return std::make_shared<protocols::serial::SerialChannel>(std::move(settings));
+        }
     }
     error = "unknown protocol";
     return nullptr;
@@ -72,6 +111,10 @@ TerminalSession::TerminalSession(config::SessionProfile profile, TerminalCanvasW
         // it, because a terminal sends the interrupt byte to the far end.
         connect(canvas_, &TerminalCanvasWidget::interruptRequested, this,
                 [this]() { sendInput(std::vector<std::uint8_t>{0x03}); });
+        // Alt+B is a break on the line. Only a serial port has one, and the transport
+        // says so by refusing; the channel is looked up when the key is pressed, not
+        // now, because it may not exist yet.
+        connect(canvas_, &TerminalCanvasWidget::breakRequested, this, [this]() { sendBreak(); });
         // The canvas is owned by the tab widget, not by the session. When the tab goes away
         // the pointer has to stop being valid, or the next byte would be fed to a deleted
         // widget.
@@ -171,6 +214,14 @@ void TerminalSession::sendInput(const std::vector<std::uint8_t>& bytes) {
         return;
     }
     channel_->send(bytes.data(), bytes.size());
+}
+
+void TerminalSession::sendBreak() {
+    if (!channel_) {
+        return;
+    }
+    // The transport that has no break refuses it, and says so by returning false.
+    channel_->sendBreak(kBreakMilliseconds);
 }
 
 void TerminalSession::close() {
