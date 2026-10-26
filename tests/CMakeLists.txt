@@ -146,6 +146,14 @@ openscrt_add_test(unit_terminal_paths
     SOURCES unit/TerminalPathsTest.cpp
     LIBS openscrt_terminal)
 
+# The paths of the credential library that the other tests do not walk: a key derivation
+# function this build does not have, a payload that is not GZip, a stream id from a
+# KeePass version this build does not support.
+openscrt_add_test(unit_kdbx_credential_paths
+    LABEL unit
+    SOURCES unit/KdbxCredentialPathsTest.cpp
+    LIBS openscrt_credential openscrt_core)
+
 # The split workspace (P2-T10): panes, tiles, and the order the sessions keep.
 openscrt_add_test(unit_workspace_panes
     LABEL unit
