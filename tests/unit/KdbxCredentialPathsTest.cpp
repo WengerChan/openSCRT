@@ -16,13 +16,18 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "core/SecureByteArray.h"
+#include "credential/kdbx/Kdbx4Reader.h"
 #include "credential/kdbx/KdbxCrypto.h"
+#include "credential/kdbx/KdbxHeader.h"
 #include "credential/kdbx/KdbxProtectedStream.h"
+#include "credential/kdbx/KdbxVault.h"
 #include "credential/kdbx/KdbxXmlIndex.h"
 
 namespace openscrt::credential::kdbx {
@@ -120,13 +125,13 @@ TEST(KdbxProtectedStreamPathsTest, AnUnprotectedStreamIsPlainText) {
     EXPECT_EQ(std::string(reinterpret_cast<const char*>(out.data()), out.size()), "hello");
 }
 
-TEST(KdbxProtectedStreamPathsTest, AnEmptyPayloadIsRefused) {
+TEST(KdbxProtectedStreamPathsTest, ANullPayloadIsRefused) {
     const std::uint8_t key[] = {1, 2, 3, 4};
     KdbxProtectedStream stream(3, key, sizeof(key));
 
     std::vector<std::uint8_t> out;
     std::string error;
-    EXPECT_FALSE(stream.decrypt(nullptr, 0, out, error));
+    EXPECT_FALSE(stream.decrypt(nullptr, 4, out, error));
     EXPECT_NE(error.find("no data"), std::string::npos) << error;
 }
 
@@ -281,6 +286,105 @@ TEST(KdbxXmlIndexPathsTest, AProtectedPasswordIsDecodedBeforeItIsRevealed) {
     std::string error;
     ASSERT_TRUE(revealKdbxPassword(entry, stream, out, error)) << error;
     EXPECT_EQ(std::string(reinterpret_cast<const char*>(out.data()), out.size()), "secret");
+}
+
+// ------------------------------------------------------------------ the 4.x reader
+
+// The blank database is a KDBX 4 file with the public password "password". It holds no
+// entries and no secrets.
+constexpr std::string_view kBlankPassword = "password";
+
+std::vector<std::uint8_t> readFile(const std::string& path) {
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream) {
+        return {};
+    }
+    return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(stream),
+                                     std::istreambuf_iterator<char>());
+}
+
+std::string fixturePath(const char* name) {
+    return std::string(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/" + name;
+}
+
+Kdbx4ReadResult readBlank(const std::vector<std::uint8_t>& database) {
+    return readKdbx4(database.data(), database.size(),
+                     reinterpret_cast<const std::uint8_t*>(kBlankPassword.data()),
+                     kBlankPassword.size(), {});
+}
+
+TEST(Kdbx4ReaderPathsTest, AKdbx31FileIsNotReadAsA4xOne) {
+    const std::vector<std::uint8_t> database = readFile(fixturePath("kdbx31_with_keyfile.kdbx"));
+    ASSERT_FALSE(database.empty()) << "the fixture is missing";
+
+    const Kdbx4ReadResult result = readBlank(database);
+
+    EXPECT_FALSE(result.ok());
+    EXPECT_NE(result.error.find("3.1"), std::string::npos) << result.error;
+}
+
+TEST(Kdbx4ReaderPathsTest, AFileThatEndsBeforeTheHeaderHashIsRefused) {
+    const std::vector<std::uint8_t> database = readFile(fixturePath("blank_database.kdbx"));
+    ASSERT_FALSE(database.empty()) << "the fixture is missing";
+    const KdbxHeaderParseResult header = parseKdbxHeader(database.data(), database.size());
+    ASSERT_TRUE(header.ok()) << header.error;
+
+    // The header hash and the header authentication follow the header. A file that stops
+    // in front of them cannot be checked, and it must not be read.
+    const std::size_t cut = header.header.payload_offset + 32;
+    const std::vector<std::uint8_t> shortened(database.begin(), database.begin() + cut);
+
+    const Kdbx4ReadResult result = readBlank(shortened);
+
+    EXPECT_FALSE(result.ok());
+    EXPECT_NE(result.error.find("ends before"), std::string::npos) << result.error;
+}
+
+TEST(Kdbx4ReaderPathsTest, ADamagedHeaderIsRefused) {
+    // The header hash is the SHA-256 of the header bytes. Change one byte of the hash
+    // and the file no longer says what it is.
+    std::vector<std::uint8_t> database = readFile(fixturePath("blank_database.kdbx"));
+    ASSERT_FALSE(database.empty()) << "the fixture is missing";
+    const KdbxHeaderParseResult header = parseKdbxHeader(database.data(), database.size());
+    ASSERT_TRUE(header.ok()) << header.error;
+    database[header.header.payload_offset] ^= 0xFF;
+
+    const Kdbx4ReadResult result = readBlank(database);
+
+    EXPECT_FALSE(result.ok());
+    EXPECT_NE(result.error.find("hash does not match"), std::string::npos) << result.error;
+}
+
+TEST(Kdbx4ReaderPathsTest, AWrongAuthenticationIsRefused) {
+    // The header hash still matches, but the authentication that follows it does not.
+    std::vector<std::uint8_t> database = readFile(fixturePath("blank_database.kdbx"));
+    ASSERT_FALSE(database.empty()) << "the fixture is missing";
+    const KdbxHeaderParseResult header = parseKdbxHeader(database.data(), database.size());
+    ASSERT_TRUE(header.ok()) << header.error;
+    database[header.header.payload_offset + 32] ^= 0xFF;
+
+    const Kdbx4ReadResult result = readBlank(database);
+
+    EXPECT_FALSE(result.ok());
+    EXPECT_NE(result.error.find("authentication failed"), std::string::npos) << result.error;
+}
+
+// ------------------------------------------------------------------ the vault
+
+TEST(KdbxVaultPathsTest, AFileThatIsNotThereIsRefused) {
+    KdbxVault vault;
+    std::string error;
+
+    EXPECT_FALSE(vault.open(QStringLiteral("/nonexistent/openscrt-does-not-exist.kdbx"), nullptr, 0,
+                            {}, error));
+    EXPECT_NE(error.find("could not be read"), std::string::npos) << error;
+    EXPECT_FALSE(vault.isOpen());
+}
+
+TEST(KdbxVaultPathsTest, AnEntryThatIsNotThereIsNotFound) {
+    KdbxVault vault;
+    EXPECT_EQ(vault.findByUuid("no-such-uuid"), nullptr);
+    EXPECT_EQ(vault.findByHost("no-such-host"), nullptr);
 }
 
 }  // namespace

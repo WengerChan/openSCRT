@@ -153,6 +153,8 @@ openscrt_add_test(unit_kdbx_credential_paths
     LABEL unit
     SOURCES unit/KdbxCredentialPathsTest.cpp
     LIBS openscrt_credential openscrt_core)
+target_compile_definitions(unit_kdbx_credential_paths PRIVATE
+    OPENCRT_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
 # The split workspace (P2-T10): panes, tiles, and the order the sessions keep.
 openscrt_add_test(unit_workspace_panes

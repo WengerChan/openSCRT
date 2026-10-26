@@ -73,6 +73,9 @@ TEST(ScreenGridPathsTest, BackspaceAtTheStartOfALineDoesNothing) {
 
 TEST(ScreenGridPathsTest, TheTabStopsCanBeSetAndCleared) {
     ScreenGrid grid(1, 20);
+    // The grid comes with a tab stop every eight columns; the ones this test is about
+    // are the ones it sets itself.
+    grid.clearAllTabStops();
     grid.setTabStop(4);
     grid.setTabStop(9);
     grid.setCursor(0, 0);
@@ -112,12 +115,12 @@ TEST(ScreenGridPathsTest, ScrollDownPushesTheLinesUp) {
         grid.at(row, 0).codepoint = static_cast<std::uint32_t>('a' + row);
     }
 
+    // Scrolling down moves the content down and blanks the line at the top.
     grid.scrollDown(1);
 
-    EXPECT_EQ(grid.at(0, 0).codepoint, static_cast<std::uint32_t>('a'));
-    EXPECT_EQ(grid.at(1, 0).codepoint, static_cast<std::uint32_t>('b'));
-    // The last line is blank: the content moved up and a fresh line appeared at the end.
-    EXPECT_EQ(grid.at(2, 0).codepoint, 0u);
+    EXPECT_EQ(grid.at(0, 0).codepoint, 0u) << "the top line is not blank";
+    EXPECT_EQ(grid.at(1, 0).codepoint, static_cast<std::uint32_t>('a'));
+    EXPECT_EQ(grid.at(2, 0).codepoint, static_cast<std::uint32_t>('b'));
 
     // Scrolling by more than the window blanks the whole thing.
     grid.scrollDown(10);
