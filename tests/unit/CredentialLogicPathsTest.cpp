@@ -158,25 +158,28 @@ TEST(KdbxCredentialResolverPathsTest, ABindingResolvesAgainstTheIndex) {
 }
 
 TEST(KdbxCredentialResolverPathsTest, TheAutoMatchAlsoMatchesANameThatEndsWithTheHost) {
-    // "router.example" and "router.example.local" are the same machine as far as a
-    // password is concerned.
+    // A name that ends with the host of the session is the same machine: the shorter
+    // one is a suffix of the longer one, with a dot in front of it.
     KdbxIndex index;
     KdbxEntry entry;
     entry.uuid = "ZW50cnk=";
-    entry.url = "ssh://router.example.local:22";
+    entry.url = "ssh://router.example:22";
     index.entries.push_back(entry);
 
     KdbxBinding binding;
     binding.source = KdbxBindingSource::kKeePassAutoMatch;
 
-    KdbxResolution resolution = resolveKdbxBinding(index, binding, "router.example");
+    // The session's host is the longer one.
+    KdbxResolution resolution = resolveKdbxBinding(index, binding, "router.example.local");
     EXPECT_EQ(resolution.outcome, KdbxResolutionOutcome::kFound);
 
-    // The other way round: the session's host is the longer one.
-    resolution = resolveKdbxBinding(index, binding, "router.example.local");
+    // And the other way round: the url is the longer one.
+    entry.url = "ssh://host.router.example:22";
+    resolution = resolveKdbxBinding(index, binding, "router.example");
     EXPECT_EQ(resolution.outcome, KdbxResolutionOutcome::kFound);
 
     // A host that is not the same machine at all.
+    entry.url = "ssh://router.example:22";
     resolution = resolveKdbxBinding(index, binding, "somewhere.else");
     EXPECT_EQ(resolution.outcome, KdbxResolutionOutcome::kNotFound);
 }
