@@ -305,15 +305,12 @@ TEST(TerminalEmulatorPathsTest, CursorNextLineAndPreviousLine) {
     ASSERT_EQ(grid.cursorRow(), 2);
     ASSERT_EQ(grid.cursorColumn(), 4);
 
-    emulator.write(
-        "\x1b"
-        "E");  // CNL: down one line, column zero
+    // CNL and CPL are the CSI forms: ESC E is the next line, which is a different thing.
+    emulator.write("\x1b[1E");
     EXPECT_EQ(grid.cursorRow(), 3);
     EXPECT_EQ(grid.cursorColumn(), 0);
 
-    emulator.write(
-        "\x1b"
-        "F");  // CPL: up one line, column zero
+    emulator.write("\x1b[1F");
     EXPECT_EQ(grid.cursorRow(), 2);
     EXPECT_EQ(grid.cursorColumn(), 0);
 }
@@ -418,7 +415,11 @@ class CountingSink : public IControlSequenceSink {
         last_final = final;
     }
 
-    void csiDispatch(const CsiSequence&) override { ++csi; }
+    void csiDispatch(const CsiSequence& sequence) override {
+        ++csi;
+        last_intermediates.assign(sequence.intermediates.begin(), sequence.intermediates.end());
+        last_final = sequence.final;
+    }
 
     void oscDispatch(const OscSequence&) override { ++osc; }
 
