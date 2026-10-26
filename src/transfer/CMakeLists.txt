@@ -15,6 +15,7 @@ endif()
 
 add_library(openscrt_transfer STATIC
     ModuleInfo.cpp
+    modem/ZmodemSniffer.cpp
     sftp/SftpShell.cpp
     sftp/SftpSubsystem.cpp)
 

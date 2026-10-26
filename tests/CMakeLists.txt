@@ -245,6 +245,12 @@ openscrt_add_test(unit_ssh2_channel
 
 # The SFTP subsystem (P3-T4). It needs the SSH channel and the transfer library, and
 # it skips itself where there is no server to talk to.
+# The Zmodem sniffer (P3-T6). It is pure logic over bytes: no socket, no screen.
+openscrt_add_test(unit_zmodem_sniffer
+    LABEL unit
+    SOURCES unit/ZmodemSnifferTest.cpp
+    LIBS openscrt_transfer)
+
 openscrt_add_test(unit_sftp_subsystem
     LABEL unit
     SOURCES unit/SftpSubsystemTest.cpp
