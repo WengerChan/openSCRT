@@ -31,6 +31,13 @@ bool KdbxProtectedStream::decrypt(const std::uint8_t* data, std::size_t size,
         error = "no data to decrypt";
         return false;
     }
+    if (id_ != 0 && key_size_ == 0) {
+        // A protected stream without a key cannot be decrypted: the cipher would run
+        // with a key that was never there and hand back garbage that looks like a
+        // password. Say so instead.
+        error = "the protected stream has no key";
+        return false;
+    }
 
     switch (id_) {
         case 0: {
