@@ -22,6 +22,7 @@
 #include "credential/ICredentialProvider.h"
 #include "credential/ModuleInfo.h"
 #include "credential/kdbx/KdbxCredentialResolver.h"
+#include "credential/kdbx/KdbxProtectedStream.h"
 #include "credential/keepasshttp/KeePassHttpClient.h"
 #include "credential/keepasshttp/KeePassHttpCrypto.h"
 #include "credential/keepasshttp/KeePassHttpProvider.h"
@@ -130,7 +131,10 @@ class FailingTransport : public IHttpTransport {
 
 TEST(KeePassHttpProviderPathsTest, AProviderThatCannotReachKeePassIsUnavailable) {
     Association association;
+    // Both halves of the association have to be there, or the provider says it is not
+    // paired with a running KeePass and never asks.
     association.key_id = "an-id";
+    association.key_base64 = "a-key";
     KeePassHttpProvider provider(std::make_shared<FailingTransport>(), association);
 
     openscrt::credential::CredentialRequest request;
@@ -282,6 +286,17 @@ TEST(KdbxCredentialResolverPathsTest, AnUnknownSourceHasAName) {
     // A source this build does not know still has to print as something, because the
     // name ends up in a file.
     EXPECT_STREQ(toString(static_cast<KdbxBindingSource>(99)), "session-saved");
+}
+
+TEST(KdbxProtectedStreamPathsTest, AStreamWithoutAKeyHasNoKey) {
+    // A key that is not there is not a key: the stream has none, and it says so when it
+    // is asked to decrypt.
+    const KdbxProtectedStream stream(3, nullptr, 0);
+    const std::uint8_t payload[] = {'x'};
+    std::vector<std::uint8_t> out;
+    std::string error;
+    EXPECT_FALSE(stream.decrypt(payload, sizeof(payload), out, error));
+    EXPECT_FALSE(error.empty());
 }
 
 }  // namespace
