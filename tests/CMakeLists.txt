@@ -138,6 +138,14 @@ openscrt_add_test(unit_command_window_broadcast_ssh
 set_tests_properties(unit_command_window_broadcast_ssh PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+# The paths of the terminal that the other tests do not walk: the control characters
+# nobody sends, the sequences that are malformed in the middle, the grid that is asked
+# for a cell that is not there.
+openscrt_add_test(unit_terminal_paths
+    LABEL unit
+    SOURCES unit/TerminalPathsTest.cpp
+    LIBS openscrt_terminal)
+
 # The split workspace (P2-T10): panes, tiles, and the order the sessions keep.
 openscrt_add_test(unit_workspace_panes
     LABEL unit
