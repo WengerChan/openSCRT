@@ -157,7 +157,7 @@ TEST(KdbxProtectedStreamPathsTest, TheChaCha20StreamRoundTrips) {
     EXPECT_EQ(stream.id(), 3u);
 
     const Sha512Digest digest = sha512(key, sizeof(key));
-    const std::uint8_t cipher_key[32] = {};
+    std::uint8_t cipher_key[32] = {};
     std::copy(digest.begin(), digest.begin() + 32, cipher_key);
 
     const std::uint8_t plaintext[] = {'t', 'h', 'e', ' ', 'p', 'a', 's', 's'};
