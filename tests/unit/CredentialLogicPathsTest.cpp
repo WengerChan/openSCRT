@@ -13,14 +13,18 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "core/BuildInfo.h"
 #include "core/ModuleInfo.h"
+#include "credential/ICredentialProvider.h"
 #include "credential/ModuleInfo.h"
 #include "credential/kdbx/KdbxCredentialResolver.h"
+#include "credential/keepasshttp/KeePassHttpClient.h"
 #include "credential/keepasshttp/KeePassHttpCrypto.h"
+#include "credential/keepasshttp/KeePassHttpProvider.h"
 #include "protocols/ModuleInfo.h"
 #include "terminal/ModuleInfo.h"
 
@@ -92,6 +96,55 @@ TEST(KeePassHttpCryptoPathsTest, AFieldWithTheWrongKeyOrNonceIsRefused) {
     error.clear();
     ASSERT_TRUE(encryptField(key_text, nonce_text, "a value", out, error)) << error;
     EXPECT_FALSE(out.empty());
+}
+
+TEST(KeePassHttpCryptoPathsTest, AFieldThatCannotBeDecryptedIsRefused) {
+    const std::vector<std::uint8_t> key(kKeyBytes, 0x11);
+    const std::vector<std::uint8_t> nonce(kNonceBytes, 0x22);
+    const std::string key_text = base64(key.data(), key.size());
+    const std::string nonce_text = base64(nonce.data(), nonce.size());
+
+    std::string out;
+    std::string error;
+
+    // A key that is not base64 at all.
+    EXPECT_FALSE(decryptField("not base64!", nonce_text, "aGVsbG8=", out, error));
+    EXPECT_NE(error.find("base64"), std::string::npos) << error;
+
+    // A key of the right encoding but the wrong length.
+    error.clear();
+    const std::vector<std::uint8_t> short_key(16, 0x11);
+    EXPECT_FALSE(decryptField(base64(short_key.data(), short_key.size()), nonce_text,
+                              "aGVsbG8=", out, error));
+    EXPECT_NE(error.find("length"), std::string::npos) << error;
+}
+
+// A transport that always fails: KeePass is not running.
+class FailingTransport : public IHttpTransport {
+ public:
+    bool post(const std::string&, std::string&, std::string& error) override {
+        error = "the plugin did not answer";
+        return false;
+    }
+};
+
+TEST(KeePassHttpProviderPathsTest, AProviderThatCannotReachKeePassIsUnavailable) {
+    Association association;
+    association.key_id = "an-id";
+    KeePassHttpProvider provider(std::make_shared<FailingTransport>(), association);
+
+    openscrt::credential::CredentialRequest request;
+    request.host = "10.20.30.40";
+    const openscrt::credential::CredentialResult result = provider.lookup(request);
+
+    EXPECT_EQ(result.status, openscrt::credential::CredentialStatus::kUnavailable);
+    EXPECT_FALSE(result.message.empty());
+}
+
+TEST(KeePassHttpProviderPathsTest, TheProviderSaysWhichOneItIs) {
+    Association association;
+    KeePassHttpProvider provider(std::make_shared<FailingTransport>(), association);
+    EXPECT_EQ(std::string(provider.id()), "keepasshttp");
 }
 
 }  // namespace
@@ -225,6 +278,12 @@ TEST(KdbxCredentialResolverPathsTest, TheAutoMatchIgnoresTheSchemeAndThePort) {
     EXPECT_EQ(resolution.outcome, KdbxResolutionOutcome::kNotFound);
 }
 
+TEST(KdbxCredentialResolverPathsTest, AnUnknownSourceHasAName) {
+    // A source this build does not know still has to print as something, because the
+    // name ends up in a file.
+    EXPECT_STREQ(toString(static_cast<KdbxBindingSource>(99)), "session-saved");
+}
+
 }  // namespace
 }  // namespace openscrt::credential::kdbx
 
@@ -246,6 +305,23 @@ TEST(ModuleInfoTest, EveryModuleAnswersWithTheProjectVersion) {
     EXPECT_STREQ(openscrt::credential::moduleVersion(), openscrt::core::kProjectVersion);
     EXPECT_STREQ(openscrt::protocols::moduleVersion(), openscrt::core::kProjectVersion);
 }
+
+namespace openscrt::credential {
+namespace {
+
+// The names of the fields, the sources and the states. They end up in a file and in an
+// error message, so they have to be stable.
+TEST(CredentialNamesTest, TheNamesAreWhatTheySay) {
+    EXPECT_STREQ(toString(CredentialField::kPassword), "password");
+    EXPECT_STREQ(toString(CredentialField::kPrivateKeyPassphrase), "private-key-passphrase");
+    EXPECT_STREQ(toString(CredentialSource::kSessionSaved), "session-saved");
+    EXPECT_STREQ(toString(CredentialSource::kKeePassHttp), "keepass-http");
+    EXPECT_STREQ(toString(CredentialStatus::kFound), "found");
+    EXPECT_STREQ(toString(CredentialStatus::kError), "error");
+}
+
+}  // namespace
+}  // namespace openscrt::credential
 
 }  // namespace
 }  // namespace openscrt::core

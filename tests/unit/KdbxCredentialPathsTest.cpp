@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "core/SecureByteArray.h"
+#include "credential/kdbx/Kdbx3Reader.h"
 #include "credential/kdbx/Kdbx4Reader.h"
 #include "credential/kdbx/KdbxCrypto.h"
 #include "credential/kdbx/KdbxHeader.h"
@@ -486,6 +487,24 @@ TEST(KdbxVaultPathsTest, ADatabaseWithTheWrongPasswordIsRefused) {
                             reinterpret_cast<const std::uint8_t*>(wrong.data()), wrong.size(), {},
                             error));
     EXPECT_FALSE(error.empty());
+}
+
+TEST(KdbxVaultPathsTest, AFileThatIsNotADatabaseIsRefused) {
+    // A file with the name of a database that is not one.
+    const std::string path =
+        std::string(OPENCRT_SOURCE_DIR) + "/tests/fixtures/kdbx/blank_database.kdbx";
+    KdbxVault vault;
+    std::string error;
+    // The real database, read as if it were a different one: the header is refused.
+    EXPECT_FALSE(vault.open(QString::fromStdString(path), nullptr, 0, {}, error));
+    EXPECT_FALSE(error.empty());
+}
+
+TEST(Kdbx3ReaderPathsTest, AFileThatIsNotADatabaseIsRefused) {
+    const std::vector<std::uint8_t> garbage = {'n', 'o', 't', ' ', 'a', ' ', 'd', 'b'};
+    const Kdbx3ReadResult result = readKdbx3(garbage.data(), garbage.size(), nullptr, 0, {});
+    EXPECT_FALSE(result.ok());
+    EXPECT_FALSE(result.error.empty());
 }
 
 TEST(KdbxVaultPathsTest, AnEntryThatIsNotThereIsNotFound) {

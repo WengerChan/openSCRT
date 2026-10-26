@@ -346,6 +346,53 @@ TEST(KdbxHeaderParserEdgesTest, AStringValueIsReadAsText) {
     EXPECT_NE(result.error.find("$UUID"), std::string::npos) << result.error;
 }
 
+TEST(KdbxHeaderParserEdgesTest, ADictionaryThatStopsBeforeItsVersionIsRejected) {
+    const std::vector<std::uint8_t> bytes = headerWithKdfDictionary({0x00});
+    const KdbxHeaderParseResult result = parseKdbxHeader(bytes.data(), bytes.size());
+    EXPECT_FALSE(result.ok());
+    EXPECT_NE(result.error.find("version"), std::string::npos) << result.error;
+}
+
+TEST(KdbxHeaderParserEdgesTest, ADictionaryWithoutItsTerminatorIsRejected) {
+    const std::vector<std::uint8_t> bytes = headerWithKdfDictionary({0x00, 0x01});
+    const KdbxHeaderParseResult result = parseKdbxHeader(bytes.data(), bytes.size());
+    EXPECT_FALSE(result.ok());
+    EXPECT_NE(result.error.find("terminator"), std::string::npos) << result.error;
+}
+
+TEST(KdbxHeaderParserEdgesTest, ADictionaryTruncatedInItsValueLengthIsRejected) {
+    // The key is there, the length of the value is not.
+    const std::vector<std::uint8_t> bytes =
+        headerWithKdfDictionary({0x00, 0x01, 0x42, 0x01, 0x00, 0x00, 0x00, 'k'});
+    const KdbxHeaderParseResult result = parseKdbxHeader(bytes.data(), bytes.size());
+    EXPECT_FALSE(result.ok());
+    EXPECT_NE(result.error.find("value length"), std::string::npos) << result.error;
+}
+
+TEST(KdbxHeaderParserEdgesTest, TheOtherValueTypesAreRead) {
+    // A boolean, a signed 32-bit and a signed 64-bit value. They are read as what
+    // their type says, not as what their length happens to be.
+    struct Case {
+        std::uint8_t type;
+        std::vector<std::uint8_t> value;
+    };
+    const std::vector<Case> cases = {
+        {kTypeBool, {0x01}},
+        {kTypeInt32, {0xFF, 0xFF, 0xFF, 0xFF}},
+        {kTypeInt64, {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}},
+    };
+    for (const Case& item : cases) {
+        const std::vector<std::uint8_t> dictionary =
+            variantDictionary({{item.type, "R", item.value}});
+        const std::vector<std::uint8_t> bytes = headerWithKdfDictionary(dictionary);
+        const KdbxHeaderParseResult result = parseKdbxHeader(bytes.data(), bytes.size());
+        // The dictionary has no $UUID, so the header is refused -- but not because of
+        // the value.
+        EXPECT_FALSE(result.ok());
+        EXPECT_NE(result.error.find("$UUID"), std::string::npos) << result.error;
+    }
+}
+
 TEST(KdbxHeaderParserEdgesTest, AValueTypeThisBuildDoesNotKnowIsRejected) {
     // A dictionary that names a type this build has no reader for must be refused
     // rather than read as something else.
