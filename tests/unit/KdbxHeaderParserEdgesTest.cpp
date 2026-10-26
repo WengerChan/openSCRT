@@ -279,7 +279,7 @@ TEST(KdbxHeaderParserEdgesTest, TheEndOfHeaderMarkerIsChecked) {
 
 TEST(KdbxHeaderParserEdgesTest, AHeaderWithoutAMandatoryFieldIsRejected) {
     // The cipher, the compression and the master seed are not optional.
-    for (std::uint8_t missing : {0x02, 0x03, 0x04}) {
+    for (std::uint8_t missing : {std::uint8_t{0x02}, std::uint8_t{0x03}, std::uint8_t{0x04}}) {
         std::vector<Field> fields;
         for (const Field& field : mandatoryFields()) {
             if (field.id != missing) {
@@ -336,7 +336,9 @@ TEST(KdbxHeaderParserEdgesTest, AStringValueIsReadAsText) {
     // The KDF parameters may carry values this build has no use for. A string among
     // them has to be read as text and skipped, not refused.
     const std::vector<std::uint8_t> dictionary =
-        variantDictionary({{kTypeString, "Comment", std::vector<std::uint8_t>{'h', 'i'}}});
+        // The bytes of "hi", written as numbers: a character literal in a vector of
+        // bytes is a narrowing conversion, and the Windows compiler says so.
+        variantDictionary({{kTypeString, "Comment", std::vector<std::uint8_t>{0x68, 0x69}}});
     const std::vector<std::uint8_t> bytes = headerWithKdfDictionary(dictionary);
     const KdbxHeaderParseResult result = parseKdbxHeader(bytes.data(), bytes.size());
     EXPECT_FALSE(result.ok());

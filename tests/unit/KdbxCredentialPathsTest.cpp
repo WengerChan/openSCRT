@@ -347,7 +347,7 @@ TEST(Kdbx4ReaderPathsTest, ADamagedHeaderIsRefused) {
     ASSERT_FALSE(database.empty()) << "the fixture is missing";
     const KdbxHeaderParseResult header = parseKdbxHeader(database.data(), database.size());
     ASSERT_TRUE(header.ok()) << header.error;
-    database[header.header.payload_offset] ^= 0xFF;
+    database[header.header.payload_offset] ^= static_cast<std::uint8_t>(0xFF);
 
     const Kdbx4ReadResult result = readBlank(database);
 
@@ -361,7 +361,7 @@ TEST(Kdbx4ReaderPathsTest, AWrongAuthenticationIsRefused) {
     ASSERT_FALSE(database.empty()) << "the fixture is missing";
     const KdbxHeaderParseResult header = parseKdbxHeader(database.data(), database.size());
     ASSERT_TRUE(header.ok()) << header.error;
-    database[header.header.payload_offset + 32] ^= 0xFF;
+    database[header.header.payload_offset + 32] ^= static_cast<std::uint8_t>(0xFF);
 
     const Kdbx4ReadResult result = readBlank(database);
 
