@@ -26,7 +26,6 @@
 #include <thread>
 #include <vector>
 
-#include "core/SecureByteArray.h"
 #include "core/SpscRingBuffer.h"
 #include "protocols/ITransportChannel.h"
 #include "protocols/telnet/TelnetCodec.h"
@@ -59,7 +58,6 @@ struct TcpOptions {
     // each other.
     std::string user;
     std::string server_user;
-    core::SecureByteArray password;
 };
 
 enum class SocketMode {
