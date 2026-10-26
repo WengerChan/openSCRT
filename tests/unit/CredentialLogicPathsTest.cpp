@@ -306,6 +306,9 @@ TEST(ModuleInfoTest, EveryModuleAnswersWithTheProjectVersion) {
     EXPECT_STREQ(openscrt::protocols::moduleVersion(), openscrt::core::kProjectVersion);
 }
 
+}  // namespace
+}  // namespace openscrt::core
+
 namespace openscrt::credential {
 namespace {
 
@@ -322,6 +325,3 @@ TEST(CredentialNamesTest, TheNamesAreWhatTheySay) {
 
 }  // namespace
 }  // namespace openscrt::credential
-
-}  // namespace
-}  // namespace openscrt::core
