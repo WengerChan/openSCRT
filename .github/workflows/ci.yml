@@ -214,6 +214,19 @@ jobs:
           htop --version | head -1
           less --version | head -1
 
+      # The reference implementation of the Zmodem protocol (P3-T7).
+      #
+      # The engine is tested against the real sender: "sz" runs on the other end of a
+      # pty and sends a file, and the file that arrives is compared with the one that
+      # went out. An engine tested against itself would only prove that it agrees with
+      # itself.
+      - name: Install the reference Zmodem implementation (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get install -y -qq lrzsz
+          sz --version 2>&1 | head -2 || true
+
       - name: Install dependencies (vcpkg, manifest mode)
         shell: bash
         run: |

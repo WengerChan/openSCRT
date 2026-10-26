@@ -251,6 +251,14 @@ openscrt_add_test(unit_zmodem_sniffer
     SOURCES unit/ZmodemSnifferTest.cpp
     LIBS openscrt_transfer)
 
+# The Zmodem frames and the engine (P3-T7). The engine is tested against the real
+# sender -- the reference implementation of the protocol -- on the platforms that
+# have it.
+openscrt_add_test(unit_zmodem_engine
+    LABEL unit
+    SOURCES unit/ZmodemEngineTest.cpp
+    LIBS openscrt_transfer openscrt_protocols)
+
 openscrt_add_test(unit_sftp_subsystem
     LABEL unit
     SOURCES unit/SftpSubsystemTest.cpp
