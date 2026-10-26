@@ -55,6 +55,7 @@ void SocketChannel::onIncoming(const std::uint8_t* data, std::size_t size,
                                std::vector<std::uint8_t>& replies) {
     // The raw conversation shows the bytes and says nothing back.
     text.assign(data, data + size);
+    static_cast<void>(replies);
 }
 
 void SocketChannel::onConnected(std::vector<std::uint8_t>& to_send, std::string& error) {

@@ -107,7 +107,7 @@ class TelnetCodec {
 
     void handleCommand(TelnetCommand command, std::uint8_t option, Result& result);
     void handleSubnegotiation(const std::vector<std::uint8_t>& payload, Result& result);
-    void answer(TelnetCommand command, TelnetOption option, bool accept, Result& result);
+    void answer(TelnetCommand command, TelnetOption option, Result& result);
 
     State state_{State::kData};
     std::vector<std::uint8_t> subnegotiation_;

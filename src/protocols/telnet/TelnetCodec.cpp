@@ -132,7 +132,7 @@ TelnetCodec::Result TelnetCodec::feed(const std::uint8_t* data, std::size_t size
     return result;
 }
 
-void TelnetCodec::answer(TelnetCommand command, TelnetOption option, bool accept, Result& result) {
+void TelnetCodec::answer(TelnetCommand command, TelnetOption option, Result& result) {
     result.replies.push_back(kIac);
     result.replies.push_back(static_cast<std::uint8_t>(command));
     result.replies.push_back(static_cast<std::uint8_t>(option));
@@ -147,7 +147,7 @@ void TelnetCodec::handleCommand(TelnetCommand command, std::uint8_t option, Resu
                 case TelnetOption::kWindowSize:
                     if (!window_size_wanted_) {
                         window_size_wanted_ = true;
-                        answer(TelnetCommand::kWill, TelnetOption::kWindowSize, true, result);
+                        answer(TelnetCommand::kWill, TelnetOption::kWindowSize, result);
                         const std::vector<std::uint8_t> report = windowSizeReport();
                         result.replies.insert(result.replies.end(), report.begin(), report.end());
                     }
@@ -155,7 +155,7 @@ void TelnetCodec::handleCommand(TelnetCommand command, std::uint8_t option, Resu
                 case TelnetOption::kTermType:
                     if (!terminal_type_wanted_) {
                         terminal_type_wanted_ = true;
-                        answer(TelnetCommand::kWill, TelnetOption::kTermType, true, result);
+                        answer(TelnetCommand::kWill, TelnetOption::kTermType, result);
                         result.replies.push_back(kIac);
                         result.replies.push_back(kSb);
                         result.replies.push_back(
@@ -168,16 +168,16 @@ void TelnetCodec::handleCommand(TelnetCommand command, std::uint8_t option, Resu
                     }
                     break;
                 case TelnetOption::kSuppressGoAhead:
-                    answer(TelnetCommand::kWill, TelnetOption::kSuppressGoAhead, true, result);
+                    answer(TelnetCommand::kWill, TelnetOption::kSuppressGoAhead, result);
                     break;
                 default:
-                    answer(TelnetCommand::kWont, static_cast<TelnetOption>(option), false, result);
+                    answer(TelnetCommand::kWont, static_cast<TelnetOption>(option), result);
                     break;
             }
             break;
 
         case TelnetCommand::kDont:
-            answer(TelnetCommand::kWont, static_cast<TelnetOption>(option), false, result);
+            answer(TelnetCommand::kWont, static_cast<TelnetOption>(option), result);
             break;
 
         case TelnetCommand::kWill:
@@ -186,15 +186,15 @@ void TelnetCodec::handleCommand(TelnetCommand command, std::uint8_t option, Resu
             if (static_cast<TelnetOption>(option) == TelnetOption::kEcho) {
                 if (!echo_enabled_) {
                     echo_enabled_ = true;
-                    answer(TelnetCommand::kDo, TelnetOption::kEcho, true, result);
+                    answer(TelnetCommand::kDo, TelnetOption::kEcho, result);
                 }
             } else {
-                answer(TelnetCommand::kDont, static_cast<TelnetOption>(option), false, result);
+                answer(TelnetCommand::kDont, static_cast<TelnetOption>(option), result);
             }
             break;
 
         case TelnetCommand::kWont:
-            answer(TelnetCommand::kDont, static_cast<TelnetOption>(option), false, result);
+            answer(TelnetCommand::kDont, static_cast<TelnetOption>(option), result);
             break;
 
         default:

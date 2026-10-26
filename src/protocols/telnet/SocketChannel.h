@@ -114,13 +114,16 @@ class SocketChannel : public ITransportChannel {
 
     void setState(TransportState state, const std::string& detail);
 
+    // The settings and the conversation of this channel. They are protected because
+    // the three channels below are the same machinery with a different conversation,
+    // and they need to read them.
+    TcpOptions options_;
+    SocketMode mode_;
+
  private:
     void runReader();
     void stopReader() noexcept;
     void drainOutbox(QSslSocket& socket);
-
-    TcpOptions options_;
-    SocketMode mode_;
 
     core::ByteRingBuffer ring_;
     std::atomic<TransportState> state_{TransportState::kIdle};

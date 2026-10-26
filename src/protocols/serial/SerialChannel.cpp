@@ -40,7 +40,8 @@ TransportState SerialChannel::state() const noexcept {
     return state_.load();
 }
 
-void SerialChannel::setState(TransportState state, const std::string& detail) {    state_.store(state);
+void SerialChannel::setState(TransportState state, const std::string& detail) {
+    state_.store(state);
     StateCallback callback;
     {
         std::lock_guard<std::mutex> lock(callback_mutex_);
