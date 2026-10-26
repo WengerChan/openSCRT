@@ -21,6 +21,7 @@
 #include "core/SecureByteArray.h"
 #include "core/SpscRingBuffer.h"
 #include "protocols/ITransportChannel.h"
+#include "protocols/ssh/SshNativeSession.h"
 
 namespace openscrt::protocols::ssh {
 
@@ -74,6 +75,14 @@ class Ssh2Channel final : public ITransportChannel {
     [[nodiscard]] std::size_t readAvailable(std::uint8_t* destination, std::size_t max,
                                             std::chrono::milliseconds timeout);
 
+    // The libssh session behind this channel, so that another subsystem can be opened
+    // on it without a second handshake and a second password (P3-T4).
+    //
+    // The handle keeps the session alive, so a subsystem that is still open when the
+    // channel goes away does not read from freed memory. It does not keep the
+    // *connection* alive: the subsystem has to be closed before the channel is.
+    [[nodiscard]] SshNativeSession nativeSession() const noexcept;
+
  private:
     struct Session;  // Owns the libssh handles; defined in the .cpp.
 
@@ -83,7 +92,9 @@ class Ssh2Channel final : public ITransportChannel {
     [[nodiscard]] bool authenticate(Session& session, std::string& error);
 
     SshConnectionOptions options_;
-    std::unique_ptr<Session> session_;
+    // The session is shared, not owned outright: a subsystem that was opened on it
+    // keeps it alive even when the channel itself is gone.
+    std::shared_ptr<Session> session_;
     core::ByteRingBuffer ring_;
 
     std::atomic<TransportState> state_{TransportState::kIdle};

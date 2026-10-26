@@ -243,6 +243,13 @@ openscrt_add_test(unit_ssh2_channel
     SOURCES unit/Ssh2ChannelTest.cpp
     LIBS openscrt_protocols)
 
+# The SFTP subsystem (P3-T4). It needs the SSH channel and the transfer library, and
+# it skips itself where there is no server to talk to.
+openscrt_add_test(unit_sftp_subsystem
+    LABEL unit
+    SOURCES unit/SftpSubsystemTest.cpp
+    LIBS openscrt_protocols openscrt_transfer)
+
 # P1-T11: the ssh.com (VanDyke) private key format.
 #
 # The test drives libssh directly, to check that the converted key is one libssh can

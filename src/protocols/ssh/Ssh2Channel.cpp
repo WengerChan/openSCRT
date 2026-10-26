@@ -29,7 +29,7 @@ struct Ssh2Channel::Session {
 
 Ssh2Channel::Ssh2Channel(SshConnectionOptions options)
     : options_(std::move(options)), ring_(64 * 1024) {
-    session_ = std::make_unique<Session>();
+    session_ = std::make_shared<Session>();
     session_->port = static_cast<std::uint16_t>(options_.port);
     session_->timeout = static_cast<unsigned long>(options_.timeout_seconds);
 }
@@ -348,6 +348,12 @@ std::string Ssh2Channel::remoteAddress() const {
         return options_.host + ":" + std::to_string(options_.port);
     }
     return options_.user + "@" + options_.host + ":" + std::to_string(options_.port);
+}
+
+SshNativeSession Ssh2Channel::nativeSession() const noexcept {
+    // The session is shared, so the handle keeps it alive: a subsystem that outlives
+    // the channel does not read from freed memory.
+    return SshNativeSession(session_->session, session_);
 }
 
 std::size_t Ssh2Channel::readAvailable(std::uint8_t* destination, std::size_t max,

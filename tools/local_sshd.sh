@@ -121,6 +121,24 @@ UseDNS no
 LogLevel VERBOSE
 EOF
 
+# The SFTP subsystem (P3-T4). The configuration above is the whole file, so the
+# "Subsystem sftp" line that a distribution's sshd_config would have is not here:
+# without it the server accepts the connection and then refuses every SFTP request.
+# The path of the server is not the same on every distribution, so it is looked for.
+SFTP_SERVER=""
+for candidate in /usr/lib/openssh/sftp-server /usr/lib/ssh/sftp-server \
+                 /usr/libexec/sftp-server /usr/libexec/openssh/sftp-server; do
+    if [ -x "$candidate" ]; then
+        SFTP_SERVER="$candidate"
+        break
+    fi
+done
+if [ -n "$SFTP_SERVER" ]; then
+    echo "Subsystem sftp $SFTP_SERVER" >> "$SSHD_CONFIG"
+else
+    echo "::notice::no sftp-server found; the SFTP subsystem will not be available"
+fi
+
 # 5. Start it and wait for the port to answer.
 sudo /usr/sbin/sshd -f "$SSHD_CONFIG" -E "$LOG_FILE" || {
     fail "sshd refused to start"
