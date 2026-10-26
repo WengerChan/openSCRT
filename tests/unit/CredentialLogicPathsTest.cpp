@@ -169,17 +169,22 @@ TEST(KdbxCredentialResolverPathsTest, TheAutoMatchAlsoMatchesANameThatEndsWithTh
     KdbxBinding binding;
     binding.source = KdbxBindingSource::kKeePassAutoMatch;
 
-    // The session's host is the longer one.
-    KdbxResolution resolution = resolveKdbxBinding(index, binding, "router.example.local");
+    // The url is the longer one, and it ends with the host of the session.
+    entry.url = "ssh://host.router.example:22";
+    KdbxResolution resolution = resolveKdbxBinding(index, binding, "router.example");
     EXPECT_EQ(resolution.outcome, KdbxResolutionOutcome::kFound);
 
-    // And the other way round: the url is the longer one.
-    entry.url = "ssh://host.router.example:22";
-    resolution = resolveKdbxBinding(index, binding, "router.example");
+    // And the other way round: the host of the session is the longer one.
+    entry.url = "ssh://router.example:22";
+    resolution = resolveKdbxBinding(index, binding, "host.router.example");
     EXPECT_EQ(resolution.outcome, KdbxResolutionOutcome::kFound);
+
+    // Sharing the last part is not enough: the short name has to be a suffix of the
+    // long one, not the other way round.
+    resolution = resolveKdbxBinding(index, binding, "router.example.local");
+    EXPECT_EQ(resolution.outcome, KdbxResolutionOutcome::kNotFound);
 
     // A host that is not the same machine at all.
-    entry.url = "ssh://router.example:22";
     resolution = resolveKdbxBinding(index, binding, "somewhere.else");
     EXPECT_EQ(resolution.outcome, KdbxResolutionOutcome::kNotFound);
 }
