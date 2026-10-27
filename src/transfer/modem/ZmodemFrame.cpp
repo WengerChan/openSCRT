@@ -170,10 +170,11 @@ bool decodeHeader(const std::uint8_t* data, std::size_t size, ZmodemHeader& head
             if (at + kHexHeaderLength > size) {
                 break;
             }
-            // Fourteen digits: the type, the four bytes and the checksum.
-            int digits[14];
+            // Fourteen hex digits are seven bytes: the type, the four bytes and the
+            // checksum. Each byte is two digits, so seven pairs are read.
+            int digits[7];
             bool ok = true;
-            for (int index = 0; index < 14 && ok; ++index) {
+            for (int index = 0; index < 7 && ok; ++index) {
                 const int high = hexValue(data[at + 4 + static_cast<std::size_t>(index) * 2]);
                 const int low = hexValue(data[at + 5 + static_cast<std::size_t>(index) * 2]);
                 if (high < 0 || low < 0) {
@@ -185,8 +186,6 @@ bool decodeHeader(const std::uint8_t* data, std::size_t size, ZmodemHeader& head
             if (!ok) {
                 continue;
             }
-            // The fourteen digits are seven bytes: the type, the four bytes and the
-            // checksum.
             header.frame = static_cast<ZmodemFrame>(digits[0]);
             for (int index = 0; index < 4; ++index) {
                 header.bytes[index] = static_cast<std::uint8_t>(digits[1 + index]);
