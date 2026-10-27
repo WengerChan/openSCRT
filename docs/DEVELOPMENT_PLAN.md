@@ -621,9 +621,9 @@ P2-A2 只满足 mock 那一半 ✔；P2-A7 的平台相关观测（macOS / Windo
 
 | 腿 | run | 结论 |
 | :--- | :--- | :--- |
-| format (ubuntu-24.04) | [#40469797678](https://github.com/WengerChan/openSCRT/actions/runs/40469797678) | ✅ |
-| build-test (ubuntu-24.04) | 同上 | 🟡：编译全绿，**Zmodem 的十六进制帧头修好之后**单元测试逐条通过；Linux 这一腿还剩**两处**失败，见 ⑤ 的 R23 / R24 |
-| build-test (windows-2022) | 同上 | 🟡：编译全绿，**只剩三条 socket 通道的用例**红（R23） |
+| format (ubuntu-24.04) | [#40471546244](https://github.com/WengerChan/openSCRT/actions/runs/40471546244) | ✅ |
+| build-test (ubuntu-24.04) | 同上 | 🟡：编译全绿；**Zmodem 的十六进制帧头修好之后，Zmodem 的用例（帧头往返、对着 lrzsz 的真传文件）全过**；还剩**两处**失败，见 ⑤ 的 R23 / R24 |
+| build-test (windows-2022) | 同上 | 🟡：编译全绿，**只剩三条 socket 通道的用例**红（R23），其余全过 |
 | build-test (macos-14) | 同上 | 🟡：同上 |
 
 **这一阶段的 CI 账**：从 `ec11a93` 到 `dfdbf5c` 一共 **23 次推送**，其中 **11 次红**。红的理由分三类，而且**每一类都是新写的代码自己说的**：
