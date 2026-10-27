@@ -90,6 +90,20 @@ void appendEscaped(std::vector<std::uint8_t>& out, const std::uint8_t* data, std
     return (byte & 0x60) == 0;
 }
 
+// Finds the next header in the buffer and decodes it.
+//
+// Both forms are accepted: the hex one (the padding, the escape, the marker of a hex
+// frame, the type as two digits, the four bytes as eight digits, the checksum as four
+// digits, and the two bytes that end it) and the binary one (the padding, the escape,
+// the marker, the type, the four bytes and the checksum).
+//
+// `used` says how many bytes the header took, and `crc32_frame` says whether it was
+// the form with the 32-bit checksum.
+//
+// Returns false when the buffer does not hold a whole header yet.
+[[nodiscard]] bool decodeHeader(const std::uint8_t* data, std::size_t size, ZmodemHeader& header,
+                                bool& crc32_frame, std::size_t& used);
+
 }  // namespace openscrt::transfer::modem
 
 #endif  // OPENCRT_TRANSFER_MODEM_ZMODEM_FRAME_H_

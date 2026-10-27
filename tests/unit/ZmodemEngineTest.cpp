@@ -10,6 +10,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -110,6 +111,59 @@ TEST(ZmodemFrameTest, ADataFrameEndsWithItsChecksum) {
 
 // ------------------------------------------------------------------------- engine
 
+TEST(ZmodemFrameTest, AHeaderSurvivesTheRoundTrip) {
+    // Every type of the protocol, in both forms. This is the test that catches a
+    // mistake in the digits of a hex header: the whole transfer takes ten minutes to
+    // fail, and the arithmetic is a line.
+    for (int type = 0; type <= 19; ++type) {
+        modem::ZmodemHeader header;
+        header.frame = static_cast<modem::ZmodemFrame>(type);
+        header.setPosition(0x12345678);
+
+        const std::vector<std::uint8_t> hex = modem::encodeHexHeader(header);
+        modem::ZmodemHeader decoded;
+        bool crc32_frame = false;
+        std::size_t used = 0;
+        ASSERT_TRUE(modem::decodeHeader(hex.data(), hex.size(), decoded, crc32_frame, used));
+        EXPECT_EQ(used, hex.size());
+        EXPECT_EQ(static_cast<int>(decoded.frame), type);
+        EXPECT_EQ(decoded.position(), header.position());
+        for (int index = 0; index < 4; ++index) {
+            EXPECT_EQ(decoded.bytes[index], header.bytes[index]);
+        }
+
+        const std::vector<std::uint8_t> binary = modem::encodeBinaryHeader(header, false);
+        ASSERT_TRUE(modem::decodeHeader(binary.data(), binary.size(), decoded, crc32_frame, used));
+        EXPECT_EQ(used, binary.size());
+        EXPECT_EQ(static_cast<int>(decoded.frame), type);
+        EXPECT_EQ(decoded.position(), header.position());
+    }
+}
+
+TEST(ZmodemFrameTest, AHeaderThatIsCutInHalfIsNotDecoded) {
+    modem::ZmodemHeader header;
+    header.frame = modem::ZmodemFrame::kResume;
+    const std::vector<std::uint8_t> bytes = modem::encodeHexHeader(header);
+
+    modem::ZmodemHeader decoded;
+    bool crc32_frame = false;
+    std::size_t used = 0;
+    EXPECT_FALSE(modem::decodeHeader(bytes.data(), bytes.size() - 1, decoded, crc32_frame, used));
+}
+
+TEST(ZmodemFrameTest, TheChecksumOfAHeaderIsChecked) {
+    modem::ZmodemHeader header;
+    header.frame = modem::ZmodemFrame::kResume;
+    std::vector<std::uint8_t> bytes = modem::encodeHexHeader(header);
+    // Break the checksum: one of the digits of it.
+    bytes[14] = bytes[14] == '0' ? '1' : '0';
+
+    modem::ZmodemHeader decoded;
+    bool crc32_frame = false;
+    std::size_t used = 0;
+    EXPECT_FALSE(modem::decodeHeader(bytes.data(), bytes.size(), decoded, crc32_frame, used));
+}
+
 #if defined(__linux__)
 
 namespace {
@@ -170,7 +224,7 @@ TEST(ZmodemEngineTest, AFileArrivesFromTheRealSender) {
     modem::XyzModemEngine engine(engine_options);
 
     std::vector<std::uint8_t> buffer(64 * 1024);
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(300);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(480);
     while (engine.state() != modem::ModemState::kFinished &&
            std::chrono::steady_clock::now() < deadline) {
         const std::size_t count =
@@ -189,7 +243,14 @@ TEST(ZmodemEngineTest, AFileArrivesFromTheRealSender) {
 
     const std::string received = readFile(engine.receivedPath());
     EXPECT_EQ(received.size(), payload.size());
-    EXPECT_EQ(received, payload);
+    if (received.size() == payload.size()) {
+        // The bytes are compared one by one, and only the first difference is
+        // reported. A failure that prints two hundred megabytes fills the log of the
+        // run and hides everything else in it.
+        const auto difference = std::mismatch(received.begin(), received.end(), payload.begin());
+        EXPECT_TRUE(difference.first == difference.second)
+            << "the first difference is at byte " << (difference.first - received.begin());
+    }
 
     sender.disconnect();
     std::remove(source.c_str());

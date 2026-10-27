@@ -23,19 +23,6 @@ constexpr std::uint8_t kCan = 0x18;
 // use frames this engine would have to decode a second way.
 constexpr std::uint8_t kReceiverFlags = 0x01 | 0x02 | 0x40;
 
-int hexValue(std::uint8_t byte) {
-    if (byte >= '0' && byte <= '9') {
-        return byte - '0';
-    }
-    if (byte >= 'a' && byte <= 'f') {
-        return byte - 'a' + 10;
-    }
-    if (byte >= 'A' && byte <= 'F') {
-        return byte - 'A' + 10;
-    }
-    return -1;
-}
-
 bool isFrameEnd(std::uint8_t byte) {
     return byte == static_cast<std::uint8_t>(FrameEnd::kEnd) ||
            byte == static_cast<std::uint8_t>(FrameEnd::kContinue) ||
@@ -122,89 +109,10 @@ std::vector<std::uint8_t> XyzModemEngine::cancel() {
 }
 
 bool XyzModemEngine::readHeader(ZmodemHeader& header, bool& crc32_frame, std::size_t& used) {
-    // A hex header: the padding, the padding again, the escape, the marker, the type
-    // as two digits, the four bytes as eight digits, the checksum as four digits, and
-    // the two bytes that end it.
-    constexpr std::size_t kHexHeaderLength = 4 + 2 + 8 + 4 + 2;
-    // A binary header: the padding, the escape, the marker, the type, the four bytes
-    // and the checksum -- which is two bytes, or four when it is the 32-bit one.
-    constexpr std::size_t kBinaryHeaderLength = 3 + 1 + 4 + 2;
-    constexpr std::size_t kBinary32HeaderLength = 3 + 1 + 4 + 4;
-
-    for (std::size_t at = 0; at < buffer_.size(); ++at) {
-        if (buffer_[at] != kZpad) {
-            continue;
-        }
-        if (at + 1 >= buffer_.size()) {
-            break;
-        }
-        if (buffer_[at + 1] == kZpad) {
-            // The hex form.
-            if (at + 4 > buffer_.size()) {
-                break;
-            }
-            if (buffer_[at + 2] != kZdle || buffer_[at + 3] != 'B') {
-                continue;
-            }
-            if (at + kHexHeaderLength > buffer_.size()) {
-                break;
-            }
-            int digits[14];
-            bool ok = true;
-            for (int index = 0; index < 14 && ok; ++index) {
-                const int high = hexValue(buffer_[at + 4 + static_cast<std::size_t>(index) * 2]);
-                const int low = hexValue(buffer_[at + 5 + static_cast<std::size_t>(index) * 2]);
-                if (high < 0 || low < 0) {
-                    ok = false;
-                    break;
-                }
-                digits[index] = (high << 4) | low;
-            }
-            if (!ok) {
-                continue;
-            }
-            header.frame = static_cast<ZmodemFrame>(digits[0]);
-            for (int index = 0; index < 4; ++index) {
-                header.bytes[index] = static_cast<std::uint8_t>(digits[1 + index]);
-            }
-            const auto sent = static_cast<std::uint16_t>((digits[5] << 8) | digits[6]);
-            if (headerChecksum(header) != sent) {
-                continue;
-            }
-            crc32_frame = false;
-            used = at + kHexHeaderLength;
-            return true;
-        }
-        // The binary form.
-        if (at + 3 > buffer_.size()) {
-            break;
-        }
-        if (buffer_[at + 1] != kZdle) {
-            continue;
-        }
-        const bool is_32 = buffer_[at + 2] == 'C';
-        if (buffer_[at + 2] != 'A' && !is_32) {
-            continue;
-        }
-        const std::size_t length = is_32 ? kBinary32HeaderLength : kBinaryHeaderLength;
-        if (at + length > buffer_.size()) {
-            break;
-        }
-        header.frame = static_cast<ZmodemFrame>(buffer_[at + 3]);
-        for (std::size_t index = 0; index < 4; ++index) {
-            header.bytes[index] = buffer_[at + 4 + index];
-        }
-        crc32_frame = is_32;
-        if (!is_32) {
-            const auto sent = static_cast<std::uint16_t>((buffer_[at + 8] << 8) | buffer_[at + 9]);
-            if (headerChecksum(header) != sent) {
-                continue;
-            }
-        }
-        used = at + length;
-        return true;
-    }
-    return false;
+    // The decoding of a header lives with the frames, so that it can be tested on its
+    // own: the bug it had was in the arithmetic of the digits, and a test that only
+    // goes through a whole transfer would have taken ten minutes to find it.
+    return decodeHeader(buffer_.data(), buffer_.size(), header, crc32_frame, used);
 }
 
 bool XyzModemEngine::readDataFrame(std::vector<std::uint8_t>& data, FrameEnd& frame_end,

@@ -12,6 +12,19 @@ void appendHexDigit(std::vector<std::uint8_t>& out, std::uint8_t value) {
     out.push_back(static_cast<std::uint8_t>(kDigits[value & 0x0F]));
 }
 
+int hexValue(std::uint8_t byte) {
+    if (byte >= '0' && byte <= '9') {
+        return byte - '0';
+    }
+    if (byte >= 'a' && byte <= 'f') {
+        return byte - 'a' + 10;
+    }
+    if (byte >= 'A' && byte <= 'F') {
+        return byte - 'A' + 10;
+    }
+    return -1;
+}
+
 }  // namespace
 
 std::uint16_t crc16(std::uint16_t crc, std::uint8_t byte) {
@@ -126,6 +139,98 @@ std::vector<std::uint8_t> encodeDataFrame(const std::uint8_t* data, std::size_t 
     out.push_back(static_cast<std::uint8_t>((crc >> 8) & 0xFF));
     out.push_back(static_cast<std::uint8_t>(crc & 0xFF));
     return out;
+}
+
+bool decodeHeader(const std::uint8_t* data, std::size_t size, ZmodemHeader& header,
+                  bool& crc32_frame, std::size_t& used) {
+    // A hex header: the padding, the padding again, the escape, the marker, the type as
+    // two digits, the four bytes as eight digits, the checksum as four digits, and the
+    // two bytes that end it.
+    constexpr std::size_t kHexHeaderLength = 4 + 14 + 2;
+    // A binary header: the padding, the escape, the marker, the type, the four bytes
+    // and the checksum -- which is two bytes, or four when it is the 32-bit one.
+    constexpr std::size_t kBinaryHeaderLength = 3 + 1 + 4 + 2;
+    constexpr std::size_t kBinary32HeaderLength = 3 + 1 + 4 + 4;
+
+    for (std::size_t at = 0; at < size; ++at) {
+        if (data[at] != kZpad) {
+            continue;
+        }
+        if (at + 1 >= size) {
+            break;
+        }
+        if (data[at + 1] == kZpad) {
+            // The hex form.
+            if (at + 4 > size) {
+                break;
+            }
+            if (data[at + 2] != kZdle || data[at + 3] != 'B') {
+                continue;
+            }
+            if (at + kHexHeaderLength > size) {
+                break;
+            }
+            // Fourteen digits: the type, the four bytes and the checksum.
+            int digits[14];
+            bool ok = true;
+            for (int index = 0; index < 14 && ok; ++index) {
+                const int high = hexValue(data[at + 4 + static_cast<std::size_t>(index) * 2]);
+                const int low = hexValue(data[at + 5 + static_cast<std::size_t>(index) * 2]);
+                if (high < 0 || low < 0) {
+                    ok = false;
+                    break;
+                }
+                digits[index] = (high << 4) | low;
+            }
+            if (!ok) {
+                continue;
+            }
+            // The type is two digits, the four bytes are eight, and the checksum is
+            // the last four.
+            header.frame = static_cast<ZmodemFrame>((digits[0] << 4) | digits[1]);
+            for (int index = 0; index < 4; ++index) {
+                header.bytes[index] =
+                    static_cast<std::uint8_t>((digits[2 + index * 2] << 4) | digits[3 + index * 2]);
+            }
+            const auto sent = static_cast<std::uint16_t>((((digits[10] << 4) | digits[11]) << 8) |
+                                                         ((digits[12] << 4) | digits[13]));
+            if (headerChecksum(header) != sent) {
+                continue;
+            }
+            crc32_frame = false;
+            used = at + kHexHeaderLength;
+            return true;
+        }
+        // The binary form.
+        if (at + 3 > size) {
+            break;
+        }
+        if (data[at + 1] != kZdle) {
+            continue;
+        }
+        const bool is_32 = data[at + 2] == 'C';
+        if (data[at + 2] != 'A' && !is_32) {
+            continue;
+        }
+        const std::size_t length = is_32 ? kBinary32HeaderLength : kBinaryHeaderLength;
+        if (at + length > size) {
+            break;
+        }
+        header.frame = static_cast<ZmodemFrame>(data[at + 3]);
+        for (std::size_t index = 0; index < 4; ++index) {
+            header.bytes[index] = data[at + 4 + index];
+        }
+        crc32_frame = is_32;
+        if (!is_32) {
+            const auto sent = static_cast<std::uint16_t>((data[at + 8] << 8) | data[at + 9]);
+            if (headerChecksum(header) != sent) {
+                continue;
+            }
+        }
+        used = at + length;
+        return true;
+    }
+    return false;
 }
 
 }  // namespace openscrt::transfer::modem
