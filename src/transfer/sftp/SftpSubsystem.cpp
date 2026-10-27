@@ -17,7 +17,6 @@ constexpr int kReadOnly = 0;
 constexpr int kWriteOnly = 1;
 constexpr int kCreate = 0100;     // 64
 constexpr int kTruncate = 01000;  // 512
-constexpr int kExclusive = 0200;  // 128
 
 // How much is read or written at a time. A megabyte is plenty for a line-speed
 // connection and small enough not to sit in memory.

@@ -177,7 +177,6 @@ class RloginChannel final : public SocketChannel {
     void onWindowSizeChanged(const WindowSize& size, std::vector<std::uint8_t>& to_send) override;
 
  private:
-    bool handshake_done_{false};
     std::string handshake_error_;
 };
 
