@@ -64,6 +64,8 @@ bool serverFromEnvironment(Server& out) {
     return out.port > 0;
 }
 
+}  // namespace
+
 class SftpShellTest : public ::testing::Test {
  protected:
     void SetUp() override {

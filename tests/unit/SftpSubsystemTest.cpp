@@ -143,7 +143,7 @@ TEST_F(SftpFixture, AFileSurvivesTheRoundTrip) {
     subsystem_.remove(remote, error);
 }
 
-TEST_F(SftpFixture, AFileCanBeStat'ed) {
+TEST_F(SftpFixture, TheStatOfAFile) {
     std::string error;
     const std::string home = subsystem_.homeDirectory(error);
     ASSERT_FALSE(home.empty()) << error;
