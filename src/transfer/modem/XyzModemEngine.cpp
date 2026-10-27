@@ -422,8 +422,12 @@ void XyzModemEngine::handleHeader(const ZmodemHeader& header, std::vector<std::u
 
         case ZmodemFrame::kEndOfFile:
             if (phase_ == Phase::kReceiving) {
-                // The file is over. The answer was already sent with the last block.
+                // The file is over. The answer to the block was already sent with the
+                // last block, and now the far end is told that we are ready for the
+                // next file -- which is how the reference implementation ends a file.
+                // Without that answer the far end waits for it until it gives up.
                 closeReceivedFile();
+                sendReceiverInit(out);
                 phase_ = Phase::kAwaitFileInfo;
             }
             break;

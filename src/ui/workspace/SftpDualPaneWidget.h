@@ -55,7 +55,8 @@ class SftpDualPaneWidget : public QWidget {
     // One side of the window.
     class Pane {
      public:
-        Pane(QLabel* label, QTreeWidget* tree) : label(label), tree(tree) {}
+        Pane(QLabel* label_widget, QTreeWidget* tree_widget)
+            : label(label_widget), tree(tree_widget) {}
         QLabel* label{nullptr};
         QTreeWidget* tree{nullptr};
     };
