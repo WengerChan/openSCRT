@@ -86,6 +86,8 @@ add_library(openscrt_protocols STATIC
     serial/SerialSettings.cpp
     ssh/Ssh2Channel.cpp
     ssh/SshComKey.cpp
+    ssh/SshJumpHostProxy.cpp
+    ssh/SshPortForwarder.cpp
     telnet/SocketChannel.cpp
     telnet/TelnetCodec.cpp)
 

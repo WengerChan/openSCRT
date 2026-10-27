@@ -238,6 +238,24 @@ target_compile_definitions(unit_main_window PRIVATE
 set_tests_properties(unit_main_window PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+# The SSH port forwarders (P3-T8). The test needs a server, so it skips itself where
+# there is none. It brings its own main() because a socket wants an application object
+# around it, and openscrt_add_test links gtest_main, which already has one.
+add_executable(unit_ssh_port_forwarder unit/SshPortForwarderTest.cpp)
+target_include_directories(unit_ssh_port_forwarder PRIVATE ${PROJECT_SOURCE_DIR}/src
+                                                           ${PROJECT_SOURCE_DIR}/tests)
+target_link_libraries(unit_ssh_port_forwarder PRIVATE GTest::gtest openscrt_protocols
+                                                     openscrt_warnings Qt6::Core Qt6::Network)
+add_test(NAME unit_ssh_port_forwarder COMMAND unit_ssh_port_forwarder)
+set_tests_properties(unit_ssh_port_forwarder PROPERTIES LABELS "unit" TIMEOUT 600)
+
+# The jump host proxy (P3-T9). The test needs a server, so it skips itself where
+# there is none.
+openscrt_add_test(unit_ssh_jump_host
+    LABEL unit
+    SOURCES unit/SshJumpHostProxyTest.cpp
+    LIBS openscrt_protocols openscrt_ssh)
+
 openscrt_add_test(unit_ssh2_channel
     LABEL unit
     SOURCES unit/Ssh2ChannelTest.cpp
