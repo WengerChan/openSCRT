@@ -25,7 +25,7 @@ namespace ui = openscrt::ui;
 
 namespace {
 
-TEST(SftpShellTest, ACommandLineIsSplitIntoWords) {
+TEST(SftpShellTextTest, ACommandLineIsSplitIntoWords) {
     EXPECT_EQ(sftp::splitCommandLine("get file.txt"),
               (std::vector<std::string>{"get", "file.txt"}));
     EXPECT_EQ(sftp::splitCommandLine("  get   file.txt  "),
@@ -35,7 +35,7 @@ TEST(SftpShellTest, ACommandLineIsSplitIntoWords) {
               (std::vector<std::string>{"get", "a file.txt"}));
 }
 
-TEST(SftpShellTest, APatternMatchesTheNamesItShould) {
+TEST(SftpShellTextTest, APatternMatchesTheNamesItShould) {
     const std::vector<std::string> names = {"alpha.txt", "beta.log", "gamma.txt"};
     EXPECT_EQ(sftp::matchingNames(names, "*.txt"),
               (std::vector<std::string>{"alpha.txt", "gamma.txt"}));

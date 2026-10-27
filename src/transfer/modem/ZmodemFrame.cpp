@@ -185,15 +185,13 @@ bool decodeHeader(const std::uint8_t* data, std::size_t size, ZmodemHeader& head
             if (!ok) {
                 continue;
             }
-            // The type is two digits, the four bytes are eight, and the checksum is
-            // the last four.
-            header.frame = static_cast<ZmodemFrame>((digits[0] << 4) | digits[1]);
+            // The fourteen digits are seven bytes: the type, the four bytes and the
+            // checksum.
+            header.frame = static_cast<ZmodemFrame>(digits[0]);
             for (int index = 0; index < 4; ++index) {
-                header.bytes[index] =
-                    static_cast<std::uint8_t>((digits[2 + index * 2] << 4) | digits[3 + index * 2]);
+                header.bytes[index] = static_cast<std::uint8_t>(digits[1 + index]);
             }
-            const auto sent = static_cast<std::uint16_t>((((digits[10] << 4) | digits[11]) << 8) |
-                                                         ((digits[12] << 4) | digits[13]));
+            const auto sent = static_cast<std::uint16_t>((digits[5] << 8) | digits[6]);
             if (headerChecksum(header) != sent) {
                 continue;
             }

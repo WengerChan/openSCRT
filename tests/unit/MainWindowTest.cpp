@@ -557,6 +557,13 @@ TEST_F(MainWindowTest, AProtocolThatCannotConnectSaysWhy) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     EXPECT_EQ(session->state(), protocols::TransportState::kFailed);
+
+    // The reason arrives through the event loop, so the loop has to be given a turn
+    // after the state has settled.
+    for (int attempt = 0; attempt < 100 && detail.isEmpty(); ++attempt) {
+        QCoreApplication::processEvents();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
     EXPECT_FALSE(detail.isEmpty()) << "a refusal must say why";
 }
 

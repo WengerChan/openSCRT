@@ -23,6 +23,10 @@ constexpr std::uint8_t kCan = 0x18;
 // use frames this engine would have to decode a second way.
 constexpr std::uint8_t kReceiverFlags = 0x01 | 0x02 | 0x40;
 
+// The high half of the window the receiver advertises: thirty-two means eight
+// kilobytes.
+constexpr std::uint8_t kReceiverWindowHigh = 32;
+
 bool isFrameEnd(std::uint8_t byte) {
     return byte == static_cast<std::uint8_t>(FrameEnd::kEnd) ||
            byte == static_cast<std::uint8_t>(FrameEnd::kContinue) ||
@@ -160,6 +164,14 @@ void XyzModemEngine::sendReceiverInit(std::vector<std::uint8_t>& out) {
     ZmodemHeader header;
     header.frame = ZmodemFrame::kReceiveInit;
     header.bytes[0] = kReceiverFlags;
+    // The second byte is the high half of the window the far end may fill. The low half
+    // is the flags, because the far end reads the window out of the same two bytes the
+    // flags are in -- so the window is "the flags, plus eight kilobytes".
+    //
+    // Leaving the second byte at zero says "a window of sixty-seven bytes", and the far
+    // end then sends the file in sixty-seven byte pieces: a hundred megabytes would be
+    // a million and a half round trips.
+    header.bytes[1] = kReceiverWindowHigh;
     const std::vector<std::uint8_t> bytes = encodeHexHeader(header);
     out.insert(out.end(), bytes.begin(), bytes.end());
 }
