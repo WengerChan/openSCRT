@@ -113,7 +113,7 @@ std::string SftpSubsystem::homeDirectory(std::string& error) {
         return {};
     }
     std::string home(path);
-    ssh_free(path);
+    ssh_string_free_char(path);
     return home;
 }
 
@@ -179,7 +179,7 @@ std::string SftpSubsystem::canonicalPath(const std::string& path, std::string& e
         return {};
     }
     std::string result(canonical);
-    ssh_free(canonical);
+    ssh_string_free_char(canonical);
     return result;
 }
 

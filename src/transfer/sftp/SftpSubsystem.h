@@ -42,7 +42,7 @@ class SftpSubsystem {
     // Opens the subsystem on a session that is already connected. The handle keeps the
     // session alive; the subsystem has to be closed before the SSH connection goes
     // away.
-    bool open(ssh::SshNativeSession session, std::string& error);
+    bool open(protocols::ssh::SshNativeSession session, std::string& error);
     void close();
     [[nodiscard]] bool isOpen() const noexcept { return session_ != nullptr; }
 
