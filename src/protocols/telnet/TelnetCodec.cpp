@@ -211,8 +211,8 @@ void TelnetCodec::handleSubnegotiation(const std::vector<std::uint8_t>& payload,
     if (static_cast<TelnetOption>(payload[0]) != TelnetOption::kWindowSize) {
         return;
     }
-    if (payload.size() < 6) {
-        // Four bytes of size, and the option byte in front of them.
+    if (payload.size() < 5) {
+        // The option byte in front of them, and four bytes of size.
         return;
     }
     result.window_size = windowSizeFrom(payload.data() + 1);

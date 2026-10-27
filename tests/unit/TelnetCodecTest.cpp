@@ -63,13 +63,16 @@ TEST(TelnetCodecTest, ThePeerAsksForTheWindowSizeAndWeSayYes) {
     codec.setWindowSize(openscrt::protocols::WindowSize{40, 120});
     const auto result = feed(codec, {kIac, kDo, kWindowSize});
 
-    // IAC WILL NAWS, and then the size we have.
+    // IAC WILL NAWS, and then the size we have: the agreement and the size are two
+    // separate things, and the size only makes sense after the agreement.
     ASSERT_GE(result.replies.size(), 3u);
     EXPECT_EQ(result.replies[0], kIac);
     EXPECT_EQ(result.replies[1], kWill);
     EXPECT_EQ(result.replies[2], kWindowSize);
 
-    const std::vector<std::uint8_t> expected = codec.windowSizeReport();
+    std::vector<std::uint8_t> expected = {kIac, kWill, kWindowSize};
+    const std::vector<std::uint8_t> report = codec.windowSizeReport();
+    expected.insert(expected.end(), report.begin(), report.end());
     EXPECT_EQ(textOf(result.replies), textOf(expected));
 }
 

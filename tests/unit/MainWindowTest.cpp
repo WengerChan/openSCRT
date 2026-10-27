@@ -525,7 +525,11 @@ TEST_F(MainWindowTest, OpeningASavedSessionOpensATab) {
     ASSERT_NE(window_->workspace()->sessionById(QStringLiteral("local")), nullptr);
 }
 
-TEST_F(MainWindowTest, AProtocolWithoutAnImplementationReportsWhy) {
+TEST_F(MainWindowTest, AProtocolThatCannotConnectSaysWhy) {
+    // Every protocol has an implementation now, so the refusal is no longer "there is
+    // no channel for this protocol": the tab opens and the connection fails, and the
+    // failure has a reason. A serial session with no port name asks for one in the
+    // shortest way.
     config::SessionProfile value;
     value.id = "serial";
     value.name = "serial";
@@ -533,9 +537,27 @@ TEST_F(MainWindowTest, AProtocolWithoutAnImplementationReportsWhy) {
 
     std::string error;
     const int index = window_->workspace()->openSession(value, error);
-    EXPECT_EQ(index, -1);
-    EXPECT_FALSE(error.empty()) << "a refusal must say why";
-    EXPECT_EQ(window_->workspace()->sessionCount(), 0) << "no dead tab is left behind";
+    EXPECT_GE(index, 0) << "a serial session has a channel now";
+
+    TerminalSession* session = window_->workspace()->sessionById(QStringLiteral("serial"));
+    ASSERT_NE(session, nullptr);
+
+    QString detail;
+    QObject::connect(session, &TerminalSession::stateChanged,
+                     [&detail](int, const QString& text) { detail = text; });
+
+    // The connection fails, and it fails quickly: there is no port to open.
+    for (int attempt = 0; attempt < 200; ++attempt) {
+        const protocols::TransportState state = session->state();
+        if (state != protocols::TransportState::kIdle &&
+            state != protocols::TransportState::kConnecting) {
+            break;
+        }
+        QCoreApplication::processEvents();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_EQ(session->state(), protocols::TransportState::kFailed);
+    EXPECT_FALSE(detail.isEmpty()) << "a refusal must say why";
 }
 
 TEST_F(MainWindowTest, ALocalShellSessionRunsACommandOnTheScreen) {
