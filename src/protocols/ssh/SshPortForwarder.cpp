@@ -5,6 +5,7 @@
 #include <QHostAddress>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <cstdlib>
 #include <cstring>
 #include <utility>
 
@@ -153,7 +154,8 @@ bool SshPortForwarder::acceptRemote() {
         return false;
     }
     if (originator != nullptr) {
-        ssh_free(originator);
+        // The string is a plain copy, so it goes back with the plain free.
+        free(originator);
     }
     auto* socket = new QTcpSocket();
     socket->connectToHost(QString::fromStdString(rule_.remote_address),
@@ -225,11 +227,12 @@ bool SshPortForwarder::readSocksRequest(Connection& connection, std::string& err
             error = "the socks request was malformed";
             return false;
         }
-        host = QHostAddress(
-                   static_cast<std::uint8_t>(address[0]), static_cast<std::uint8_t>(address[1]),
-                   static_cast<std::uint8_t>(address[2]), static_cast<std::uint8_t>(address[3]))
-                   .toString()
-                   .toStdString();
+        // Four bytes of address. The constructor of QHostAddress takes them as an
+        // array, not one by one.
+        const unsigned char bytes[4] = {
+            static_cast<unsigned char>(address[0]), static_cast<unsigned char>(address[1]),
+            static_cast<unsigned char>(address[2]), static_cast<unsigned char>(address[3])};
+        host = QHostAddress(bytes).toString().toStdString();
     } else if (kind == 0x03) {
         // A name: a length and then the name.
         if (!socket->waitForReadyRead(5000)) {
@@ -343,9 +346,9 @@ bool SshPortForwarder::pump(Connection& connection) {
 void SshPortForwarder::run() {
     while (!stopping_.load()) {
         if (rule_.mode == ForwardMode::kRemote) {
-            acceptRemote();
+            static_cast<void>(acceptRemote());
         } else {
-            acceptPending();
+            static_cast<void>(acceptPending());
         }
         for (std::size_t index = 0; index < connections_.size();) {
             Connection& connection = connections_[index];

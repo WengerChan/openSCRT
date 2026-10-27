@@ -24,13 +24,15 @@ TransportResult SshJumpHostProxy::connect() {
     // Every hop is connected in turn. The last one is the session the target is
     // reached through.
     for (std::size_t index = 0; index < chain_.hops.size(); ++index) {
-        const JumpHostStep& step = chain_.hops[index];
+        JumpHostStep& step = chain_.hops[index];
         SshConnectionOptions options;
         options.host = step.host;
         options.port = step.port;
         options.user = step.user;
         options.private_key_path = step.private_key_path;
-        options.password = step.password;
+        // The password is a locked buffer, which cannot be copied. The chain is
+        // consumed by the attempt, so it is moved rather than copied.
+        options.password = std::move(step.password);
 
         auto hop = std::make_unique<Ssh2Channel>(std::move(options));
         const TransportResult result = hop->connectAsync();
