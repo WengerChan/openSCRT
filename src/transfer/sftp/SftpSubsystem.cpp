@@ -63,7 +63,7 @@ SftpSubsystem::~SftpSubsystem() {
     close();
 }
 
-bool SftpSubsystem::open(ssh::SshNativeSession session, std::string& error) {
+bool SftpSubsystem::open(protocols::ssh::SshNativeSession session, std::string& error) {
     if (session_ != nullptr) {
         error = "the sftp subsystem is already open";
         return false;

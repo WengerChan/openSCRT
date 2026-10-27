@@ -138,9 +138,21 @@ TEST(ZmodemEngineTest, AFileArrivesFromTheRealSender) {
         GTEST_SKIP() << "the reference implementation of the protocol is not installed";
     }
 
+    // How big the file is. The criterion names a hundred megabytes, so that is what CI
+    // asks for; the default is smaller so that the test is quick on a developer
+    // machine.
+    std::size_t size = 8 * 1024;
+    if (const char* from_environment = std::getenv("OPENCRT_ZMODEM_TEST_BYTES")) {
+        const long long asked = std::atoll(from_environment);
+        if (asked > 0) {
+            size = static_cast<std::size_t>(asked);
+        }
+    }
+
     // A file with bytes that are not text, so a transfer that mangles them shows.
     std::string payload;
-    for (int index = 0; index < 8192; ++index) {
+    payload.reserve(size);
+    for (std::size_t index = 0; index < size; ++index) {
         payload.push_back(static_cast<char>(index % 256));
     }
     const std::string source = writeTemporaryFile("openscrt-zmodem-in.bin", payload);
@@ -156,8 +168,8 @@ TEST(ZmodemEngineTest, AFileArrivesFromTheRealSender) {
     engine_options.download_directory = "/tmp";
     modem::XyzModemEngine engine(engine_options);
 
-    std::vector<std::uint8_t> buffer(4096);
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    std::vector<std::uint8_t> buffer(64 * 1024);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(300);
     while (engine.state() != modem::ModemState::kFinished &&
            std::chrono::steady_clock::now() < deadline) {
         const std::size_t count =
