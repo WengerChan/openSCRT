@@ -13,6 +13,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "protocols/ssh/Ssh2Channel.h"
@@ -58,7 +59,7 @@ class SftpFixture : public ::testing::Test {
         options.private_key_path = server_.key;
         options.auth_method = ssh::SshAuthMethod::kPublicKey;
 
-        channel_ = std::make_unique<ssh::Ssh2Channel>(options);
+        channel_ = std::make_unique<ssh::Ssh2Channel>(std::move(options));
         const openscrt::protocols::TransportResult result = channel_->connectAsync();
         ASSERT_TRUE(result.ok) << result.error;
 

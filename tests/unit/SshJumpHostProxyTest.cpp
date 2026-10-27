@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "protocols/ssh/SshJumpHostProxy.h"
 
@@ -63,11 +64,11 @@ TEST_F(SshJumpHostProxyTest, TheTargetIsReachedThroughTheHop) {
     hop.port = server_.port;
     hop.user = server_.user;
     hop.private_key_path = server_.key;
-    chain.hops.push_back(hop);
+    chain.hops.push_back(std::move(hop));
     chain.target_host = server_.host;
     chain.target_port = server_.port;
 
-    ssh::SshJumpHostProxy proxy(chain);
+    ssh::SshJumpHostProxy proxy(std::move(chain));
     const openscrt::protocols::TransportResult result = proxy.connect();
     ASSERT_TRUE(result.ok) << result.error;
     ASSERT_NE(proxy.targetChannel(), nullptr);
@@ -95,7 +96,7 @@ TEST_F(SshJumpHostProxyTest, TheTargetIsReachedThroughTheHop) {
 
 TEST_F(SshJumpHostProxyTest, AChainWithoutATargetSaysSo) {
     ssh::JumpHostChain chain;
-    ssh::SshJumpHostProxy proxy(chain);
+    ssh::SshJumpHostProxy proxy(std::move(chain));
     const openscrt::protocols::TransportResult result = proxy.connect();
     EXPECT_FALSE(result.ok);
     EXPECT_FALSE(result.error.empty());
@@ -109,11 +110,11 @@ TEST_F(SshJumpHostProxyTest, AHopThatCannotBeReachedIsNamed) {
     hop.port = 1;
     hop.user = server_.user;
     hop.private_key_path = server_.key;
-    chain.hops.push_back(hop);
+    chain.hops.push_back(std::move(hop));
     chain.target_host = server_.host;
     chain.target_port = server_.port;
 
-    ssh::SshJumpHostProxy proxy(chain);
+    ssh::SshJumpHostProxy proxy(std::move(chain));
     const openscrt::protocols::TransportResult result = proxy.connect();
     EXPECT_FALSE(result.ok);
     // The message says which hop failed: a chain of three that fails on the second is
