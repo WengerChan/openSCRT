@@ -10,7 +10,6 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr std::uint8_t kZdle = 0x18;
 constexpr std::uint8_t kCan = 0x18;
 
 // The flags of a receiver, in the first byte of the answer to a request to send.
@@ -528,7 +527,7 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
             if (!readDataFrame(payload, frame_end, data_used)) {
                 // The frame has not arrived yet. The header is put back so that the
                 // whole thing is read again when the rest arrives.
-                buffer_.insert(buffer_.begin(),
+                buffer_.insert(buffer_.begin(), buffer_.begin(),
                                buffer_.begin() + static_cast<std::ptrdiff_t>(header_end));
                 break;
             }

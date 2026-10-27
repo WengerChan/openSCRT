@@ -3,7 +3,6 @@
 namespace openscrt::transfer::modem {
 namespace {
 
-constexpr std::uint8_t kZdle = 0x18;
 constexpr std::uint8_t kZbin = 'A';
 constexpr std::uint8_t kZbin32 = 'C';
 
