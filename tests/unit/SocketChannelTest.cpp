@@ -10,6 +10,7 @@
 #include <QTcpSocket>
 #include <chrono>
 #include <cstdint>
+#include <iostream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -47,6 +48,23 @@ std::string readSome(QTcpSocket* socket, int timeout_ms = 5000) {
     return socket->readAll().toStdString();
 }
 
+// Writes to the peer and makes sure the bytes actually left it.
+//
+// A socket that has no event loop of its own keeps what it cannot write in its
+// own buffer, and that buffer is only flushed when the socket is told it may
+// write -- which needs the event loop. This test has no event loop of its own,
+// so the bytes are flushed here, and the probe says whether they left.
+void writeToPeer(QTcpSocket* peer, const char* data, int size) {
+    const qint64 written = peer->write(data, size);
+    const bool flushed = peer->waitForBytesWritten(2000);
+    std::cerr << "probe: peer wrote " << written << " of " << size << ", flushed " << flushed
+              << ", state " << peer->state() << ", error " << peer->errorString().toStdString()
+              << ", local " << peer->localAddress().toString().toStdString() << ", far "
+              << peer->peerAddress().toString().toStdString() << std::endl;
+    EXPECT_EQ(written, size);
+    EXPECT_TRUE(flushed);
+}
+
 std::string readExactly(QTcpSocket* socket, std::size_t count, int timeout_ms = 10000) {
     std::string out;
     while (out.size() < count) {
@@ -78,7 +96,7 @@ TEST(SocketChannelTest, RawBytesTravelInBothDirections) {
     channel.send(std::string_view("ping"));
     EXPECT_EQ(readSome(peer), "ping");
 
-    peer->write("pong");
+    writeToPeer(peer, "pong", 4);
     std::vector<std::uint8_t> buffer(4);
     const std::size_t count =
         channel.readAvailable(buffer.data(), buffer.size(), std::chrono::seconds(10));
@@ -104,7 +122,7 @@ TEST(SocketChannelTest, TheTelnetChannelAnswersTheNegotiation) {
 
     // IAC DO NAWS.
     const char request[] = {static_cast<char>(255), static_cast<char>(253), static_cast<char>(31)};
-    peer->write(request, sizeof(request));
+    writeToPeer(peer, request, sizeof(request));
 
     // The answer is IAC WILL NAWS followed by the size we have.
     const std::string answer = readSome(peer);
@@ -114,7 +132,7 @@ TEST(SocketChannelTest, TheTelnetChannelAnswersTheNegotiation) {
     EXPECT_EQ(static_cast<unsigned char>(answer[2]), 31);
 
     // And then the text that follows the negotiation is text.
-    peer->write("after");
+    writeToPeer(peer, "after", 5);
     std::vector<std::uint8_t> buffer(5);
     const std::size_t count =
         channel.readAvailable(buffer.data(), buffer.size(), std::chrono::seconds(10));
@@ -146,8 +164,8 @@ TEST(SocketChannelTest, TheRloginChannelSaysHelloTheWayTheProtocolSays) {
     EXPECT_EQ(readExactly(peer, expected.size()), expected);
 
     // The server says the strings arrived, and the connection is now a shell.
-    peer->write("\0", 1);
-    peer->write("shell");
+    writeToPeer(peer, "\0", 1);
+    writeToPeer(peer, "shell", 5);
     std::vector<std::uint8_t> buffer(5);
     const std::size_t count =
         channel.readAvailable(buffer.data(), buffer.size(), std::chrono::seconds(10));
