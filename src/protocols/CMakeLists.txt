@@ -88,6 +88,7 @@ add_library(openscrt_protocols STATIC
     ssh/SshComKey.cpp
     ssh/SshJumpHostProxy.cpp
     ssh/SshPortForwarder.cpp
+    ssh/SshSessionLock.cpp
     telnet/SocketChannel.cpp
     telnet/TelnetCodec.cpp)
 
