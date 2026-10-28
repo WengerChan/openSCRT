@@ -40,31 +40,33 @@ class SocketChannel::Worker {
 
     ~Worker() { stop(); }
 
-    // Starts the thread and moves the socket into it.
+    // Starts the thread and makes the socket in it.
     void start(const TcpOptions& options) {
-        // The socket is created here and moved into the reader thread: a socket has to
-        // be created and used in the same thread, and the one exception is a socket
-        // that has not been used yet.
-        if (options.use_tls) {
-            auto* secure = new QSslSocket();
-            secure->setProtocol(QSsl::TlsV1_2OrLater);
-            QSslConfiguration configuration = secure->sslConfiguration();
-            configuration.setPeerVerifyMode(options.verify_peer ? QSslSocket::VerifyPeer
-                                                                : QSslSocket::VerifyNone);
-            secure->setSslConfiguration(configuration);
-            socket_ = secure;
-        } else {
-            // A connection that does not ask for TLS is a plain socket. The socket
-            // with the TLS on it keeps a plain socket of its own inside, and the
-            // bytes that arrive in that one do not come out of the outside one.
-            socket_ = new QTcpSocket();
-        }
-        socket_->moveToThread(&thread_);
+        // The socket is made in the reader thread and not here.
+        //
+        // A socket belongs to the thread that uses it: the engine that waits for
+        // its bytes is made with it, and the notifier that watches the
+        // descriptor is made with the engine. A socket made somewhere else and
+        // moved leaves those where they were made.
+        //
+        // The "started" signal of the thread is emitted in the thread itself --
+        // Qt's own code says so -- so what is connected to it runs there. The
+        // connection is direct on purpose: the receiver of the signal lives in
+        // this thread, and an automatic connection would send the work back
+        // here.
+        QObject::connect(
+            &thread_, &QThread::started, &thread_,
+            [this, options] {
+                // The reader thread, before its event loop starts.
+                makeSocket(options);
+                // The work is posted, so that it runs when the event loop runs: the
+                // notifier that watches for readable bytes needs an event dispatcher,
+                // and the loop is what brings one.
+                QMetaObject::invokeMethod(
+                    socket_, [this, options] { open(options); }, Qt::QueuedConnection);
+            },
+            Qt::DirectConnection);
         thread_.start();
-        // The socket is the context of this call and it lives in the reader thread, so
-        // the code below runs there.
-        QMetaObject::invokeMethod(
-            socket_, [this, options] { open(options); }, Qt::QueuedConnection);
     }
 
     void stop() {
@@ -88,6 +90,25 @@ class SocketChannel::Worker {
     }
 
  private:
+    // Makes the socket for this connection. It runs in the reader thread.
+    void makeSocket(const TcpOptions& options) {
+        if (options.use_tls) {
+            auto* secure = new QSslSocket();
+            secure->setProtocol(QSsl::TlsV1_2OrLater);
+            QSslConfiguration configuration = secure->sslConfiguration();
+            configuration.setPeerVerifyMode(options.verify_peer ? QSslSocket::VerifyPeer
+                                                                : QSslSocket::VerifyNone);
+            secure->setSslConfiguration(configuration);
+            socket_ = secure;
+            secure_ = secure;
+            return;
+        }
+        // A connection that does not ask for TLS is a plain socket. The socket
+        // with the TLS on it keeps a plain socket of its own inside, and the
+        // bytes that arrive in that one do not come out of the outside one.
+        socket_ = new QTcpSocket();
+    }
+
     // Runs in the reader thread.
     void open(const TcpOptions& options) {
         // The socket is the context of every one of these, because the socket lives in
@@ -115,7 +136,9 @@ class SocketChannel::Worker {
         timer_->start(kTickMs);
 
         if (options.use_tls) {
-            socket_->connectToHostEncrypted(QString::fromStdString(options.host),
+            // The encrypted connection is a method of the socket with the TLS on
+            // it, so that one is named here.
+            secure_->connectToHostEncrypted(QString::fromStdString(options.host),
                                             static_cast<quint16>(options.port));
         } else {
             socket_->connectToHost(QString::fromStdString(options.host),
@@ -126,6 +149,10 @@ class SocketChannel::Worker {
     SocketChannel* owner_{nullptr};
     QThread thread_;
     QAbstractSocket* socket_{nullptr};
+    // The socket with the TLS on it, when that is the one in use. It is the
+    // same object as socket_ -- the encrypted connection is a method of that
+    // class and of no other.
+    QSslSocket* secure_{nullptr};
     QTimer* timer_{nullptr};
 };
 
