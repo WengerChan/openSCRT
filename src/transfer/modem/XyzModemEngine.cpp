@@ -194,6 +194,16 @@ void XyzModemEngine::sendResume(std::uint32_t position, std::vector<std::uint8_t
     out.insert(out.end(), bytes.begin(), bytes.end());
 }
 
+void XyzModemEngine::sendAck(std::uint32_t position, std::vector<std::uint8_t>& out) {
+    // The answer to a frame that ended with "the other end has to answer". The far end
+    // waits for it, and until it comes the transfer does not move.
+    ZmodemHeader header;
+    header.frame = ZmodemFrame::kAck;
+    header.setPosition(position);
+    const std::vector<std::uint8_t> bytes = encodeHexHeader(header);
+    out.insert(out.end(), bytes.begin(), bytes.end());
+}
+
 void XyzModemEngine::sendFileHeader(std::vector<std::uint8_t>& out) {
     ZmodemHeader header;
     header.frame = ZmodemFrame::kFile;
@@ -273,7 +283,7 @@ bool XyzModemEngine::openReceivedFile() {
     return output_.good();
 }
 
-void XyzModemEngine::handleBlock(const std::vector<std::uint8_t>& data,
+void XyzModemEngine::handleBlock(const std::vector<std::uint8_t>& data, FrameEnd frame_end,
                                  std::vector<std::uint8_t>& out) {
     if (phase_ == Phase::kAwaitFileInfo) {
         // The frame that follows the file header carries the name and the details.
@@ -286,6 +296,9 @@ void XyzModemEngine::handleBlock(const std::vector<std::uint8_t>& data,
             return;
         }
         transferred_ = 0;
+        // The frame ends with "the other end has to answer", so it gets the answer
+        // first and the position afterwards.
+        sendAck(0, out);
         sendResume(0, out);
         phase_ = Phase::kReceiving;
         return;
@@ -298,8 +311,11 @@ void XyzModemEngine::handleBlock(const std::vector<std::uint8_t>& data,
         output_.write(reinterpret_cast<const char*>(data.data()),
                       static_cast<std::streamsize>(data.size()));
         transferred_ += data.size();
-        // The answer to a block is the position we have reached. It is sent before the
-        // next frame is read, which is what the far end waits for.
+        // A frame that ends with "the other end has to answer" gets the answer; the
+        // position follows it, so the far end always has something to read.
+        if (frame_end == FrameEnd::kWait || frame_end == FrameEnd::kQuery) {
+            sendAck(static_cast<std::uint32_t>(transferred_), out);
+        }
         sendResume(static_cast<std::uint32_t>(transferred_), out);
         return;
     }
@@ -458,10 +474,10 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
             buffer_.erase(buffer_.begin(),
                           buffer_.begin() + static_cast<std::ptrdiff_t>(data_used));
             if (header.frame == ZmodemFrame::kData && phase_ == Phase::kReceiving) {
-                handleBlock(payload, out);
+                handleBlock(payload, frame_end, out);
             } else if (header.frame == ZmodemFrame::kFile) {
                 phase_ = Phase::kAwaitFileInfo;
-                handleBlock(payload, out);
+                handleBlock(payload, frame_end, out);
             }
             continue;
         }

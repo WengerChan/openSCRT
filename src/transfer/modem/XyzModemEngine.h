@@ -101,12 +101,14 @@ class XyzModemEngine {
                                      std::size_t& used);
 
     void handleHeader(const ZmodemHeader& header, std::vector<std::uint8_t>& out);
-    void handleBlock(const std::vector<std::uint8_t>& data, std::vector<std::uint8_t>& out);
+    void handleBlock(const std::vector<std::uint8_t>& data, FrameEnd frame_end,
+                     std::vector<std::uint8_t>& out);
 
     void fail(const std::string& reason);
     void sendReceiverInit(std::vector<std::uint8_t>& out);
     void sendSenderInit(std::vector<std::uint8_t>& out);
     void sendResume(std::uint32_t position, std::vector<std::uint8_t>& out);
+    void sendAck(std::uint32_t position, std::vector<std::uint8_t>& out);
     void sendFileHeader(std::vector<std::uint8_t>& out);
     void sendBlock(std::vector<std::uint8_t>& out);
     void sendEndOfFile(std::vector<std::uint8_t>& out);
