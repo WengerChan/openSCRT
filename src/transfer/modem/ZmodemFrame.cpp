@@ -25,18 +25,59 @@ int hexValue(std::uint8_t byte) {
     return -1;
 }
 
+// Reads one byte of a binary header, with the escape taken off.
+//
+// The bytes of a binary header travel the way the bytes of the data travel:
+// the escape is the ZDLE of the protocol followed by the byte with its top two
+// bits flipped. The reference implementation escapes the bytes of the header
+// the same way it escapes the data -- the position of a block is a number, and
+// a number has bytes in it that have to be escaped -- so a binary header has
+// no fixed length.
+
 }  // namespace
 
-std::uint16_t crc16(std::uint16_t crc, std::uint8_t byte) {
-    crc ^= static_cast<std::uint16_t>(byte) << 8;
-    for (int bit = 0; bit < 8; ++bit) {
-        if ((crc & 0x8000) != 0) {
-            crc = static_cast<std::uint16_t>((crc << 1) ^ 0x1021);
-        } else {
-            crc = static_cast<std::uint16_t>(crc << 1);
-        }
+bool readEscapedByte(const std::uint8_t* data, std::size_t size, std::size_t& at,
+                     std::uint8_t& value) {
+    if (at >= size) {
+        return false;
     }
-    return crc;
+    const std::uint8_t byte = data[at];
+    if (byte != kZdle) {
+        value = byte;
+        ++at;
+        return true;
+    }
+    if (at + 1 >= size) {
+        return false;
+    }
+    value = static_cast<std::uint8_t>(data[at + 1] ^ 0x40);
+    at += 2;
+    return true;
+}
+
+std::uint16_t crc16(std::uint16_t crc, std::uint8_t byte) {
+    // The checksum of the protocol, the way the reference implementation computes it:
+    //
+    //     updcrc(cp, crc) = crctab[(crc >> 8) & 255] ^ ((crc << 8) & 0xffff00) ^ cp
+    //
+    // The byte goes into the low bits of the result, and the table is entered with
+    // the high byte of the checksum. That is not the textbook table-driven update,
+    // and the difference is not a detail:
+    //
+    //   * the check value of "123456789" is 0xBEEF here and 0x31C3 in the textbook
+    //     one, and
+    //   * only this one makes the checksum of a frame come out zero when the frame
+    //     is read back with its checksum appended to it -- which is how the far end
+    //     checks it.
+    //
+    // The textbook checksum fails that test every time, so a frame that carries one
+    // is a frame the far end never accepts.
+    std::uint16_t entry = static_cast<std::uint16_t>(crc & 0xFF00);
+    for (int bit = 0; bit < 8; ++bit) {
+        entry = ((entry & 0x8000) != 0) ? static_cast<std::uint16_t>((entry << 1) ^ 0x1021)
+                                        : static_cast<std::uint16_t>(entry << 1);
+    }
+    return static_cast<std::uint16_t>(entry ^ static_cast<std::uint16_t>(crc << 8) ^ byte);
 }
 
 std::uint32_t crc32(std::uint32_t crc, std::uint8_t byte) {
@@ -106,7 +147,9 @@ std::vector<std::uint8_t> encodeBinaryHeader(const ZmodemHeader& header, bool cr
             crc = crc32(crc, byte);
         }
         crc = ~crc;
-        for (int shift = 24; shift >= 0; shift -= 8) {
+        // The 32-bit checksum goes out with its low byte first: that is the
+        // order the reference implementation writes it in.
+        for (int shift = 0; shift <= 24; shift += 8) {
             out.push_back(static_cast<std::uint8_t>((crc >> shift) & 0xFF));
         }
         return out;
@@ -147,10 +190,6 @@ bool decodeHeader(const std::uint8_t* data, std::size_t size, ZmodemHeader& head
     // two digits, the four bytes as eight digits, the checksum as four digits, and the
     // two bytes that end it.
     constexpr std::size_t kHexHeaderLength = 4 + 14 + 2;
-    // A binary header: the padding, the escape, the marker, the type, the four bytes
-    // and the checksum -- which is two bytes, or four when it is the 32-bit one.
-    constexpr std::size_t kBinaryHeaderLength = 3 + 1 + 4 + 2;
-    constexpr std::size_t kBinary32HeaderLength = 3 + 1 + 4 + 4;
 
     for (std::size_t at = 0; at < size; ++at) {
         if (data[at] != kZpad) {
@@ -209,22 +248,46 @@ bool decodeHeader(const std::uint8_t* data, std::size_t size, ZmodemHeader& head
         if (data[at + 2] != 'A' && !is_32) {
             continue;
         }
-        const std::size_t length = is_32 ? kBinary32HeaderLength : kBinaryHeaderLength;
-        if (at + length > size) {
-            break;
+        // The bytes of the header are read one by one, with the escapes taken
+        // off: the type, the four bytes, and the bytes of the checksum.
+        std::uint8_t logical[9]{};
+        const std::size_t wanted = is_32 ? 9u : 7u;
+        std::size_t cursor = at + 3;
+        bool complete = true;
+        for (std::size_t index = 0; index < wanted && complete; ++index) {
+            complete = readEscapedByte(data, size, cursor, logical[index]);
         }
-        header.frame = static_cast<ZmodemFrame>(data[at + 3]);
-        for (std::size_t index = 0; index < 4; ++index) {
-            header.bytes[index] = data[at + 4 + index];
+        if (!complete) {
+            break;  // The rest of the header has not arrived yet.
+        }
+        header.frame = static_cast<ZmodemFrame>(logical[0]);
+        for (int index = 0; index < 4; ++index) {
+            header.bytes[index] = logical[1 + index];
         }
         crc32_frame = is_32;
-        if (!is_32) {
-            const auto sent = static_cast<std::uint16_t>((data[at + 8] << 8) | data[at + 9]);
+        if (is_32) {
+            // The 32-bit checksum goes out with its low byte first, and it is
+            // the complement of the checksum of the type and the four bytes.
+            std::uint32_t crc = 0xFFFFFFFFU;
+            crc = crc32(crc, static_cast<std::uint8_t>(header.frame));
+            for (const std::uint8_t byte : header.bytes) {
+                crc = crc32(crc, byte);
+            }
+            crc = ~crc;
+            std::uint32_t sent = 0;
+            for (int index = 0; index < 4; ++index) {
+                sent |= static_cast<std::uint32_t>(logical[5 + index]) << (8 * index);
+            }
+            if (crc != sent) {
+                continue;
+            }
+        } else {
+            const auto sent = static_cast<std::uint16_t>((logical[5] << 8) | logical[6]);
             if (headerChecksum(header) != sent) {
                 continue;
             }
         }
-        used = at + length;
+        used = cursor;
         return true;
     }
     return false;

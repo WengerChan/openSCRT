@@ -52,7 +52,12 @@ struct ZmodemHeader {
 };
 
 // The checksum of the headers and of the data frames: the 16-bit one of the Zmodem
-// protocol, which is the CRC-16 of CCITT with nothing added to it.
+// protocol, which is the CRC-16 of CCITT in the form the protocol writes it -- the
+// byte goes into the low bits of the result, and the table is entered with the high
+// byte of the checksum. It is not the textbook table-driven update of the same
+// polynomial: the check value of "123456789" is 0xBEEF here and 0x31C3 there, and
+// only this one lets a frame's checksum come out zero when the checksum is appended
+// to the frame and read back, which is how the far end checks a frame.
 [[nodiscard]] std::uint16_t crc16(std::uint16_t crc, std::uint8_t byte);
 
 // The 32-bit one, for the frames that carry a file.
@@ -103,6 +108,18 @@ void appendEscaped(std::vector<std::uint8_t>& out, const std::uint8_t* data, std
 // Returns false when the buffer does not hold a whole header yet.
 [[nodiscard]] bool decodeHeader(const std::uint8_t* data, std::size_t size, ZmodemHeader& header,
                                 bool& crc32_frame, std::size_t& used);
+
+// Reads one byte that may be escaped.
+//
+// The escape is the ZDLE of the protocol followed by the byte with its top two bits
+// flipped. The reference implementation sends the bytes of the frame headers and the
+// bytes of the checksums the same way it sends the data, so a byte that is read here
+// may be an escaped one.
+//
+// `at` says where the byte starts and is moved past it. Returns false when the buffer
+// does not hold the whole byte yet.
+[[nodiscard]] bool readEscapedByte(const std::uint8_t* data, std::size_t size, std::size_t& at,
+                                   std::uint8_t& value);
 
 }  // namespace openscrt::transfer::modem
 

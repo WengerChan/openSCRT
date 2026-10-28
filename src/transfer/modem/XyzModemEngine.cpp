@@ -12,20 +12,22 @@ namespace fs = std::filesystem;
 
 constexpr std::uint8_t kCan = 0x18;
 
-// The flags of a receiver, in the first byte of the answer to a request to send.
+// The flags of a receiver, in the byte of the header the far end reads them
+// from.
 //
-// CANFDX and CANOVIO say that the receiver can do both at once. TESCCTL says that
-// the receiver expects the control characters to be escaped, which is true here: the
-// engine unescapes every control character it is sent.
+// CANOVIO says that the receiver can go on receiving while it writes what it
+// has to disk.
 //
-// CANFC32 is deliberately NOT advertised: the 16-bit checksum is what the protocol
-// uses by default, and saying that the 32-bit one is fine would only make the far end
-// use frames this engine would have to decode a second way.
-constexpr std::uint8_t kReceiverFlags = 0x01 | 0x02 | 0x40;
+// CANFDX and CANFC32 are deliberately NOT advertised. CANFDX would hand the
+// far end a window to fill, and the window accounting that goes with it is a
+// thing to get right rather than a thing to invite. CANFC32 would make the far
+// end use the 32-bit checksum, which this engine does not decode for the
+// frames that carry a file.
+constexpr std::uint8_t kReceiverFlags = 0x02;
 
-// The high half of the window the receiver advertises: thirty-two means eight
-// kilobytes.
-constexpr std::uint8_t kReceiverWindowHigh = 32;
+// The window the receiver offers: how many bytes the far end may put in one
+// block. The reference implementation offers at most eight kilobytes.
+constexpr std::uint16_t kReceiverWindow = 8192;
 
 bool isFrameEnd(std::uint8_t byte) {
     return byte == static_cast<std::uint8_t>(FrameEnd::kEnd) ||
@@ -131,17 +133,21 @@ bool XyzModemEngine::readDataFrame(std::vector<std::uint8_t>& data, FrameEnd& fr
             }
             const std::uint8_t next = buffer_[at + 1];
             if (isFrameEnd(next)) {
-                // The frame ends here. The checksum follows it.
-                if (at + 3 >= buffer_.size()) {
-                    break;
+                // The frame ends here. The checksum follows it -- and the checksum
+                // travels the way the data travels, so its bytes may be escaped.
+                std::size_t cursor = at + 2;
+                std::uint8_t high = 0;
+                std::uint8_t low = 0;
+                if (!readEscapedByte(buffer_.data(), buffer_.size(), cursor, high) ||
+                    !readEscapedByte(buffer_.data(), buffer_.size(), cursor, low)) {
+                    break;  // The rest of the checksum has not arrived yet.
                 }
                 frame_end = static_cast<FrameEnd>(next);
-                const auto sent =
-                    static_cast<std::uint16_t>((buffer_[at + 2] << 8) | buffer_[at + 3]);
+                const auto sent = static_cast<std::uint16_t>((high << 8) | low);
                 if (dataChecksum(data.data(), data.size(), frame_end) != sent) {
                     return false;
                 }
-                used = at + 4;
+                used = cursor;
                 return true;
             }
             // An escaped byte: the top two bits are flipped.
@@ -163,15 +169,22 @@ bool XyzModemEngine::readDataFrame(std::vector<std::uint8_t>& data, FrameEnd& fr
 void XyzModemEngine::sendReceiverInit(std::vector<std::uint8_t>& out) {
     ZmodemHeader header;
     header.frame = ZmodemFrame::kReceiveInit;
-    header.bytes[0] = kReceiverFlags;
-    // The second byte is the high half of the window the far end may fill. The low half
-    // is the flags, because the far end reads the window out of the same two bytes the
-    // flags are in -- so the window is "the flags, plus eight kilobytes".
+    // The four bytes of the header are read by the far end in two ways at
+    // once, and the two ways overlap:
     //
-    // Leaving the second byte at zero says "a window of sixty-seven bytes", and the far
-    // end then sends the file in sixty-seven byte pieces: a hundred megabytes would be
-    // a million and a half round trips.
-    header.bytes[1] = kReceiverWindowHigh;
+    //   * the first two are the window the receiver can take, the low byte
+    //     first, and
+    //   * the fourth is the flags of the receiver.
+    //
+    // The reference implementation reads the flags from the fourth byte and
+    // the window from the first two, so that is how they are put here. The
+    // window used to be left at zero, which said to the far end "a window of
+    // sixty-seven bytes" -- because the flags were in the first byte, and the
+    // far end read the first byte as the low half of the window.
+    header.bytes[0] = static_cast<std::uint8_t>(kReceiverWindow & 0xFF);
+    header.bytes[1] = static_cast<std::uint8_t>((kReceiverWindow >> 8) & 0xFF);
+    header.bytes[2] = 0;
+    header.bytes[3] = kReceiverFlags;
     const std::vector<std::uint8_t> bytes = encodeHexHeader(header);
     out.insert(out.end(), bytes.begin(), bytes.end());
 }
@@ -296,9 +309,13 @@ void XyzModemEngine::handleBlock(const std::vector<std::uint8_t>& data, FrameEnd
             return;
         }
         transferred_ = 0;
-        // The frame ends with "the other end has to answer", so it gets the answer
-        // first and the position afterwards.
-        sendAck(0, out);
+        // The answer to the file header is the position the transfer starts at.
+        //
+        // It is not an acknowledgement. The reference implementation reads an
+        // acknowledgement here as "I did not see the file header, send it
+        // again", and it only starts the data when it is told where to start.
+        // The frame ends with "the other end has to answer", and this is the
+        // answer: the position, which is zero because nothing has arrived yet.
         sendResume(0, out);
         phase_ = Phase::kReceiving;
         return;
@@ -311,12 +328,12 @@ void XyzModemEngine::handleBlock(const std::vector<std::uint8_t>& data, FrameEnd
         output_.write(reinterpret_cast<const char*>(data.data()),
                       static_cast<std::streamsize>(data.size()));
         transferred_ += data.size();
-        // A frame that ends with "the other end has to answer" gets the answer; the
-        // position follows it, so the far end always has something to read.
+        // A frame that ends with "the other end has to answer" gets the
+        // acknowledgement, and nothing else. A position here would tell the far
+        // end to start again from there, and the far end would take it.
         if (frame_end == FrameEnd::kWait || frame_end == FrameEnd::kQuery) {
             sendAck(static_cast<std::uint32_t>(transferred_), out);
         }
-        sendResume(static_cast<std::uint32_t>(transferred_), out);
         return;
     }
 }
@@ -457,6 +474,12 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
             break;
         }
         const std::size_t header_end = used;
+        // A copy of the header. The frame that follows the header may not have
+        // arrived yet, and then the header has to go back into the buffer -- but
+        // the buffer no longer holds it, and the bytes that are in there now are
+        // the ones that follow it.
+        const std::vector<std::uint8_t> header_bytes(
+            buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(header_end));
         buffer_.erase(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(header_end));
 
         // The frame that follows the header: the details of the file, or a block of it.
@@ -465,18 +488,19 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
             FrameEnd frame_end = FrameEnd::kEnd;
             std::size_t data_used = 0;
             if (!readDataFrame(payload, frame_end, data_used)) {
-                // The frame has not arrived yet. The header is put back so that the
+                // The frame has not arrived yet. The header goes back so that the
                 // whole thing is read again when the rest arrives.
-                buffer_.insert(buffer_.begin(), buffer_.begin(),
-                               buffer_.begin() + static_cast<std::ptrdiff_t>(header_end));
+                buffer_.insert(buffer_.begin(), header_bytes.begin(), header_bytes.end());
                 break;
             }
             buffer_.erase(buffer_.begin(),
                           buffer_.begin() + static_cast<std::ptrdiff_t>(data_used));
-            if (header.frame == ZmodemFrame::kData && phase_ == Phase::kReceiving) {
-                handleBlock(payload, frame_end, out);
-            } else if (header.frame == ZmodemFrame::kFile) {
-                phase_ = Phase::kAwaitFileInfo;
+            if (header.frame == ZmodemFrame::kFile) {
+                // The details of the file follow the header that names it.
+                if (phase_ == Phase::kAwaitFileInfo) {
+                    handleBlock(payload, frame_end, out);
+                }
+            } else if (header.frame == ZmodemFrame::kData && phase_ == Phase::kReceiving) {
                 handleBlock(payload, frame_end, out);
             }
             continue;

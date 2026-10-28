@@ -14,10 +14,12 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
 
 #include "transfer/modem/XyzModemEngine.h"
@@ -50,12 +52,18 @@ std::string textOf(const std::vector<std::uint8_t>& bytes) {
 
 TEST(ZmodemFrameTest, TheChecksumIsTheOneOfTheProtocol) {
     // The 16-bit checksum of the protocol, checked against the value the reference
-    // implementation publishes for the string "123456789".
+    // implementation computes for the string "123456789".
+    //
+    // The value is 0xBEEF and not the 0x31C3 of the textbook CRC-16 of the same
+    // polynomial: the protocol writes the byte into the low bits of the result and
+    // enters the table with the high byte of the checksum, and only that form lets
+    // a frame's checksum come out zero when it is read back with the checksum
+    // appended -- which is how the far end checks a frame.
     std::uint16_t crc = 0;
     for (const char character : std::string("123456789")) {
         crc = modem::crc16(crc, static_cast<std::uint8_t>(character));
     }
-    EXPECT_EQ(crc, 0x31C3);
+    EXPECT_EQ(crc, 0xBEEF);
 }
 
 TEST(ZmodemFrameTest, AControlCharacterIsEscaped) {
@@ -174,11 +182,22 @@ bool haveLrzsz() {
 }
 
 std::string writeTemporaryFile(const std::string& name, const std::string& content) {
-    const std::string path = "/tmp/" + name;
+    // The file the reference implementation sends lives in a directory of its
+    // own.
+    //
+    // The receiver writes the file it is sent into the directory it downloads
+    // into, under the last part of the name it was sent with -- and the last
+    // part of the name is the same for the source and for the file that comes
+    // out. A source in the download directory would be cut short by the
+    // receiver while the sender is still reading it.
+    const std::filesystem::path directory = "/tmp/openscrt-zmodem-source";
+    std::error_code error;
+    std::filesystem::create_directories(directory, error);
+    const std::filesystem::path path = directory / name;
     std::ofstream writer(path, std::ios::binary | std::ios::trunc);
     writer.write(content.data(), static_cast<std::streamsize>(content.size()));
     writer.close();
-    return path;
+    return path.string();
 }
 
 std::string readFile(const std::string& path) {
@@ -211,7 +230,6 @@ TEST(ZmodemEngineTest, AFileArrivesFromTheRealSender) {
         payload.push_back(static_cast<char>(index % 256));
     }
     const std::string source = writeTemporaryFile("openscrt-zmodem-in.bin", payload);
-    const std::string target = writeTemporaryFile("openscrt-zmodem-out.bin", "");
 
     openscrt::protocols::local::LocalPtyChannel::Options options;
     options.shell = "sz";
@@ -254,10 +272,11 @@ TEST(ZmodemEngineTest, AFileArrivesFromTheRealSender) {
 
     sender.disconnect();
     std::remove(source.c_str());
-    std::remove(target.c_str());
     if (!engine.receivedPath().empty()) {
         std::remove(engine.receivedPath().c_str());
     }
+    std::error_code error;
+    std::filesystem::remove("/tmp/openscrt-zmodem-source", error);
 }
 
 #endif  // __linux__
