@@ -62,7 +62,13 @@ class SocketChannel::Worker {
             socket_->deleteLater();
         }
         thread_.quit();
-        thread_.wait();
+        // The wait has a deadline. A reader that does not stop would hang the program
+        // instead of failing, and the only thing that can be done about a thread that
+        // ignores the quit is to take it away.
+        if (!thread_.wait(2000)) {
+            thread_.terminate();
+            thread_.wait(1000);
+        }
         socket_ = nullptr;
     }
 
@@ -80,15 +86,21 @@ class SocketChannel::Worker {
         // The socket is the context of every one of these, because the socket lives in
         // the reader thread: a connection whose context is the worker would run its
         // code in the thread that owns the worker instead.
-        connect(socket_, &QAbstractSocket::connected, socket_,
-                [this] { owner_->onSocketConnected(*socket_); });
-        connect(socket_, &QAbstractSocket::disconnected, socket_,
-                [this] { owner_->onSocketClosed(*socket_); });
-        connect(socket_, &QIODevice::readyRead, socket_,
-                [this] { owner_->onSocketReadable(*socket_); });
+        //
+        // The name is spelled out. The reader is a plain class, so an unqualified
+        // "connect" is not found in QObject at all -- the lookup walks out of the
+        // class and finds the enclosing channel's "disconnect" instead, and stops
+        // there.
+        QObject::connect(socket_, &QAbstractSocket::connected, socket_,
+                         [this] { owner_->onSocketConnected(*socket_); });
+        QObject::connect(socket_, &QAbstractSocket::disconnected, socket_,
+                         [this] { owner_->onSocketClosed(*socket_); });
+        QObject::connect(socket_, &QIODevice::readyRead, socket_,
+                         [this] { owner_->onSocketReadable(*socket_); });
 
         timer_ = new QTimer(socket_);
-        connect(timer_, &QTimer::timeout, socket_, [this] { owner_->onSocketTick(*socket_); });
+        QObject::connect(timer_, &QTimer::timeout, socket_,
+                         [this] { owner_->onSocketTick(*socket_); });
         timer_->start(kTickMs);
 
         if (options.use_tls) {
@@ -243,7 +255,14 @@ void SocketChannel::onSocketReadable(QSslSocket& socket) {
         writeToSocket(socket, replies.data(), replies.size());
     }
     if (!text.empty()) {
-        ring_.write(text.data(), text.size());
+        {
+            // The ring and the wait are one thing. The reader checks the ring under
+            // this lock and then waits for the note, so the write has to happen under
+            // the same lock: a note that arrives between the check and the wait
+            // would be lost, and the reader would sit there until its deadline.
+            std::lock_guard<std::mutex> lock(mutex_);
+            ring_.write(text.data(), text.size());
+        }
         DataCallback callback;
         {
             std::lock_guard<std::mutex> lock(callback_mutex_);
