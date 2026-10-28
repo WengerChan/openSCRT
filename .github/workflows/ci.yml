@@ -311,7 +311,12 @@ jobs:
         # the server a user runs for themselves is still a random one.
         env:
           OPENCRT_TEST_SSH_PASSWORD_VALUE: s3cret
-        run: tools/local_sshd.sh --export-env
+        run: |
+          tools/local_sshd.sh --export-env
+          # The server's own log. It is the only place that says why a key was
+          # refused, and "the key was refused" says nothing about the key.
+          echo "--- the sshd log ---"
+          cat "${TMPDIR:-/tmp}/openscrt-sshd/sshd.log" || true
 
       - name: Configure (${{ matrix.preset }})
         shell: bash
