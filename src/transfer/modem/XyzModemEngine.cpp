@@ -145,7 +145,11 @@ bool XyzModemEngine::readDataFrame(std::vector<std::uint8_t>& data, FrameEnd& fr
                 }
                 frame_end = static_cast<FrameEnd>(next);
                 const auto sent = static_cast<std::uint16_t>((high << 8) | low);
-                if (dataChecksum(data.data(), data.size(), frame_end) != sent) {
+                const auto computed = dataChecksum(data.data(), data.size(), frame_end);
+                std::fprintf(stderr,
+                             "zmodem probe: frame end %c, %zu bytes, sent %04x, ours %04x\n",
+                             static_cast<char>(next), data.size(), sent, computed);
+                if (computed != sent) {
                     return false;
                 }
                 used = cursor;
@@ -486,6 +490,8 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
             break;
         }
         const std::size_t header_end = used;
+        std::fprintf(stderr, "zmodem probe: header type %d, %zu bytes\n",
+                     static_cast<int>(header.frame), header_end);
         // A copy of the header. The frame that follows the header may not have
         // arrived yet, and then the header has to go back into the buffer -- but
         // the buffer no longer holds it, and the bytes that are in there now are

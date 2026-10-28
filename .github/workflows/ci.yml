@@ -315,8 +315,9 @@ jobs:
           tools/local_sshd.sh --export-env
           # The server's own log. It is the only place that says why a key was
           # refused, and "the key was refused" says nothing about the key.
+          # The server writes the log as root, so it takes root to read it.
           echo "--- the sshd log ---"
-          cat "${TMPDIR:-/tmp}/openscrt-sshd/sshd.log" || true
+          sudo cat "${TMPDIR:-/tmp}/openscrt-sshd/sshd.log" || true
 
       - name: Configure (${{ matrix.preset }})
         shell: bash
