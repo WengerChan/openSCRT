@@ -31,13 +31,11 @@ constexpr std::size_t kRingCapacity = 64 * 1024;
 // the thread it lives in. A plain thread has none, so the wait times out every time.
 // The symptom is strange and very telling: the bytes go out fine, and nothing ever
 // comes back.
-class SocketChannel::Worker : public QObject {
-    Q_OBJECT
-
+class SocketChannel::Worker {
  public:
     explicit Worker(SocketChannel* owner) : owner_(owner) {}
 
-    ~Worker() override { stop(); }
+    ~Worker() { stop(); }
 
     // Starts the thread and moves the socket into it.
     void start(const TcpOptions& options) {
@@ -494,7 +492,3 @@ void RloginChannel::onWindowSizeChanged(const WindowSize& size,
 }
 
 }  // namespace openscrt::protocols::telnet
-
-// The worker has a Q_OBJECT of its own and lives in this file, so the file that
-// moc generates for it is included here.
-#include "moc_SocketChannel.cpp"
