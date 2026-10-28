@@ -79,17 +79,30 @@ if [ -n "$KEY_DIR" ] && [ -d "$KEY_DIR" ]; then
     rm -rf "$KEY_DIR"
 fi
 mkdir -p "$KEY_DIR"
-chmod 700 "$KEY_DIR"
+# The directory is traversable but not listable.
+#
+# The server reads the list of accepted keys as the account that logs in, and
+# that account is not the one that made this directory: the throwaway account
+# is what the tests log in as. A directory that account cannot walk into is a
+# list of keys it cannot read, and every key login is then refused with a
+# message that says nothing about the file. The private key inside is not
+# readable by it either way -- its own mode says so.
+chmod 711 "$KEY_DIR"
 ssh-keygen -t ed25519 -N '' -f "$KEY_PATH" -q
-cp "$KEY_PATH.pub" "$KEY_DIR/authorized_keys"
+# The list of the accepted keys lives in a directory of its own, so that the
+# private key is not in a directory the login account can walk into.
+AUTH_DIR="$KEY_DIR/authorized"
+mkdir -p "$AUTH_DIR"
+chmod 755 "$AUTH_DIR"
+cp "$KEY_PATH.pub" "$AUTH_DIR/authorized_keys"
 # The ssh.com (VanDyke) key the P1-T11 test uses, so the conversion is proved end to end:
 # the server accepts the key that our parser produced from the ssh.com file, not just a
 # key libssh already understood.
 FIXTURE="$(cd "$(dirname "$0")/.." && pwd)/tests/fixtures/ssh/sshcom_rsa_plain.pub"
 if [ -f "$FIXTURE" ]; then
-    printf 'ssh-rsa %s openscrt-sshcom-fixture\n' "$(cat "$FIXTURE")" >> "$KEY_DIR/authorized_keys"
+    printf 'ssh-rsa %s openscrt-sshcom-fixture\n' "$(cat "$FIXTURE")" >> "$AUTH_DIR/authorized_keys"
 fi
-chmod 600 "$KEY_DIR/authorized_keys"
+chmod 644 "$AUTH_DIR/authorized_keys"
 
 # 3. The throwaway account with a password. The password is generated here and never
 #    leaves this machine except through the variables below.
@@ -110,7 +123,7 @@ cat > "$SSHD_CONFIG" <<EOF
 Port $PORT
 ListenAddress 127.0.0.1
 HostKey /etc/ssh/ssh_host_ed25519_key
-AuthorizedKeysFile $KEY_DIR/authorized_keys
+AuthorizedKeysFile $AUTH_DIR/authorized_keys
 PubkeyAuthentication yes
 PasswordAuthentication yes
 KbdInteractiveAuthentication no
@@ -155,6 +168,23 @@ done
 if ! (exec 3<>/dev/tcp/127.0.0.1/"$PORT") 2>/dev/null; then
     fail "sshd did not answer on port $PORT"
     cat "$LOG_FILE" || true
+fi
+
+# 5b. Does the key actually get in?
+#
+# A server that cannot read the list of accepted keys refuses every key login
+# with a message that says nothing about the file, and the tests that need a
+# key then fail for a reason that has nothing to do with the key. The check
+# here is the difference between "the server is up" and "the server lets the
+# key in", and it is cheap.
+if command -v ssh >/dev/null 2>&1; then
+    if ! ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+             -o ConnectTimeout=5 -o LogLevel=ERROR -o IdentitiesOnly=yes \
+             -i "$KEY_PATH" -p "$PORT" "$PASSWORD_USER@127.0.0.1" true >/dev/null 2>&1; then
+        fail "the server does not accept the key it was given"
+        tail -20 "$LOG_FILE" || true
+    fi
+    log "the server accepts the key"
 fi
 
 # 6. Where the runner finds it, and where a human reads it.
