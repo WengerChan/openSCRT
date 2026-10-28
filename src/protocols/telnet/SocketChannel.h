@@ -30,7 +30,7 @@
 #include "protocols/ITransportChannel.h"
 #include "protocols/telnet/TelnetCodec.h"
 
-class QSslSocket;
+class QAbstractSocket;
 
 namespace openscrt::protocols::telnet {
 
@@ -129,13 +129,14 @@ class SocketChannel : public ITransportChannel {
     std::unique_ptr<Worker> worker_;
 
     // The reader thread's callbacks. They run in that thread and nowhere else.
-    void onSocketConnected(QSslSocket& socket);
-    void onSocketReadable(QSslSocket& socket);
-    void onSocketTick(QSslSocket& socket);
-    void onSocketClosed(QSslSocket& socket);
+    void onSocketConnected(QAbstractSocket& socket);
+    void onSocketReadable(QAbstractSocket& socket);
+    void onSocketTick(QAbstractSocket& socket);
+    void onSocketClosed(QAbstractSocket& socket);
+    void onSocketFailed(QAbstractSocket& socket);
     void stopWorker() noexcept;
-    void drainOutbox(QSslSocket& socket);
-    void writeToSocket(QSslSocket& socket, const std::uint8_t* data, std::size_t size);
+    void drainOutbox(QAbstractSocket& socket);
+    void writeToSocket(QAbstractSocket& socket, const std::uint8_t* data, std::size_t size);
 
     core::ByteRingBuffer ring_;
     std::atomic<TransportState> state_{TransportState::kIdle};
@@ -157,6 +158,8 @@ class SocketChannel : public ITransportChannel {
     bool handshake_done_{true};
     // When the last byte came or went, for the keep-alive.
     std::chrono::steady_clock::time_point last_activity_{};
+    // How many times the reader has looked at the socket. It belongs to the probe.
+    int ticks_{0};
 
     bool stopping_{false};
 };

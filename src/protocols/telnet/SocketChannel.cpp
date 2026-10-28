@@ -3,10 +3,12 @@
 #include <QAbstractEventDispatcher>
 #include <QAbstractSocket>
 #include <QByteArray>
+#include <QDebug>
 #include <QMetaObject>
 #include <QObject>
 #include <QSslConfiguration>
 #include <QSslSocket>
+#include <QTcpSocket>
 #include <QThread>
 #include <QTimer>
 #include <QtGlobal>
@@ -43,7 +45,20 @@ class SocketChannel::Worker {
         // The socket is created here and moved into the reader thread: a socket has to
         // be created and used in the same thread, and the one exception is a socket
         // that has not been used yet.
-        socket_ = new QSslSocket();
+        if (options.use_tls) {
+            auto* secure = new QSslSocket();
+            secure->setProtocol(QSsl::TlsV1_2OrLater);
+            QSslConfiguration configuration = secure->sslConfiguration();
+            configuration.setPeerVerifyMode(options.verify_peer ? QSslSocket::VerifyPeer
+                                                                : QSslSocket::VerifyNone);
+            secure->setSslConfiguration(configuration);
+            socket_ = secure;
+        } else {
+            // A connection that does not ask for TLS is a plain socket. The socket
+            // with the TLS on it keeps a plain socket of its own inside, and the
+            // bytes that arrive in that one do not come out of the outside one.
+            socket_ = new QTcpSocket();
+        }
         socket_->moveToThread(&thread_);
         thread_.start();
         // The socket is the context of this call and it lives in the reader thread, so
@@ -75,14 +90,6 @@ class SocketChannel::Worker {
  private:
     // Runs in the reader thread.
     void open(const TcpOptions& options) {
-        if (options.use_tls) {
-            socket_->setProtocol(QSsl::TlsV1_2OrLater);
-            QSslConfiguration configuration = socket_->sslConfiguration();
-            configuration.setPeerVerifyMode(options.verify_peer ? QSslSocket::VerifyPeer
-                                                                : QSslSocket::VerifyNone);
-            socket_->setSslConfiguration(configuration);
-        }
-
         // The socket is the context of every one of these, because the socket lives in
         // the reader thread: a connection whose context is the worker would run its
         // code in the thread that owns the worker instead.
@@ -97,6 +104,10 @@ class SocketChannel::Worker {
                          [this] { owner_->onSocketClosed(*socket_); });
         QObject::connect(socket_, &QIODevice::readyRead, socket_,
                          [this] { owner_->onSocketReadable(*socket_); });
+        // A connection that fails says so with an error and not with a
+        // disconnection: there was never a connection to lose.
+        QObject::connect(socket_, &QAbstractSocket::errorOccurred, socket_,
+                         [this] { owner_->onSocketFailed(*socket_); });
 
         timer_ = new QTimer(socket_);
         QObject::connect(timer_, &QTimer::timeout, socket_,
@@ -114,7 +125,7 @@ class SocketChannel::Worker {
 
     SocketChannel* owner_{nullptr};
     QThread thread_;
-    QSslSocket* socket_{nullptr};
+    QAbstractSocket* socket_{nullptr};
     QTimer* timer_{nullptr};
 };
 
@@ -212,7 +223,7 @@ TransportResult SocketChannel::connectAsync() {
     return TransportResult{true, {}};
 }
 
-void SocketChannel::onSocketConnected(QSslSocket& socket) {
+void SocketChannel::onSocketConnected(QAbstractSocket& socket) {
     std::vector<std::uint8_t> to_send;
     std::string handshake_error;
     onConnected(to_send, handshake_error);
@@ -228,8 +239,12 @@ void SocketChannel::onSocketConnected(QSslSocket& socket) {
     last_activity_ = std::chrono::steady_clock::now();
 }
 
-void SocketChannel::onSocketReadable(QSslSocket& socket) {
+void SocketChannel::onSocketReadable(QAbstractSocket& socket) {
     const QByteArray chunk = socket.readAll();
+    // A probe, to say where the reading stops. It goes away with the bug it was
+    // put in for.
+    qInfo() << "socket probe: readable, available" << socket.bytesAvailable() << "read"
+            << chunk.size();
     if (chunk.isEmpty()) {
         return;
     }
@@ -276,12 +291,20 @@ void SocketChannel::onSocketReadable(QSslSocket& socket) {
     last_activity_ = std::chrono::steady_clock::now();
 }
 
-void SocketChannel::onSocketTick(QSslSocket& socket) {
+void SocketChannel::onSocketTick(QAbstractSocket& socket) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (stopping_) {
             return;
         }
+    }
+
+    // A probe, to say where the reading stops. It goes away with the bug it was
+    // put in for.
+    ++ticks_;
+    if (ticks_ % 40 == 0) {
+        qInfo() << "socket probe: tick" << ticks_ << "state" << static_cast<int>(state_.load())
+                << "available" << socket.bytesAvailable();
     }
 
     drainOutbox(socket);
@@ -319,7 +342,7 @@ void SocketChannel::onSocketTick(QSslSocket& socket) {
     }
 }
 
-void SocketChannel::onSocketClosed(QSslSocket& socket) {
+void SocketChannel::onSocketClosed(QAbstractSocket& socket) {
     const TransportState current = state_.load();
     if (current == TransportState::kConnecting) {
         setState(TransportState::kFailed, socket.errorString().toStdString());
@@ -329,14 +352,26 @@ void SocketChannel::onSocketClosed(QSslSocket& socket) {
     readable_.notify_all();
 }
 
-void SocketChannel::writeToSocket(QSslSocket& socket, const std::uint8_t* data, std::size_t size) {
+void SocketChannel::onSocketFailed(QAbstractSocket& socket) {
+    // A connection that never came up says so with an error. The error that comes
+    // with a far end that hung up is not a failure: the connection was there, and
+    // the far end left.
+    if (socket.error() == QAbstractSocket::RemoteHostClosedError) {
+        return;
+    }
+    setState(TransportState::kFailed, socket.errorString().toStdString());
+    readable_.notify_all();
+}
+
+void SocketChannel::writeToSocket(QAbstractSocket& socket, const std::uint8_t* data,
+                                  std::size_t size) {
     if (data == nullptr || size == 0) {
         return;
     }
     socket.write(reinterpret_cast<const char*>(data), static_cast<qint64>(size));
 }
 
-void SocketChannel::drainOutbox(QSslSocket& socket) {
+void SocketChannel::drainOutbox(QAbstractSocket& socket) {
     std::vector<std::uint8_t> pending;
     {
         std::lock_guard<std::mutex> lock(outbox_mutex_);
