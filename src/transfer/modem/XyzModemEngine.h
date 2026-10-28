@@ -122,6 +122,9 @@ class XyzModemEngine {
     Phase phase_{Phase::kIdle};
     ModemState state_{ModemState::kIdle};
     std::string error_;
+    // The counters of the probe. They go away with the bug the probe was put in for.
+    int probes_{0};
+    int out_probes_{0};
     ModemFileInfo file_;
     std::uint64_t transferred_{0};
 

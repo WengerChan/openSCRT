@@ -25,6 +25,8 @@ int hexValue(std::uint8_t byte) {
     return -1;
 }
 
+}  // namespace
+
 // Reads one byte of a binary header, with the escape taken off.
 //
 // The bytes of a binary header travel the way the bytes of the data travel:
@@ -33,9 +35,6 @@ int hexValue(std::uint8_t byte) {
 // the same way it escapes the data -- the position of a block is a number, and
 // a number has bytes in it that have to be escaped -- so a binary header has
 // no fixed length.
-
-}  // namespace
-
 bool readEscapedByte(const std::uint8_t* data, std::size_t size, std::size_t& at,
                      std::uint8_t& value) {
     if (at >= size) {

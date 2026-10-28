@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <filesystem>
 #include <utility>
 
@@ -447,6 +448,17 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
     if (phase_ == Phase::kDone || phase_ == Phase::kCancelled || phase_ == Phase::kFailed) {
         return out;
     }
+    // A probe: the bytes that come in and the bytes that go out. It goes away
+    // with the bug it was put in for.
+    if (probes_ < 6) {
+        ++probes_;
+        std::string in_hex;
+        for (std::size_t index = 0; index < size && index < 40; ++index) {
+            in_hex += "0123456789abcdef"[(data[index] >> 4) & 0x0F];
+            in_hex += "0123456789abcdef"[data[index] & 0x0F];
+        }
+        std::fprintf(stderr, "zmodem probe: in %s\n", in_hex.c_str());
+    }
     buffer_.insert(buffer_.end(), data, data + size);
 
     while (true) {
@@ -509,6 +521,16 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
         handleHeader(header, out);
     }
 
+    // The other half of the probe: what the engine answers.
+    if (!out.empty() && out_probes_ < 6) {
+        ++out_probes_;
+        std::string out_hex;
+        for (std::size_t index = 0; index < out.size() && index < 40; ++index) {
+            out_hex += "0123456789abcdef"[(out[index] >> 4) & 0x0F];
+            out_hex += "0123456789abcdef"[out[index] & 0x0F];
+        }
+        std::fprintf(stderr, "zmodem probe: out %s\n", out_hex.c_str());
+    }
     return out;
 }
 
