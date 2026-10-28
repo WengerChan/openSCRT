@@ -4,6 +4,7 @@
 #include <QAbstractSocket>
 #include <QByteArray>
 #include <QMetaObject>
+#include <QObject>
 #include <QSslConfiguration>
 #include <QSslSocket>
 #include <QThread>
@@ -68,15 +69,6 @@ class SocketChannel::Worker {
  private:
     // Runs in the reader thread.
     void open(const TcpOptions& options) {
-        // The reader thread needs an event dispatcher: a Qt socket waits for a readable
-        // descriptor through a notifier, and a notifier needs a dispatcher in the
-        // thread it lives in. Qt makes one when the thread's event loop starts; this
-        // is the belt to that braces, for the case where there is none.
-        if (!QThread::currentThread()->eventDispatcher()) {
-            auto* dispatcher = QAbstractEventDispatcher::create(nullptr);
-            dispatcher->moveToThread(QThread::currentThread());
-            QThread::currentThread()->setEventDispatcher(dispatcher);
-        }
         if (options.use_tls) {
             socket_->setProtocol(QSsl::TlsV1_2OrLater);
             QSslConfiguration configuration = socket_->sslConfiguration();
@@ -345,7 +337,7 @@ void SocketChannel::drainOutbox(QSslSocket& socket) {
                    pending.end());
 }
 
-void SocketChannel::stopReader() noexcept {
+void SocketChannel::stopWorker() noexcept {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         stopping_ = true;
@@ -362,7 +354,7 @@ TransportResult SocketChannel::disconnect() {
         return TransportResult{true, {}};
     }
     // The reader is stopped before anything else: it owns the socket.
-    stopReader();
+    stopWorker();
     const TransportState after = state_.load();
     if (after == TransportState::kConnected || after == TransportState::kConnecting) {
         setState(TransportState::kDisconnected, "closed");

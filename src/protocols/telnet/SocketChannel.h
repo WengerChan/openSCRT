@@ -133,6 +133,7 @@ class SocketChannel : public ITransportChannel {
     void onSocketReadable(QSslSocket& socket);
     void onSocketTick(QSslSocket& socket);
     void onSocketClosed(QSslSocket& socket);
+    void stopWorker() noexcept;
     void drainOutbox(QSslSocket& socket);
     void writeToSocket(QSslSocket& socket, const std::uint8_t* data, std::size_t size);
 
