@@ -119,16 +119,28 @@ class SocketChannel : public ITransportChannel {
     SocketMode mode_;
 
  private:
-    void runReader();
-    void stopReader() noexcept;
+    // The reader: a thread and the socket that lives in it.
+    //
+    // It is a Qt thread and not a plain one because a Qt socket waits for a readable
+    // descriptor through a notifier, and a notifier needs an event dispatcher in the
+    // thread it lives in. A plain thread has none, so the wait times out every time:
+    // the connection looks alive, the bytes go out, and nothing ever comes back.
+    class Worker;
+    std::unique_ptr<Worker> worker_;
+
+    // The reader thread's callbacks. They run in that thread and nowhere else.
+    void onSocketConnected(QSslSocket& socket);
+    void onSocketReadable(QSslSocket& socket);
+    void onSocketTick(QSslSocket& socket);
+    void onSocketClosed(QSslSocket& socket);
     void drainOutbox(QSslSocket& socket);
+    void writeToSocket(QSslSocket& socket, const std::uint8_t* data, std::size_t size);
 
     core::ByteRingBuffer ring_;
     std::atomic<TransportState> state_{TransportState::kIdle};
 
     mutable std::mutex mutex_;
     std::condition_variable readable_;
-    std::thread reader_;
 
     std::mutex outbox_mutex_;
     std::deque<std::uint8_t> outbox_;
@@ -139,6 +151,11 @@ class SocketChannel : public ITransportChannel {
     std::mutex callback_mutex_;
     DataCallback data_callback_;
     StateCallback state_callback_;
+
+    // True once the handshake of the conversation is over. Only rlogin has one.
+    bool handshake_done_{true};
+    // When the last byte came or went, for the keep-alive.
+    std::chrono::steady_clock::time_point last_activity_{};
 
     bool stopping_{false};
 };

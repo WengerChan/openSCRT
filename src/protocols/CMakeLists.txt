@@ -76,6 +76,8 @@ if(NOT OPENCRT_QT_SERIALPORT_AVAILABLE)
         "Qt step installs the qtserialport module; see docs/DEVELOPMENT_PLAN.md D2.")
 endif()
 
+set(CMAKE_AUTOMOC ON)
+
 add_library(openscrt_protocols STATIC
     ModuleInfo.cpp
     ITransportChannel.cpp
