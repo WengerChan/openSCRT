@@ -161,7 +161,13 @@ fi
 if [ "${1:-}" = "--export-env" ] && [ -n "${GITHUB_ENV:-}" ]; then
     {
         echo "OPENCRT_TEST_SSH_PORT=$PORT"
-        echo "OPENCRT_TEST_SSH_USER=$(id -un)"
+        # The key logs in as the throwaway account, not as the person running the
+        # script. The reason is the account, not the key: the runner's own password
+        # field is locked, and with UsePAM yes the account check refuses it -- so the
+        # key was refused too, with a message that says nothing about the key at all.
+        # The throwaway account has a real password, so it passes that check, and both
+        # ways in work.
+        echo "OPENCRT_TEST_SSH_USER=$PASSWORD_USER"
         echo "OPENCRT_TEST_SSH_KEY=$KEY_PATH"
         echo "OPENCRT_TEST_SSH_PASSWORD_USER=$PASSWORD_USER"
         echo "OPENCRT_TEST_SSH_PASSWORD=$PASSWORD_VALUE"
@@ -171,7 +177,7 @@ fi
 log ""
 log "A real SSH server is listening on 127.0.0.1:$PORT"
 log ""
-log "  public key : $KEY_PATH   (user: $(id -un))"
+log "  public key : $KEY_PATH   (user: $PASSWORD_USER)"
 log "  password   : user $PASSWORD_USER, password $PASSWORD_VALUE"
 log ""
 log "In openSCRT: File -> New Session (Quick Connect)..., then"
