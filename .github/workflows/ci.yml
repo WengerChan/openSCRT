@@ -311,13 +311,7 @@ jobs:
         # the server a user runs for themselves is still a random one.
         env:
           OPENCRT_TEST_SSH_PASSWORD_VALUE: s3cret
-        run: |
-          tools/local_sshd.sh --export-env
-          # The server's own log. It is the only place that says why a key was
-          # refused, and "the key was refused" says nothing about the key.
-          # The server writes the log as root, so it takes root to read it.
-          echo "--- the sshd log ---"
-          sudo cat "${TMPDIR:-/tmp}/openscrt-sshd/sshd.log" || true
+        run: tools/local_sshd.sh --export-env
 
       - name: Configure (${{ matrix.preset }})
         shell: bash
@@ -379,6 +373,19 @@ jobs:
         # -L unit is mandatory: the test preset runs *everything*, so without this filter the
         # perf tier would silently execute on Windows and macOS too.
         run: ctest --test-dir out/build/${{ matrix.preset }} -C Release -L unit --output-on-failure --timeout 600
+
+      # What the server said, after the tests have been against it. It is the
+      # only place that says why a key was refused, and "the key was refused"
+      # says nothing about the key.
+      #
+      # The step runs even when the tests failed: that is the case where the
+      # log is wanted.
+      - name: The SSH server's own log (Linux)
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          echo "--- the sshd log ---"
+          sudo cat "${TMPDIR:-/tmp}/openscrt-sshd/sshd.log" || true
 
       # P2-A7: the locked page count has to come back to zero when the buffer dies.
       #

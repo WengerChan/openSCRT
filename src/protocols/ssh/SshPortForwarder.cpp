@@ -7,7 +7,10 @@
 #include <QTcpSocket>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <utility>
+
+#include "protocols/ssh/SshSessionLock.h"
 
 namespace openscrt::protocols::ssh {
 namespace {
@@ -44,8 +47,14 @@ bool SshPortForwarder::start(std::string& error) {
     if (rule_.mode == ForwardMode::kRemote) {
         // The server is asked to listen. The address is the one on the server.
         int bound = 0;
-        const int answer = ssh_channel_listen_forward(native, rule_.listen_address.c_str(),
-                                                      rule_.listen_port, &bound);
+        int answer = 0;
+        {
+            // libssh is not thread-safe: the session is locked while the request
+            // is made, and the request reads the socket itself.
+            const std::lock_guard<std::mutex> lock(sshSessionLock());
+            answer = ssh_channel_listen_forward(native, rule_.listen_address.c_str(),
+                                                rule_.listen_port, &bound);
+        }
         if (answer != SSH_OK) {
             const char* reason = ssh_get_error(native);
             error = std::string("the server refused to listen: ") +
@@ -78,6 +87,7 @@ void SshPortForwarder::stop() {
     }
     for (Connection& connection : connections_) {
         if (connection.channel != nullptr) {
+            const std::lock_guard<std::mutex> lock(sshSessionLock());
             ssh_channel_free(static_cast<ssh_channel>(connection.channel));
         }
         if (connection.socket != nullptr) {
@@ -120,14 +130,23 @@ bool SshPortForwarder::acceptPending() {
         return true;
     }
 
-    ssh_channel channel = ssh_channel_new(native);
+    ssh_channel channel = nullptr;
+    int opened = 0;
+    {
+        // libssh is not thread-safe: the session is locked while the channel is
+        // opened, and the opening reads the socket itself.
+        const std::lock_guard<std::mutex> lock(sshSessionLock());
+        channel = ssh_channel_new(native);
+        if (channel != nullptr) {
+            opened = ssh_channel_open_forward(channel, rule_.remote_address.c_str(),
+                                              rule_.remote_port, "127.0.0.1", 0);
+        }
+    }
     if (channel == nullptr) {
         socket->close();
         delete socket;
         return false;
     }
-    const int opened = ssh_channel_open_forward(channel, rule_.remote_address.c_str(),
-                                                rule_.remote_port, "127.0.0.1", 0);
     if (opened != SSH_OK) {
         ssh_channel_free(channel);
         socket->close();
@@ -148,8 +167,14 @@ bool SshPortForwarder::acceptRemote() {
     int destination_port = 0;
     int originator_port = 0;
     char* originator = nullptr;
-    ssh_channel channel =
-        ssh_channel_open_forward_port(native, 50, &destination_port, &originator, &originator_port);
+    ssh_channel channel = nullptr;
+    {
+        // libssh is not thread-safe: the session is locked while the request is
+        // made, and the request reads the socket itself.
+        const std::lock_guard<std::mutex> lock(sshSessionLock());
+        channel = ssh_channel_open_forward_port(native, 50, &destination_port, &originator,
+                                                &originator_port);
+    }
     if (channel == nullptr) {
         return false;
     }
@@ -282,13 +307,24 @@ bool SshPortForwarder::readSocksRequest(Connection& connection, std::string& err
     connection.target_port = port;
 
     auto* native = static_cast<ssh_session>(session_.get());
-    ssh_channel channel = ssh_channel_new(native);
+    ssh_channel channel = nullptr;
+    bool opened = false;
+    {
+        // libssh is not thread-safe: the session is locked while the channel is
+        // opened, and the opening reads the socket itself.
+        const std::lock_guard<std::mutex> lock(sshSessionLock());
+        channel = ssh_channel_new(native);
+        if (channel != nullptr) {
+            opened =
+                ssh_channel_open_forward(channel, host.c_str(), port, "127.0.0.1", 0) == SSH_OK;
+        }
+    }
     if (channel == nullptr) {
         writeSocksReply(connection, kSocksGeneralFailure);
         error = "the channel could not be opened";
         return false;
     }
-    if (ssh_channel_open_forward(channel, host.c_str(), port, "127.0.0.1", 0) != SSH_OK) {
+    if (!opened) {
         ssh_channel_free(channel);
         writeSocksReply(connection, kSocksGeneralFailure);
         error = "the server refused the connection";
@@ -324,14 +360,24 @@ bool SshPortForwarder::pump(Connection& connection) {
     if (connection.socket->waitForReadyRead(kPollTimeoutMs)) {
         const QByteArray chunk = connection.socket->readAll();
         if (!chunk.isEmpty()) {
+            const std::lock_guard<std::mutex> lock(sshSessionLock());
             ssh_channel_write(channel, chunk.constData(), static_cast<std::uint32_t>(chunk.size()));
         }
     }
 
-    const int ready = ssh_channel_poll_timeout(channel, kPollTimeoutMs, 0);
+    int ready = 0;
+    int count = 0;
+    char buffer[8192];
+    {
+        // libssh is not thread-safe: the session is locked while the channel is
+        // read.
+        const std::lock_guard<std::mutex> lock(sshSessionLock());
+        ready = ssh_channel_poll_timeout(channel, kPollTimeoutMs, 0);
+        if (ready > 0) {
+            count = ssh_channel_read(channel, buffer, sizeof(buffer), 0);
+        }
+    }
     if (ready > 0) {
-        char buffer[8192];
-        const int count = ssh_channel_read(channel, buffer, sizeof(buffer), 0);
         if (count > 0) {
             connection.socket->write(buffer, count);
         } else if (count == 0) {

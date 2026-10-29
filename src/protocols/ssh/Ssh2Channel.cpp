@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "protocols/ssh/SshComKey.h"
+#include "protocols/ssh/SshSessionLock.h"
 
 namespace openscrt::protocols::ssh {
 namespace {
@@ -254,14 +255,26 @@ void Ssh2Channel::startReader() {
             // poll_timeout blocks for a bounded interval, so the reader notices a stop
             // request without spinning. libssh 0.11 has no SSH_STATUS_* enum; the poll
             // return value is the only signal.
-            const int ready = ssh_channel_poll_timeout(session.channel, kPollTimeoutMs, 0);
+            //
+            // The session is locked while the socket is read: another thread that
+            // reads the same session would take half the packets, and the stream
+            // would fall out of step.
+            int ready = 0;
+            {
+                const std::lock_guard<std::mutex> lock(sshSessionLock());
+                ready = ssh_channel_poll_timeout(session.channel, kPollTimeoutMs, 0);
+            }
             if (ready < 0) {
                 break;  // EOF or error: the remote closed the channel.
             }
             if (ready == 0) {
                 continue;  // Timed out; check the stop flag and wait again.
             }
-            const int count = ssh_channel_read(session.channel, buffer, sizeof(buffer), 0);
+            int count = 0;
+            {
+                const std::lock_guard<std::mutex> lock(sshSessionLock());
+                count = ssh_channel_read(session.channel, buffer, sizeof(buffer), 0);
+            }
             if (count <= 0) {
                 break;
             }
@@ -297,13 +310,19 @@ TransportResult Ssh2Channel::disconnect() {
         return TransportResult{true, {}};
     }
     Session& session = *session_;
-    // Closing the channel unblocks a reader that is waiting for data.
+    // The reader is stopped before the channel is closed. The reader may be
+    // between its poll and its read, and a channel that is freed under it is
+    // a channel that is used after it is gone. The poll is bounded, so the
+    // reader notices the stop request on its own.
+    stopReader();
     if (session.channel != nullptr) {
-        ssh_channel_close(session.channel);
-        ssh_channel_free(session.channel);
+        {
+            const std::lock_guard<std::mutex> lock(sshSessionLock());
+            ssh_channel_close(session.channel);
+            ssh_channel_free(session.channel);
+        }
         session.channel = nullptr;
     }
-    stopReader();
     if (session.private_key != nullptr) {
         ssh_key_free(session.private_key);
         session.private_key = nullptr;
@@ -325,6 +344,7 @@ void Ssh2Channel::send(const std::uint8_t* data, std::size_t size) {
     if (session.channel == nullptr) {
         return;
     }
+    const std::lock_guard<std::mutex> lock(sshSessionLock());
     ssh_channel_write(session.channel, data, static_cast<std::uint32_t>(size));
 }
 
