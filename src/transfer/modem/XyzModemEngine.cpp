@@ -332,6 +332,10 @@ void XyzModemEngine::handleBlock(const std::vector<std::uint8_t>& data, FrameEnd
         }
         output_.write(reinterpret_cast<const char*>(data.data()),
                       static_cast<std::streamsize>(data.size()));
+        // The file is flushed after every block. A file that is only flushed
+        // when the stream is closed is empty for the whole transfer, and the
+        // one who looks at it sees nothing.
+        output_.flush();
         transferred_ += data.size();
         // A frame that ends with "the other end has to answer" gets the
         // acknowledgement, and nothing else. A position here would tell the far
@@ -483,6 +487,33 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
             break;
         }
 
+        if (in_data_run_) {
+            // The frames of a run follow one another: the sender sends the data
+            // header once, and then the frames come one after the other as long
+            // as they end with "more follows". No header comes between them, so
+            // asking for one is asking for something that never comes.
+            std::vector<std::uint8_t> payload;
+            FrameEnd frame_end = FrameEnd::kEnd;
+            std::size_t data_used = 0;
+            if (!readDataFrame(payload, frame_end, data_used)) {
+                break;  // The frame has not arrived yet.
+            }
+            buffer_.erase(buffer_.begin(),
+                          buffer_.begin() + static_cast<std::ptrdiff_t>(data_used));
+            if (out_probes_ < 8) {
+                std::fprintf(stderr, "zmodem probe: run frame end %c, %zu bytes\n",
+                             static_cast<char>(frame_end), payload.size());
+            }
+            if (phase_ == Phase::kReceiving) {
+                handleBlock(payload, frame_end, out);
+            }
+            // "More follows" means another frame of the run follows. "The other
+            // end has to answer" and "the frame is over" mean that what comes
+            // next is a header again.
+            in_data_run_ = (frame_end == FrameEnd::kContinue);
+            continue;
+        }
+
         ZmodemHeader header;
         bool crc32_frame = false;
         std::size_t used = 0;
@@ -520,6 +551,9 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
                 }
             } else if (header.frame == ZmodemFrame::kData && phase_ == Phase::kReceiving) {
                 handleBlock(payload, frame_end, out);
+                // The data header introduces a run of frames, and the run goes on
+                // as long as the frames end with "more follows".
+                in_data_run_ = (frame_end == FrameEnd::kContinue);
             }
             continue;
         }

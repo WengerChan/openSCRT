@@ -125,6 +125,10 @@ class XyzModemEngine {
     // The counters of the probe. They go away with the bug the probe was put in for.
     int probes_{0};
     int out_probes_{0};
+    // True while the sender is sending a run of data frames. The data header
+    // introduces the run, and the frames of the run follow one another with no
+    // header between them.
+    bool in_data_run_{false};
     ModemFileInfo file_;
     std::uint64_t transferred_{0};
 

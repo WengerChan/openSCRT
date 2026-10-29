@@ -5,10 +5,7 @@
 
 #include <cstdio>
 #include <fstream>
-#include <mutex>
 #include <utility>
-
-#include "protocols/ssh/SshSessionLock.h"
 
 namespace openscrt::transfer::sftp {
 namespace {
@@ -66,9 +63,6 @@ SftpSubsystem::~SftpSubsystem() {
 }
 
 bool SftpSubsystem::open(protocols::ssh::SshNativeSession session, std::string& error) {
-    // libssh is not thread-safe: the session is locked while this
-    // method talks to the server.
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock());
     if (session_ != nullptr) {
         error = "the sftp subsystem is already open";
         return false;
@@ -99,9 +93,6 @@ bool SftpSubsystem::open(protocols::ssh::SshNativeSession session, std::string& 
 }
 
 void SftpSubsystem::close() {
-    // libssh is not thread-safe: the session is locked while this
-    // method talks to the server.
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock());
     if (session_ == nullptr) {
         return;
     }
@@ -110,9 +101,6 @@ void SftpSubsystem::close() {
 }
 
 std::string SftpSubsystem::homeDirectory(std::string& error) {
-    // libssh is not thread-safe: the session is locked while this
-    // method talks to the server.
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock());
     if (session_ == nullptr) {
         error = "the sftp subsystem is not open";
         return {};
@@ -130,9 +118,6 @@ std::string SftpSubsystem::homeDirectory(std::string& error) {
 
 std::vector<SftpFileInfo> SftpSubsystem::listDirectory(const std::string& path,
                                                        std::string& error) {
-    // libssh is not thread-safe: the session is locked while this
-    // method talks to the server.
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock());
     std::vector<SftpFileInfo> entries;
     if (session_ == nullptr) {
         error = "the sftp subsystem is not open";
@@ -166,9 +151,6 @@ std::vector<SftpFileInfo> SftpSubsystem::listDirectory(const std::string& path,
 }
 
 std::optional<SftpFileInfo> SftpSubsystem::stat(const std::string& path, std::string& error) {
-    // libssh is not thread-safe: the session is locked while this
-    // method talks to the server.
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock());
     if (session_ == nullptr) {
         error = "the sftp subsystem is not open";
         return std::nullopt;
@@ -185,9 +167,6 @@ std::optional<SftpFileInfo> SftpSubsystem::stat(const std::string& path, std::st
 }
 
 std::string SftpSubsystem::canonicalPath(const std::string& path, std::string& error) {
-    // libssh is not thread-safe: the session is locked while this
-    // method talks to the server.
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock());
     if (session_ == nullptr) {
         error = "the sftp subsystem is not open";
         return {};
@@ -205,9 +184,6 @@ std::string SftpSubsystem::canonicalPath(const std::string& path, std::string& e
 
 bool SftpSubsystem::download(const std::string& remote_path, const std::string& local_path,
                              std::string& error) {
-    // libssh is not thread-safe: the session is locked while this
-    // method talks to the server.
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock());
     if (session_ == nullptr) {
         error = "the sftp subsystem is not open";
         return false;
@@ -248,9 +224,6 @@ bool SftpSubsystem::download(const std::string& remote_path, const std::string& 
 
 bool SftpSubsystem::upload(const std::string& local_path, const std::string& remote_path,
                            std::string& error) {
-    // libssh is not thread-safe: the session is locked while this
-    // method talks to the server.
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock());
     if (session_ == nullptr) {
         error = "the sftp subsystem is not open";
         return false;
@@ -290,9 +263,6 @@ bool SftpSubsystem::upload(const std::string& local_path, const std::string& rem
 }
 
 bool SftpSubsystem::remove(const std::string& path, std::string& error) {
-    // libssh is not thread-safe: the session is locked while this
-    // method talks to the server.
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock());
     if (session_ == nullptr) {
         error = "the sftp subsystem is not open";
         return false;
@@ -306,9 +276,6 @@ bool SftpSubsystem::remove(const std::string& path, std::string& error) {
 }
 
 bool SftpSubsystem::makeDirectory(const std::string& path, std::string& error) {
-    // libssh is not thread-safe: the session is locked while this
-    // method talks to the server.
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock());
     if (session_ == nullptr) {
         error = "the sftp subsystem is not open";
         return false;
@@ -322,9 +289,6 @@ bool SftpSubsystem::makeDirectory(const std::string& path, std::string& error) {
 }
 
 bool SftpSubsystem::removeDirectory(const std::string& path, std::string& error) {
-    // libssh is not thread-safe: the session is locked while this
-    // method talks to the server.
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock());
     if (session_ == nullptr) {
         error = "the sftp subsystem is not open";
         return false;
