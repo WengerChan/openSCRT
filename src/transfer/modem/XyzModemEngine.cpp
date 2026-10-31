@@ -146,9 +146,16 @@ bool XyzModemEngine::readDataFrame(std::vector<std::uint8_t>& data, FrameEnd& fr
                 frame_end = static_cast<FrameEnd>(next);
                 const auto sent = static_cast<std::uint16_t>((high << 8) | low);
                 const auto computed = dataChecksum(data.data(), data.size(), frame_end);
-                std::fprintf(stderr,
-                             "zmodem probe: frame end %c, %zu bytes, sent %04x, ours %04x\n",
-                             static_cast<char>(next), data.size(), sent, computed);
+                std::string tail;
+                const std::size_t from = buffer_.size() > 24 ? buffer_.size() - 24 : 0;
+                for (std::size_t index = from; index < buffer_.size(); ++index) {
+                    tail += "0123456789abcdef"[(buffer_[index] >> 4) & 0x0F];
+                    tail += "0123456789abcdef"[buffer_[index] & 0x0F];
+                }
+                std::fprintf(
+                    stderr,
+                    "zmodem probe: frame end %c, %zu bytes, sent %04x, ours %04x, tail %s\n",
+                    static_cast<char>(next), data.size(), sent, computed, tail.c_str());
                 if (computed != sent) {
                     return false;
                 }

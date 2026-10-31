@@ -365,14 +365,18 @@ jobs:
       - name: Test (unit tier)
         shell: bash
         # The size of the file that the Zmodem transfer carries. The criterion names a
-        # hundred megabytes; the transfer is a round trip per block, so that size does
-        # not fit in a CI job, and eight megabytes is a real transfer that does. The
-        # comparison is byte for byte, which is stricter than comparing a digest.
+        # hundred megabytes, and that is what is transferred: the transfer is a round
+        # trip per block, and a hundred megabytes is twelve thousand round trips, which
+        # the job has room for. The comparison is byte for byte, which is stricter
+        # than comparing a digest.
         env:
-          OPENCRT_ZMODEM_TEST_BYTES: "8388608"
+          OPENCRT_ZMODEM_TEST_BYTES: "104857600"
         # -L unit is mandatory: the test preset runs *everything*, so without this filter the
         # perf tier would silently execute on Windows and macOS too.
-        run: ctest --test-dir out/build/${{ matrix.preset }} -C Release -L unit --output-on-failure --timeout 600
+        #
+        # The timeout is an hour, because the Zmodem transfer of a hundred megabytes
+        # is the slowest thing in this tier.
+        run: ctest --test-dir out/build/${{ matrix.preset }} -C Release -L unit --output-on-failure --timeout 3600
 
       # What the server said, after the tests have been against it. It is the
       # only place that says why a key was refused, and "the key was refused"
