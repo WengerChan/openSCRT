@@ -84,6 +84,10 @@ class XyzModemEngine {
     // in the bytes that arrived. It goes away with the bug it was put in for.
     [[nodiscard]] bool sawBadFrame() const noexcept { return saw_bad_frame_; }
     [[nodiscard]] std::size_t badFrameOffset() const noexcept { return bad_frame_offset_; }
+    // How many frames arrived with a checksum that does not match. The far end sends
+    // a few of them (it puts sixty stale bytes in front of a block from time to
+    // time), and they are stepped over.
+    [[nodiscard]] std::size_t badFrames() const noexcept { return bad_frames_; }
 
  private:
     enum class Phase {
@@ -99,10 +103,15 @@ class XyzModemEngine {
 
     // Reads one header out of the buffer. Returns false when there is not enough yet.
     [[nodiscard]] bool readHeader(ZmodemHeader& header, bool& crc32_frame, std::size_t& used);
-    // Reads the data frame that follows a header. Returns false when there is not
-    // enough yet.
-    [[nodiscard]] bool readDataFrame(std::vector<std::uint8_t>& data, FrameEnd& frame_end,
-                                     std::size_t& used);
+    // What a read of a data frame found.
+    enum class FrameRead {
+        kComplete,    // A frame with a matching checksum.
+        kIncomplete,  // Not enough bytes yet; wait for more.
+        kBad,         // The frame is there, but its checksum does not match.
+    };
+    // Reads the data frame that follows a header.
+    [[nodiscard]] FrameRead readDataFrame(std::vector<std::uint8_t>& data, FrameEnd& frame_end,
+                                          std::size_t& used);
 
     void handleHeader(const ZmodemHeader& header, std::vector<std::uint8_t>& out);
     void handleBlock(const std::vector<std::uint8_t>& data, FrameEnd frame_end,
@@ -126,14 +135,12 @@ class XyzModemEngine {
     Phase phase_{Phase::kIdle};
     ModemState state_{ModemState::kIdle};
     std::string error_;
-    // The counters of the probe. They go away with the bug the probe was put in for.
-    int probes_{0};
-    int out_probes_{0};
-    // The probe of the bad frame: how many bytes left the buffer, and where the first
-    // frame whose checksum did not match was found.
+    // The probe of the bad frame: how many bytes left the buffer, where the first
+    // frame whose checksum did not match was found, and how many there were.
     std::size_t consumed_{0};
     bool saw_bad_frame_{false};
     std::size_t bad_frame_offset_{0};
+    std::size_t bad_frames_{0};
     // True while the sender is sending a run of data frames. The data header
     // introduces the run, and the frames of the run follow one another with no
     // header between them.

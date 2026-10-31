@@ -122,8 +122,8 @@ bool XyzModemEngine::readHeader(ZmodemHeader& header, bool& crc32_frame, std::si
     return decodeHeader(buffer_.data(), buffer_.size(), header, crc32_frame, used);
 }
 
-bool XyzModemEngine::readDataFrame(std::vector<std::uint8_t>& data, FrameEnd& frame_end,
-                                   std::size_t& used) {
+XyzModemEngine::FrameRead XyzModemEngine::readDataFrame(std::vector<std::uint8_t>& data,
+                                                        FrameEnd& frame_end, std::size_t& used) {
     data.clear();
     std::size_t at = 0;
     while (at < buffer_.size()) {
@@ -146,25 +146,19 @@ bool XyzModemEngine::readDataFrame(std::vector<std::uint8_t>& data, FrameEnd& fr
                 frame_end = static_cast<FrameEnd>(next);
                 const auto sent = static_cast<std::uint16_t>((high << 8) | low);
                 const auto computed = dataChecksum(data.data(), data.size(), frame_end);
-                std::string tail;
-                const std::size_t from = buffer_.size() > 24 ? buffer_.size() - 24 : 0;
-                for (std::size_t index = from; index < buffer_.size(); ++index) {
-                    tail += "0123456789abcdef"[(buffer_[index] >> 4) & 0x0F];
-                    tail += "0123456789abcdef"[buffer_[index] & 0x0F];
-                }
-                std::fprintf(
-                    stderr,
-                    "zmodem probe: frame end %c, %zu bytes, sent %04x, ours %04x, tail %s\n",
-                    static_cast<char>(next), data.size(), sent, computed, tail.c_str());
+                used = cursor;
                 if (computed != sent) {
+                    // The frame is whole, but its checksum does not match. The far end
+                    // sent something that is not what it says it is -- and the far end
+                    // is not going to send it again, so the answer is not to wait for
+                    // it: it is to step over this frame and read the next one.
                     if (!saw_bad_frame_) {
                         saw_bad_frame_ = true;
                         bad_frame_offset_ = consumed_ + at;
                     }
-                    return false;
+                    return FrameRead::kBad;
                 }
-                used = cursor;
-                return true;
+                return FrameRead::kComplete;
             }
             // An escaped byte: the top two bits are flipped.
             data.push_back(static_cast<std::uint8_t>(next ^ 0x40));
@@ -179,7 +173,7 @@ bool XyzModemEngine::readDataFrame(std::vector<std::uint8_t>& data, FrameEnd& fr
         data.push_back(byte);
         ++at;
     }
-    return false;
+    return FrameRead::kIncomplete;
 }
 
 void XyzModemEngine::sendReceiverInit(std::vector<std::uint8_t>& out) {
@@ -467,17 +461,6 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
     if (phase_ == Phase::kDone || phase_ == Phase::kCancelled || phase_ == Phase::kFailed) {
         return out;
     }
-    // A probe: the bytes that come in and the bytes that go out. It goes away
-    // with the bug it was put in for.
-    if (probes_ < 6) {
-        ++probes_;
-        std::string in_hex;
-        for (std::size_t index = 0; index < size && index < 40; ++index) {
-            in_hex += "0123456789abcdef"[(data[index] >> 4) & 0x0F];
-            in_hex += "0123456789abcdef"[data[index] & 0x0F];
-        }
-        std::fprintf(stderr, "zmodem probe: in %s\n", in_hex.c_str());
-    }
     buffer_.insert(buffer_.end(), data, data + size);
 
     while (true) {
@@ -506,15 +489,21 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
             std::vector<std::uint8_t> payload;
             FrameEnd frame_end = FrameEnd::kEnd;
             std::size_t data_used = 0;
-            if (!readDataFrame(payload, frame_end, data_used)) {
+            const FrameRead read = readDataFrame(payload, frame_end, data_used);
+            if (read == FrameRead::kIncomplete) {
                 break;  // The frame has not arrived yet.
             }
             buffer_.erase(buffer_.begin(),
                           buffer_.begin() + static_cast<std::ptrdiff_t>(data_used));
             consumed_ += data_used;
-            if (out_probes_ < 8) {
-                std::fprintf(stderr, "zmodem probe: run frame end %c, %zu bytes\n",
-                             static_cast<char>(frame_end), payload.size());
+            if (read == FrameRead::kBad) {
+                // The frame is stepped over: its bytes are not the file's bytes, so
+                // they are not written, and the reading goes on with the next frame.
+                // Whether the next thing is a frame or a header is still said by the
+                // frame that was stepped over.
+                bad_frames_ += 1;
+                in_data_run_ = (frame_end == FrameEnd::kContinue);
+                continue;
             }
             if (phase_ == Phase::kReceiving) {
                 handleBlock(payload, frame_end, out);
@@ -533,8 +522,6 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
             break;
         }
         const std::size_t header_end = used;
-        std::fprintf(stderr, "zmodem probe: header type %d, %zu bytes\n",
-                     static_cast<int>(header.frame), header_end);
         // A copy of the header. The frame that follows the header may not have
         // arrived yet, and then the header has to go back into the buffer -- but
         // the buffer no longer holds it, and the bytes that are in there now are
@@ -549,7 +536,8 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
             std::vector<std::uint8_t> payload;
             FrameEnd frame_end = FrameEnd::kEnd;
             std::size_t data_used = 0;
-            if (!readDataFrame(payload, frame_end, data_used)) {
+            const FrameRead read = readDataFrame(payload, frame_end, data_used);
+            if (read == FrameRead::kIncomplete) {
                 // The frame has not arrived yet. The header goes back so that the
                 // whole thing is read again when the rest arrives.
                 buffer_.insert(buffer_.begin(), header_bytes.begin(), header_bytes.end());
@@ -559,6 +547,19 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
             buffer_.erase(buffer_.begin(),
                           buffer_.begin() + static_cast<std::ptrdiff_t>(data_used));
             consumed_ += data_used;
+            if (read == FrameRead::kBad) {
+                // The frame is stepped over; the run continues with the next frame if
+                // the frame that was stepped over said so.
+                bad_frames_ += 1;
+                if (header.frame == ZmodemFrame::kFile) {
+                    // The details of the file are in this frame, and there is no
+                    // second copy of them: without them there is no file to write.
+                    fail("the file header could not be read");
+                    break;
+                }
+                in_data_run_ = (frame_end == FrameEnd::kContinue);
+                continue;
+            }
             if (header.frame == ZmodemFrame::kFile) {
                 // The details of the file follow the header that names it.
                 if (phase_ == Phase::kAwaitFileInfo) {
@@ -576,16 +577,6 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
         handleHeader(header, out);
     }
 
-    // The other half of the probe: what the engine answers.
-    if (!out.empty() && out_probes_ < 6) {
-        ++out_probes_;
-        std::string out_hex;
-        for (std::size_t index = 0; index < out.size() && index < 40; ++index) {
-            out_hex += "0123456789abcdef"[(out[index] >> 4) & 0x0F];
-            out_hex += "0123456789abcdef"[out[index] & 0x0F];
-        }
-        std::fprintf(stderr, "zmodem probe: out %s\n", out_hex.c_str());
-    }
     return out;
 }
 

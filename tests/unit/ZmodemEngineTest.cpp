@@ -246,7 +246,7 @@ TEST(ZmodemEngineTest, AFileArrivesFromTheRealSender) {
     // wrong can be looked at byte for byte. It goes away with the bug it was put in for.
     std::ofstream wire("/tmp/openscrt-zmodem-wire.bin", std::ios::binary | std::ios::trunc);
     std::vector<std::uint8_t> wire_memory;
-    wire_memory.reserve(8 * 1024 * 1024);
+    wire_memory.reserve(2 * 1024 * 1024);
     // The deadline scales with the size of the file: the transfer is a round trip
     // every eight kilobytes, and the deadline has to be long enough for the
     // biggest file the criterion names. It is capped, so that a transfer that
@@ -261,7 +261,7 @@ TEST(ZmodemEngineTest, AFileArrivesFromTheRealSender) {
         if (count == 0) {
             continue;
         }
-        if (wire_memory.size() < 8 * 1024 * 1024) {
+        if (wire_memory.size() < 2 * 1024 * 1024) {
             wire.write(reinterpret_cast<const char*>(buffer.data()),
                        static_cast<std::streamsize>(count));
             wire_memory.insert(wire_memory.end(), buffer.begin(), buffer.begin() + count);
@@ -273,6 +273,7 @@ TEST(ZmodemEngineTest, AFileArrivesFromTheRealSender) {
     }
     wire.close();
 
+    EXPECT_EQ(engine.badFrames(), 0u) << "frames arrived with a checksum that does not match";
     if (engine.sawBadFrame()) {
         // The bytes around the frame whose checksum did not match. Without them
         // "the transfer stopped" says nothing about why.
