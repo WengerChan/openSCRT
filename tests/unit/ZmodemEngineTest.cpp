@@ -242,6 +242,11 @@ TEST(ZmodemEngineTest, AFileArrivesFromTheRealSender) {
     modem::XyzModemEngine engine(engine_options);
 
     std::vector<std::uint8_t> buffer(64 * 1024);
+    // A probe: the bytes that arrive, kept so that the place where the engine went
+    // wrong can be looked at byte for byte. It goes away with the bug it was put in for.
+    std::ofstream wire("/tmp/openscrt-zmodem-wire.bin", std::ios::binary | std::ios::trunc);
+    std::vector<std::uint8_t> wire_memory;
+    wire_memory.reserve(8 * 1024 * 1024);
     // The deadline scales with the size of the file: the transfer is a round trip
     // every eight kilobytes, and the deadline has to be long enough for the
     // biggest file the criterion names. It is capped, so that a transfer that
@@ -256,10 +261,31 @@ TEST(ZmodemEngineTest, AFileArrivesFromTheRealSender) {
         if (count == 0) {
             continue;
         }
+        if (wire_memory.size() < 8 * 1024 * 1024) {
+            wire.write(reinterpret_cast<const char*>(buffer.data()),
+                       static_cast<std::streamsize>(count));
+            wire_memory.insert(wire_memory.end(), buffer.begin(), buffer.begin() + count);
+        }
         const std::vector<std::uint8_t> answer = engine.feed(buffer.data(), count);
         if (!answer.empty()) {
             sender.send(answer.data(), answer.size());
         }
+    }
+    wire.close();
+
+    if (engine.sawBadFrame()) {
+        // The bytes around the frame whose checksum did not match. Without them
+        // "the transfer stopped" says nothing about why.
+        const std::size_t at = engine.badFrameOffset();
+        const std::size_t from = at > 120 ? at - 120 : 0;
+        const std::size_t to = std::min(wire_memory.size(), at + 120);
+        std::fprintf(stderr, "zmodem probe: the first bad frame is at byte %zu of %zu\n", at,
+                     wire_memory.size());
+        std::fprintf(stderr, "zmodem probe: the bytes around it:");
+        for (std::size_t index = from; index < to; ++index) {
+            std::fprintf(stderr, " %02x", wire_memory[index]);
+        }
+        std::fprintf(stderr, "\n");
     }
 
     EXPECT_EQ(engine.state(), modem::ModemState::kFinished) << engine.error();

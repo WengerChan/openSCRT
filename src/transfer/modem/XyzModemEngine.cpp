@@ -157,6 +157,10 @@ bool XyzModemEngine::readDataFrame(std::vector<std::uint8_t>& data, FrameEnd& fr
                     "zmodem probe: frame end %c, %zu bytes, sent %04x, ours %04x, tail %s\n",
                     static_cast<char>(next), data.size(), sent, computed, tail.c_str());
                 if (computed != sent) {
+                    if (!saw_bad_frame_) {
+                        saw_bad_frame_ = true;
+                        bad_frame_offset_ = consumed_ + at;
+                    }
                     return false;
                 }
                 used = cursor;
@@ -486,9 +490,9 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
             if (found == buffer_.end()) {
                 break;
             }
-            buffer_.erase(
-                buffer_.begin(),
-                buffer_.begin() + static_cast<std::ptrdiff_t>(found - buffer_.begin()) + 2);
+            const auto marker_end = static_cast<std::ptrdiff_t>(found - buffer_.begin()) + 2;
+            buffer_.erase(buffer_.begin(), buffer_.begin() + marker_end);
+            consumed_ += static_cast<std::size_t>(marker_end);
             phase_ = Phase::kDone;
             state_ = ModemState::kFinished;
             break;
@@ -507,6 +511,7 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
             }
             buffer_.erase(buffer_.begin(),
                           buffer_.begin() + static_cast<std::ptrdiff_t>(data_used));
+            consumed_ += data_used;
             if (out_probes_ < 8) {
                 std::fprintf(stderr, "zmodem probe: run frame end %c, %zu bytes\n",
                              static_cast<char>(frame_end), payload.size());
@@ -537,6 +542,7 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
         const std::vector<std::uint8_t> header_bytes(
             buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(header_end));
         buffer_.erase(buffer_.begin(), buffer_.begin() + static_cast<std::ptrdiff_t>(header_end));
+        consumed_ += header_end;
 
         // The frame that follows the header: the details of the file, or a block of it.
         if (header.frame == ZmodemFrame::kFile || header.frame == ZmodemFrame::kData) {
@@ -547,10 +553,12 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
                 // The frame has not arrived yet. The header goes back so that the
                 // whole thing is read again when the rest arrives.
                 buffer_.insert(buffer_.begin(), header_bytes.begin(), header_bytes.end());
+                consumed_ -= header_end;  // The header goes back into the buffer.
                 break;
             }
             buffer_.erase(buffer_.begin(),
                           buffer_.begin() + static_cast<std::ptrdiff_t>(data_used));
+            consumed_ += data_used;
             if (header.frame == ZmodemFrame::kFile) {
                 // The details of the file follow the header that names it.
                 if (phase_ == Phase::kAwaitFileInfo) {

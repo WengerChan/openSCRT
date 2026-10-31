@@ -378,6 +378,19 @@ jobs:
         # is the slowest thing in this tier.
         run: ctest --test-dir out/build/${{ matrix.preset }} -C Release -L unit --output-on-failure --timeout 3600
 
+      # The bytes of the Zmodem transfer, as they came off the line.
+      #
+      # A transfer that stops says nothing about why it stopped: the log has to hold
+      # the bytes themselves for the question to be answerable.
+      - name: Upload the Zmodem wire (Linux)
+        if: always() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: zmodem-wire-linux
+          path: |
+            /tmp/openscrt-zmodem-wire.bin
+          if-no-files-found: ignore
+
       # What the server said, after the tests have been against it. It is the
       # only place that says why a key was refused, and "the key was refused"
       # says nothing about the key.

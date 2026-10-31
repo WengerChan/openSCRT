@@ -80,6 +80,10 @@ class XyzModemEngine {
     [[nodiscard]] std::uint64_t bytesTransferred() const noexcept { return transferred_; }
     // The file the engine wrote, so the caller can say where it went.
     [[nodiscard]] const std::string& receivedPath() const noexcept { return output_path_; }
+    // A probe: where the first frame whose checksum did not match was found, counted
+    // in the bytes that arrived. It goes away with the bug it was put in for.
+    [[nodiscard]] bool sawBadFrame() const noexcept { return saw_bad_frame_; }
+    [[nodiscard]] std::size_t badFrameOffset() const noexcept { return bad_frame_offset_; }
 
  private:
     enum class Phase {
@@ -125,6 +129,11 @@ class XyzModemEngine {
     // The counters of the probe. They go away with the bug the probe was put in for.
     int probes_{0};
     int out_probes_{0};
+    // The probe of the bad frame: how many bytes left the buffer, and where the first
+    // frame whose checksum did not match was found.
+    std::size_t consumed_{0};
+    bool saw_bad_frame_{false};
+    std::size_t bad_frame_offset_{0};
     // True while the sender is sending a run of data frames. The data header
     // introduces the run, and the frames of the run follow one another with no
     // header between them.
