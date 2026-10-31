@@ -147,6 +147,9 @@ class XyzModemEngine {
     bool in_data_run_{false};
     ModemFileInfo file_;
     std::uint64_t transferred_{0};
+    // How many bytes are written since the file was last flushed. The file is
+    // flushed once a megabyte, not after every block.
+    std::size_t unflushed_{0};
 
     std::vector<std::uint8_t> buffer_;
     std::ofstream output_;

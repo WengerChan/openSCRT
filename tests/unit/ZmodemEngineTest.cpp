@@ -252,7 +252,9 @@ TEST(ZmodemEngineTest, AFileArrivesFromTheRealSender) {
     // biggest file the criterion names. It is capped, so that a transfer that
     // hangs does not hang the job for an hour.
     const long long megabytes = static_cast<long long>(size) / (1024 * 1024) + 1;
-    const long long budget = std::min<long long>(120 + megabytes * 12, 1200);
+    // The budget has to fit inside the timeout of the test itself, so that a
+    // transfer that does not finish says so instead of being killed.
+    const long long budget = std::min<long long>(120 + megabytes * 12, 540);
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(budget);
     while (engine.state() != modem::ModemState::kFinished &&
            std::chrono::steady_clock::now() < deadline) {

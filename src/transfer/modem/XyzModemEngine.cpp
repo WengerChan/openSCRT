@@ -9,6 +9,11 @@
 namespace openscrt::transfer::modem {
 namespace {
 
+// How many bytes are written before the received file is flushed. A hundred
+// megabytes is a hundred thousand blocks, and a flush for each of them is the
+// whole budget of the test that transfers it.
+constexpr std::size_t kFlushEvery = 1024 * 1024;
+
 namespace fs = std::filesystem;
 
 constexpr std::uint8_t kCan = 0x18;
@@ -337,10 +342,17 @@ void XyzModemEngine::handleBlock(const std::vector<std::uint8_t>& data, FrameEnd
         }
         output_.write(reinterpret_cast<const char*>(data.data()),
                       static_cast<std::streamsize>(data.size()));
-        // The file is flushed after every block. A file that is only flushed
-        // when the stream is closed is empty for the whole transfer, and the
-        // one who looks at it sees nothing.
-        output_.flush();
+        // The file is flushed now and then, not after every block. A file that is
+        // only flushed when the stream is closed is empty for the whole transfer,
+        // and the one who looks at it sees nothing -- so it is flushed once a
+        // megabyte, which is often enough for that and a hundred thousand times
+        // cheaper: a hundred megabytes is a hundred thousand blocks, and a flush
+        // for each of them is the whole budget of the test.
+        unflushed_ += data.size();
+        if (unflushed_ >= kFlushEvery) {
+            output_.flush();
+            unflushed_ = 0;
+        }
         transferred_ += data.size();
         // A frame that ends with "the other end has to answer" gets the
         // acknowledgement, and nothing else. A position here would tell the far
