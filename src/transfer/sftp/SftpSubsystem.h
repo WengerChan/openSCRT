@@ -70,6 +70,9 @@ class SftpSubsystem {
  private:
     // The libssh subsystem. The type stays behind this header.
     void* session_{nullptr};
+    // The session the subsystem lives on. The calls of the subsystem read that
+    // session's socket, so they take the session's lock.
+    void* native_session_{nullptr};
 };
 
 }  // namespace openscrt::transfer::sftp

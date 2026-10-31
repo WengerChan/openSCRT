@@ -13,7 +13,10 @@ SshJumpHostProxy::SshJumpHostProxy(JumpHostChain chain) : chain_(std::move(chain
 
 SshJumpHostProxy::~SshJumpHostProxy() {
     if (target_channel_ != nullptr) {
-        const std::lock_guard<std::mutex> lock(sshSessionLock());
+        // The channel belongs to the last hop's session, and the hops are still
+        // there: they are cleared on the next line.
+        void* session = hops_.empty() ? nullptr : hops_.back()->nativeSession().get();
+        const std::lock_guard<std::mutex> lock(sshSessionLock(session));
         ssh_channel_free(static_cast<ssh_channel>(target_channel_));
         target_channel_ = nullptr;
     }
@@ -64,7 +67,7 @@ TransportResult SshJumpHostProxy::connect() {
         // libssh is not thread-safe: the session is locked while the channel is
         // opened, and the opening reads the socket itself. The hop has a reader
         // thread of its own, and it is reading the same socket.
-        const std::lock_guard<std::mutex> lock(sshSessionLock());
+        const std::lock_guard<std::mutex> lock(sshSessionLock(native));
         channel = ssh_channel_new(native);
         if (channel != nullptr) {
             opened = ssh_channel_open_forward(channel, chain_.target_host.c_str(),

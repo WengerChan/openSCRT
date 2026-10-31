@@ -260,20 +260,25 @@ void Ssh2Channel::startReader() {
             // reads the same session would take half the packets, and the stream
             // would fall out of step.
             int ready = 0;
+            int count = 0;
             {
-                const std::lock_guard<std::mutex> lock(sshSessionLock());
+                // The poll and the read that follows it are one step, under one
+                // lock. The poll says "there is data" and the read takes it: if
+                // the lock were let go in between, another thread could take
+                // the data, and the read would then wait for data that is not
+                // coming -- while holding the lock, which stops every other
+                // thread that needs this session.
+                const std::lock_guard<std::mutex> lock(sshSessionLock(session.session));
                 ready = ssh_channel_poll_timeout(session.channel, kPollTimeoutMs, 0);
+                if (ready > 0) {
+                    count = ssh_channel_read(session.channel, buffer, sizeof(buffer), 0);
+                }
             }
             if (ready < 0) {
                 break;  // EOF or error: the remote closed the channel.
             }
             if (ready == 0) {
                 continue;  // Timed out; check the stop flag and wait again.
-            }
-            int count = 0;
-            {
-                const std::lock_guard<std::mutex> lock(sshSessionLock());
-                count = ssh_channel_read(session.channel, buffer, sizeof(buffer), 0);
             }
             if (count <= 0) {
                 break;
@@ -317,7 +322,7 @@ TransportResult Ssh2Channel::disconnect() {
     stopReader();
     if (session.channel != nullptr) {
         {
-            const std::lock_guard<std::mutex> lock(sshSessionLock());
+            const std::lock_guard<std::mutex> lock(sshSessionLock(session.session));
             ssh_channel_close(session.channel);
             ssh_channel_free(session.channel);
         }
@@ -344,7 +349,7 @@ void Ssh2Channel::send(const std::uint8_t* data, std::size_t size) {
     if (session.channel == nullptr) {
         return;
     }
-    const std::lock_guard<std::mutex> lock(sshSessionLock());
+    const std::lock_guard<std::mutex> lock(sshSessionLock(session.session));
     ssh_channel_write(session.channel, data, static_cast<std::uint32_t>(size));
 }
 

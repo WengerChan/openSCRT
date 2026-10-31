@@ -51,7 +51,7 @@ bool SshPortForwarder::start(std::string& error) {
         {
             // libssh is not thread-safe: the session is locked while the request
             // is made, and the request reads the socket itself.
-            const std::lock_guard<std::mutex> lock(sshSessionLock());
+            const std::lock_guard<std::mutex> lock(sshSessionLock(native));
             answer = ssh_channel_listen_forward(native, rule_.listen_address.c_str(),
                                                 rule_.listen_port, &bound);
         }
@@ -87,7 +87,7 @@ void SshPortForwarder::stop() {
     }
     for (Connection& connection : connections_) {
         if (connection.channel != nullptr) {
-            const std::lock_guard<std::mutex> lock(sshSessionLock());
+            const std::lock_guard<std::mutex> lock(sshSessionLock(session_.get()));
             ssh_channel_free(static_cast<ssh_channel>(connection.channel));
         }
         if (connection.socket != nullptr) {
@@ -135,7 +135,7 @@ bool SshPortForwarder::acceptPending() {
     {
         // libssh is not thread-safe: the session is locked while the channel is
         // opened, and the opening reads the socket itself.
-        const std::lock_guard<std::mutex> lock(sshSessionLock());
+        const std::lock_guard<std::mutex> lock(sshSessionLock(native));
         channel = ssh_channel_new(native);
         if (channel != nullptr) {
             opened = ssh_channel_open_forward(channel, rule_.remote_address.c_str(),
@@ -171,7 +171,7 @@ bool SshPortForwarder::acceptRemote() {
     {
         // libssh is not thread-safe: the session is locked while the request is
         // made, and the request reads the socket itself.
-        const std::lock_guard<std::mutex> lock(sshSessionLock());
+        const std::lock_guard<std::mutex> lock(sshSessionLock(native));
         channel = ssh_channel_open_forward_port(native, 50, &destination_port, &originator,
                                                 &originator_port);
     }
@@ -312,7 +312,7 @@ bool SshPortForwarder::readSocksRequest(Connection& connection, std::string& err
     {
         // libssh is not thread-safe: the session is locked while the channel is
         // opened, and the opening reads the socket itself.
-        const std::lock_guard<std::mutex> lock(sshSessionLock());
+        const std::lock_guard<std::mutex> lock(sshSessionLock(native));
         channel = ssh_channel_new(native);
         if (channel != nullptr) {
             opened =
@@ -360,7 +360,7 @@ bool SshPortForwarder::pump(Connection& connection) {
     if (connection.socket->waitForReadyRead(kPollTimeoutMs)) {
         const QByteArray chunk = connection.socket->readAll();
         if (!chunk.isEmpty()) {
-            const std::lock_guard<std::mutex> lock(sshSessionLock());
+            const std::lock_guard<std::mutex> lock(sshSessionLock(session_.get()));
             ssh_channel_write(channel, chunk.constData(), static_cast<std::uint32_t>(chunk.size()));
         }
     }
@@ -370,8 +370,11 @@ bool SshPortForwarder::pump(Connection& connection) {
     char buffer[8192];
     {
         // libssh is not thread-safe: the session is locked while the channel is
-        // read.
-        const std::lock_guard<std::mutex> lock(sshSessionLock());
+        // read. The poll and the read are one step: the poll says "there is
+        // data" and the read takes it, and if the lock were let go in between,
+        // another thread could take the data and the read would wait for data
+        // that is not coming.
+        const std::lock_guard<std::mutex> lock(sshSessionLock(session_.get()));
         ready = ssh_channel_poll_timeout(channel, kPollTimeoutMs, 0);
         if (ready > 0) {
             count = ssh_channel_read(channel, buffer, sizeof(buffer), 0);
