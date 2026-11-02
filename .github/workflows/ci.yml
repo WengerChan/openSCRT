@@ -512,6 +512,23 @@ jobs:
                      --print-summary
           done
 
+      # The coverage number, even when the tests did not pass.
+      #
+      # The step above is a gate, and a gate that only runs on a green job
+      # produces no number on a red one -- and the archive asks for the number.
+      # This step prints it and does not gate on it: the gate stays where it is.
+      - name: Coverage, even when the tests did not pass
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        continue-on-error: true
+        run: |
+          pipx install gcovr || pip install --user gcovr
+          GCOVR=$(command -v gcovr || echo "$HOME/.local/bin/gcovr")
+          "$GCOVR" --root . --filter 'src/core/' --filter 'src/terminal/' \
+                   --filter 'src/protocols/' --filter 'src/credential/' --exclude 'src/app/' \
+                   --exclude-unreachable-branches --exclude-throw-branches \
+                   --print-summary
+
       - name: Upload coverage report
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
