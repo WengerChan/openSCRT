@@ -246,7 +246,7 @@ TEST(ZmodemEngineTest, AFileArrivesFromTheRealSender) {
     // wrong can be looked at byte for byte. It goes away with the bug it was put in for.
     std::ofstream wire("/tmp/openscrt-zmodem-wire.bin", std::ios::binary | std::ios::trunc);
     std::vector<std::uint8_t> wire_memory;
-    wire_memory.reserve(2 * 1024 * 1024);
+    wire_memory.reserve(32 * 1024 * 1024);
     // The deadline scales with the size of the file: the transfer is a round trip
     // every eight kilobytes, and the deadline has to be long enough for the
     // biggest file the criterion names. It is capped, so that a transfer that
@@ -263,7 +263,7 @@ TEST(ZmodemEngineTest, AFileArrivesFromTheRealSender) {
         if (count == 0) {
             continue;
         }
-        if (wire_memory.size() < 2 * 1024 * 1024) {
+        if (wire_memory.size() < 32 * 1024 * 1024) {
             wire.write(reinterpret_cast<const char*>(buffer.data()),
                        static_cast<std::streamsize>(count));
             wire_memory.insert(wire_memory.end(), buffer.begin(), buffer.begin() + count);
@@ -295,6 +295,13 @@ TEST(ZmodemEngineTest, AFileArrivesFromTheRealSender) {
     EXPECT_TRUE(engine.receivedPath().empty() == false) << "no file was received";
 
     const std::string received = readFile(engine.receivedPath());
+    // How much the engine was given, and how much ended up in the file. The two
+    // numbers are the same by construction, so the interesting one is next to
+    // them: how many bytes the line carried. If the line carried more than the
+    // engine got, the loss is in the pty's ring; if it carried exactly as much,
+    // the far end never sent those bytes.
+    std::fprintf(stderr, "zmodem probe: the engine took %llu bytes, the file has %zu\n",
+                 static_cast<unsigned long long>(engine.bytesTransferred()), received.size());
     EXPECT_EQ(received.size(), payload.size());
     if (received.size() == payload.size()) {
         // The bytes are compared one by one, and only the first difference is
