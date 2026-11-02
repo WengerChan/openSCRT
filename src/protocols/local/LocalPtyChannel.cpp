@@ -1,5 +1,6 @@
 #include "protocols/local/LocalPtyChannel.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
@@ -397,6 +398,22 @@ void LocalPtyChannel::startReader() {
                 }
             }
 
+            // How much the ring can take. The bytes that do not fit are not read from
+            // the port at all: they stay where they are, and the next pass picks them
+            // up. Reading more than the ring can hold throws the excess away -- the
+            // port has already given it up by then -- and the stream is cut in the
+            // middle of whatever the far end was sending.
+            const std::size_t room = ring_.available();
+            if (room == 0) {
+                // The consumer is behind. Wait for it to make room instead of
+                // spinning: the wait has a deadline, so a stop request is seen.
+                std::unique_lock<std::mutex> lock(mutex_);
+                readable_.wait_for(lock, std::chrono::milliseconds(20),
+                                   [this] { return stopping_ || ring_.available() > 0; });
+                continue;
+            }
+            const std::size_t want = std::min(sizeof(buffer), room);
+
             std::size_t size = 0;
 #if defined(_WIN32)
             // PeekNamedPipe reports what is waiting without blocking, which is what the
@@ -411,9 +428,9 @@ void LocalPtyChannel::startReader() {
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
                 continue;
             }
+            const DWORD to_read = static_cast<DWORD>(std::min<std::size_t>(available, want));
             DWORD read = 0;
-            if (!ReadFile(platform_->output_read, buffer, sizeof(buffer), &read, nullptr) ||
-                read == 0) {
+            if (!ReadFile(platform_->output_read, buffer, to_read, &read, nullptr) || read == 0) {
                 break;
             }
             size = static_cast<std::size_t>(read);
@@ -429,7 +446,7 @@ void LocalPtyChannel::startReader() {
             if (ready == 0) {
                 continue;
             }
-            const ssize_t count = ::read(platform_->master, buffer, sizeof(buffer));
+            const ssize_t count = ::read(platform_->master, buffer, want);
             if (count == 0) {
                 break;  // EOF: the shell exited.
             }
@@ -442,9 +459,16 @@ void LocalPtyChannel::startReader() {
             size = static_cast<std::size_t>(count);
 #endif
 
-            // Short writes are normal back-pressure; whatever did not fit stays in the
-            // socket buffer and the reader picks it up on the next pass.
-            ring_.write(buffer, size);
+            {
+                // The ring and the condition variable are one thing: the reader that
+                // waits for the ring must not miss the notification that says the
+                // ring is not empty any more. So the write happens under the same
+                // lock the waiter holds while it looks -- otherwise the write can
+                // land between the waiter's look and its wait, and the waiter sleeps
+                // until its deadline although the data is there.
+                std::lock_guard<std::mutex> lock(mutex_);
+                ring_.write(buffer, size);
+            }
 
             DataCallback callback;
             {
@@ -567,12 +591,20 @@ std::size_t LocalPtyChannel::readAvailable(std::uint8_t* destination, std::size_
             break;
         }
     }
-    lock.unlock();
-    return ring_.read(destination, max);
+    // The ring is read under the lock: the reader waits for the ring to have room,
+    // and it must not miss the notification that says there is room now.
+    const std::size_t count = ring_.read(destination, max);
+    // The reader waits for the ring to have room. It has to be told that there is
+    // room now, or it waits for its deadline although the ring is empty.
+    readable_.notify_all();
+    return count;
 }
 
 std::size_t LocalPtyChannel::readAvailableNow(std::uint8_t* destination, std::size_t max) {
-    return ring_.read(destination, max);
+    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::size_t count = ring_.read(destination, max);
+    readable_.notify_all();
+    return count;
 }
 
 void LocalPtyChannel::setDataCallback(DataCallback callback) {
