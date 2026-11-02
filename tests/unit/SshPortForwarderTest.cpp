@@ -55,6 +55,19 @@ std::string readSome(QTcpSocket& socket, int timeout_ms = 10000) {
     return socket.readAll().toStdString();
 }
 
+// Writes to the peer and makes sure the bytes actually left it.
+//
+// A socket that has no event loop of its own keeps what it cannot write in its own
+// buffer, and that buffer is only flushed when the socket is told it may write --
+// which needs the event loop. This test has no event loop of its own, so the bytes
+// are flushed here.
+void writeToPeer(QTcpSocket& peer, const char* data, int size) {
+    const qint64 written = peer.write(data, size);
+    const bool flushed = peer.waitForBytesWritten(2000);
+    EXPECT_EQ(written, static_cast<qint64>(size));
+    EXPECT_TRUE(flushed);
+}
+
 }  // namespace
 
 class SshPortForwarderTest : public ::testing::Test {
@@ -100,7 +113,8 @@ TEST_F(SshPortForwarderTest, ALocalForwardCarriesBytesToTheServer) {
 
     // The sshd answers with its version string. It has to come back through the
     // tunnel.
-    client.write("SSH-2.0-openscrt-test\r\n");
+    writeToPeer(client, "SSH-2.0-openscrt-test\r\n",
+                static_cast<int>(sizeof("SSH-2.0-openscrt-test\r\n") - 1));
     const std::string answer = readSome(client);
     EXPECT_NE(answer.find("SSH-"), std::string::npos) << answer;
 
@@ -123,7 +137,7 @@ TEST_F(SshPortForwarderTest, ADynamicForwardIsASocksProxy) {
 
     // The greeting: the version, one method, and "no authentication".
     const char greeting[3] = {0x05, 0x01, 0x00};
-    client.write(greeting, sizeof(greeting));
+    writeToPeer(client, greeting, sizeof(greeting));
     ASSERT_TRUE(client.waitForReadyRead(10000));
     const QByteArray answered = client.read(2);
     ASSERT_EQ(answered.size(), 2);
@@ -141,7 +155,7 @@ TEST_F(SshPortForwarderTest, ADynamicForwardIsASocksProxy) {
                                        1,
                                        static_cast<unsigned char>((server_.port >> 8) & 0xFF),
                                        static_cast<unsigned char>(server_.port & 0xFF)};
-    client.write(reinterpret_cast<const char*>(request), sizeof(request));
+    writeToPeer(client, reinterpret_cast<const char*>(request), sizeof(request));
 
     ASSERT_TRUE(client.waitForReadyRead(10000));
     const QByteArray reply = client.read(10);
@@ -150,7 +164,8 @@ TEST_F(SshPortForwarderTest, ADynamicForwardIsASocksProxy) {
     EXPECT_EQ(static_cast<std::uint8_t>(reply[1]), 0x00) << "the proxy refused the connection";
 
     // And the bytes go through.
-    client.write("SSH-2.0-openscrt-test\r\n");
+    writeToPeer(client, "SSH-2.0-openscrt-test\r\n",
+                static_cast<int>(sizeof("SSH-2.0-openscrt-test\r\n") - 1));
     const std::string answer = readSome(client);
     EXPECT_NE(answer.find("SSH-"), std::string::npos) << answer;
 
@@ -177,7 +192,8 @@ TEST_F(SshPortForwarderTest, ARemoteForwardMakesTheServerListen) {
     client.connectToHost("127.0.0.1", static_cast<quint16>(forwarder.boundPort()));
     ASSERT_TRUE(client.waitForConnected(10000));
 
-    client.write("SSH-2.0-openscrt-test\r\n");
+    writeToPeer(client, "SSH-2.0-openscrt-test\r\n",
+                static_cast<int>(sizeof("SSH-2.0-openscrt-test\r\n") - 1));
     const std::string answer = readSome(client);
     EXPECT_NE(answer.find("SSH-"), std::string::npos) << answer;
 

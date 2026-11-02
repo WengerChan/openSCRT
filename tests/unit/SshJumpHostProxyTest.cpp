@@ -9,7 +9,6 @@
 // to reach us.
 
 #include <gtest/gtest.h>
-#include <libssh/libssh.h>
 
 #include <chrono>
 #include <cstdint>
@@ -75,20 +74,22 @@ TEST_F(SshJumpHostProxyTest, TheTargetIsReachedThroughTheHop) {
 
     // The target answers with its version string, and that answer has travelled
     // through the hop.
-    auto* channel = static_cast<ssh_channel>(proxy.targetChannel());
+    //
+    // The bytes go through the proxy's own calls and not through libssh directly:
+    // the hop has a reader thread, and that thread reads the same socket. Two
+    // readers of one socket split the packets between them, and the answer never
+    // comes.
     const char request[] = "SSH-2.0-openscrt-test\r\n";
-    EXPECT_GT(ssh_channel_write(channel, request, static_cast<std::uint32_t>(sizeof(request))), 0);
+    EXPECT_GT(proxy.writeTarget(request, sizeof(request) - 1), 0);
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
     std::string answer;
     while (answer.find("SSH-") == std::string::npos &&
            std::chrono::steady_clock::now() < deadline) {
-        if (ssh_channel_poll_timeout(channel, 100, 0) > 0) {
-            char buffer[256];
-            const int count = ssh_channel_read(channel, buffer, sizeof(buffer), 0);
-            if (count > 0) {
-                answer.append(buffer, static_cast<std::size_t>(count));
-            }
+        char buffer[256];
+        const int count = proxy.readTarget(buffer, sizeof(buffer), 100);
+        if (count > 0) {
+            answer.append(buffer, static_cast<std::size_t>(count));
         }
     }
     EXPECT_NE(answer.find("SSH-"), std::string::npos) << answer;
