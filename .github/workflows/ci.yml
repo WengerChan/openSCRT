@@ -389,6 +389,7 @@ jobs:
           name: zmodem-wire-linux
           path: |
             /tmp/openscrt-zmodem-wire.bin
+            /tmp/openscrt-zmodem-answers.bin
           if-no-files-found: ignore
 
       # What the server said, after the tests have been against it. It is the

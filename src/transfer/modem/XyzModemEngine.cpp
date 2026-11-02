@@ -495,9 +495,17 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
 
         if (in_data_run_) {
             // The frames of a run follow one another: the sender sends the data
-            // header once, and then the frames come one after the other as long
-            // as they end with "more follows". No header comes between them, so
-            // asking for one is asking for something that never comes.
+            // header once, and then the frames come one after the other. No header
+            // comes between them, so asking for one is asking for something that
+            // never comes.
+            //
+            // The run ends with the frame that ends the file. A frame that asks
+            // for an answer ("more follows, and the other end has to answer") is
+            // in the middle of the run: the sender waits for the answer and then
+            // sends the next frame without a header, so treating such a frame as
+            // the end of the run makes the engine wait for a header that is not
+            // coming -- and the answer it sends in the meantime is what makes the
+            // far end restart the block it was sending.
             std::vector<std::uint8_t> payload;
             FrameEnd frame_end = FrameEnd::kEnd;
             std::size_t data_used = 0;
@@ -514,7 +522,7 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
                 // Whether the next thing is a frame or a header is still said by the
                 // frame that was stepped over.
                 bad_frames_ += 1;
-                in_data_run_ = (frame_end == FrameEnd::kContinue);
+                in_data_run_ = (frame_end != FrameEnd::kEnd);
                 continue;
             }
             if (phase_ == Phase::kReceiving) {
@@ -523,7 +531,7 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
             // "More follows" means another frame of the run follows. "The other
             // end has to answer" and "the frame is over" mean that what comes
             // next is a header again.
-            in_data_run_ = (frame_end == FrameEnd::kContinue);
+            in_data_run_ = (frame_end != FrameEnd::kEnd);
             continue;
         }
 
@@ -569,7 +577,7 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
                     fail("the file header could not be read");
                     break;
                 }
-                in_data_run_ = (frame_end == FrameEnd::kContinue);
+                in_data_run_ = (frame_end != FrameEnd::kEnd);
                 continue;
             }
             if (header.frame == ZmodemFrame::kFile) {
@@ -580,8 +588,10 @@ std::vector<std::uint8_t> XyzModemEngine::feed(const std::uint8_t* data, std::si
             } else if (header.frame == ZmodemFrame::kData && phase_ == Phase::kReceiving) {
                 handleBlock(payload, frame_end, out);
                 // The data header introduces a run of frames, and the run goes on
-                // as long as the frames end with "more follows".
-                in_data_run_ = (frame_end == FrameEnd::kContinue);
+                // until the frame that ends the file. The frames that ask for an
+                // answer are in the middle of the run: the sender waits for the
+                // answer and then sends the next frame without a header.
+                in_data_run_ = (frame_end != FrameEnd::kEnd);
             }
             continue;
         }

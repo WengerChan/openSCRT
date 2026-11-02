@@ -247,6 +247,15 @@ TEST(ZmodemEngineTest, AFileArrivesFromTheRealSender) {
     std::ofstream wire("/tmp/openscrt-zmodem-wire.bin", std::ios::binary | std::ios::trunc);
     std::vector<std::uint8_t> wire_memory;
     wire_memory.reserve(32 * 1024 * 1024);
+    // The answers go into a file of their own. What the engine says and what the far
+    // end says have to be looked at together: the far end restarts a block when it
+    // does not like what it gets, and the only way to tell why it restarted it is to
+    // see what was sent just before.
+    std::ofstream answers("/tmp/openscrt-zmodem-answers.bin", std::ios::binary | std::ios::trunc);
+    // A probe: how the transfer moves. The time per two megabytes says whether the
+    // slowness is spread out or comes in pauses, and the byte count says where it was.
+    const auto started = std::chrono::steady_clock::now();
+    std::uint64_t probed = 0;
     // The deadline scales with the size of the file: the transfer is a round trip
     // every eight kilobytes, and the deadline has to be long enough for the
     // biggest file the criterion names. It is capped, so that a transfer that
@@ -270,10 +279,23 @@ TEST(ZmodemEngineTest, AFileArrivesFromTheRealSender) {
         }
         const std::vector<std::uint8_t> answer = engine.feed(buffer.data(), count);
         if (!answer.empty()) {
+            answers.write(reinterpret_cast<const char*>(answer.data()),
+                          static_cast<std::streamsize>(answer.size()));
             sender.send(answer.data(), answer.size());
+        }
+        const std::uint64_t done = engine.bytesTransferred();
+        if (done >= probed + 2 * 1024 * 1024) {
+            probed = done;
+            const double seconds =
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+            std::fprintf(stderr, "zmodem probe: %llu bytes in %.1f s (%.0f KB/s), %zu bad frames\n",
+                         static_cast<unsigned long long>(done), seconds,
+                         seconds > 0.0 ? static_cast<double>(done) / 1024.0 / seconds : 0.0,
+                         engine.badFrames());
         }
     }
     wire.close();
+    answers.close();
 
     EXPECT_EQ(engine.badFrames(), 0u) << "frames arrived with a checksum that does not match";
     if (engine.sawBadFrame()) {
