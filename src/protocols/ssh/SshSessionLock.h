@@ -22,14 +22,67 @@
 // bring. libssh's own blocking reads read the socket themselves (the SFTP
 // subsystem's calls go through ssh_channel_read, which reads the socket), so a
 // call that waits for an answer makes progress by itself.
+//
+// The lock hands the session over in the order the threads asked for it, and
+// that is not a detail: see the comment on the class itself.
 
 #ifndef OPENCRT_PROTOCOLS_SSH_SSH_SESSION_LOCK_H_
 #define OPENCRT_PROTOCOLS_SSH_SSH_SESSION_LOCK_H_
 
+#include <atomic>
+#include <condition_variable>
+#include <cstdint>
 #include <map>
 #include <mutex>
 
 namespace openscrt::protocols::ssh {
+
+// The lock of one libssh session.
+//
+// std::mutex does not promise that the thread that has been waiting longest gets
+// the lock next, and that promise is needed here. The reader thread of a session
+// asks for the lock again the moment it gives it up: it polls for a hundred
+// milliseconds and then comes straight back for the next round. The window
+// between giving the lock up and taking it again is a handful of instructions,
+// so the reader takes it again almost every time -- and a thread that is waiting
+// for the lock (the SFTP subsystem, the forwarder) is left waiting for as long
+// as the reader keeps taking it. The symptom is a call that never runs at all:
+// the SFTP subsystem opens, and then the test waits for the first answer that
+// cannot come.
+//
+// So the lock is a queue: every thread takes a number when it asks, and the
+// number is served in the order the numbers were taken. The reader cannot
+// overtake the one that is already waiting.
+class SessionLock {
+ public:
+    SessionLock() = default;
+    SessionLock(const SessionLock&) = delete;
+    SessionLock& operator=(const SessionLock&) = delete;
+
+    void lock() {
+        const std::uint64_t mine = next_.fetch_add(1, std::memory_order_relaxed);
+        std::unique_lock<std::mutex> guard(mutex_);
+        turned_.wait(guard, [this, mine] { return mine == serving_; });
+    }
+
+    void unlock() {
+        {
+            const std::lock_guard<std::mutex> guard(mutex_);
+            serving_ += 1;
+        }
+        turned_.notify_all();
+    }
+
+ private:
+    // The number the next thread takes. It is only ever incremented, so it does
+    // not have to be read under the mutex.
+    std::atomic<std::uint64_t> next_{0};
+    // The number that is being served. It is read and written under the mutex.
+    std::uint64_t serving_{0};
+    std::mutex mutex_;
+    std::condition_variable turned_;
+};
+
 namespace detail {
 
 // The locks, one per session.
@@ -43,8 +96,8 @@ namespace detail {
 // the transfer layer -- and a lock that exists in two copies is two locks, which
 // is the thing this file exists to prevent. An inline function has one copy in
 // the program, and one static with it.
-inline std::map<void*, std::mutex>& sessionLocks() {
-    static auto* locks = new std::map<void*, std::mutex>();
+inline std::map<void*, SessionLock>& sessionLocks() {
+    static auto* locks = new std::map<void*, SessionLock>();
     return *locks;
 }
 
@@ -59,7 +112,7 @@ inline std::mutex& sessionLocksMutex() {
 
 // The lock of one libssh session. The handle is the session's own pointer, so that
 // two parts of the same session find the same lock.
-inline std::mutex& sshSessionLock(void* session) {
+inline SessionLock& sshSessionLock(void* session) {
     const std::lock_guard<std::mutex> guard(detail::sessionLocksMutex());
     return detail::sessionLocks()[session];
 }

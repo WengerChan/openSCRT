@@ -13,6 +13,7 @@
 #ifndef OPENCRT_PROTOCOLS_SSH_SSH_JUMP_HOST_PROXY_H_
 #define OPENCRT_PROTOCOLS_SSH_SSH_JUMP_HOST_PROXY_H_
 
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <vector>
@@ -68,6 +69,19 @@ class SshJumpHostProxy {
     // The channel that reaches the target. It is the libssh channel, so the type stays
     // behind this header; the caller that wants to talk to the target casts it.
     [[nodiscard]] void* targetChannel() const noexcept { return target_channel_; }
+
+    // Writes to the target through the chain.
+    //
+    // The session of the last hop has a reader thread of its own, and that thread
+    // reads the same socket: two readers split the packets between them and the
+    // stream falls out of step. So the call takes the lock of the session, and the
+    // answer is the number of bytes that were accepted.
+    int writeTarget(const void* data, std::size_t size);
+
+    // Reads from the target through the chain. It waits at most timeout_ms for the
+    // data to arrive, and answers the number of bytes it got: zero when nothing
+    // came, and a negative number when the channel is gone.
+    int readTarget(void* data, std::size_t size, int timeout_ms);
 
     [[nodiscard]] const JumpHostChain& chain() const noexcept { return chain_; }
 

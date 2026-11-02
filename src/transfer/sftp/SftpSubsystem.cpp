@@ -3,6 +3,7 @@
 #include <libssh/libssh.h>
 #include <libssh/sftp.h>
 
+#include <chrono>
 #include <cstdio>
 #include <fstream>
 #include <mutex>
@@ -65,9 +66,36 @@ void closeFile(sftp_file file, void* session) {
     if (file == nullptr) {
         return;
     }
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock(session));
+    const std::lock_guard<protocols::ssh::SessionLock> lock(
+        protocols::ssh::sshSessionLock(session));
     sftp_close(file);
 }
+
+// A probe: how long a call took.
+//
+// The calls of the subsystem wait for the server, and one of them taking seconds
+// instead of milliseconds says nothing about which one it was. The probe only
+// speaks when the call was slow, so the log stays readable.
+class CallTimer {
+ public:
+    explicit CallTimer(const char* what)
+        : what_(what), started_(std::chrono::steady_clock::now()) {}
+
+    ~CallTimer() {
+        const double seconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - started_).count();
+        if (seconds > 1.0) {
+            std::fprintf(stderr, "sftp probe: %s took %.1f s\n", what_, seconds);
+        }
+    }
+
+    CallTimer(const CallTimer&) = delete;
+    CallTimer& operator=(const CallTimer&) = delete;
+
+ private:
+    const char* what_;
+    std::chrono::steady_clock::time_point started_;
+};
 
 }  // namespace
 
@@ -76,6 +104,7 @@ SftpSubsystem::~SftpSubsystem() {
 }
 
 bool SftpSubsystem::open(protocols::ssh::SshNativeSession session, std::string& error) {
+    const CallTimer timer("open");
     if (session_ != nullptr) {
         error = "the sftp subsystem is already open";
         return false;
@@ -90,7 +119,8 @@ bool SftpSubsystem::open(protocols::ssh::SshNativeSession session, std::string& 
     // go through ssh_channel_read, which reads it -- and the channel's own reader
     // thread is on the same socket. libssh is not thread-safe, so the two have to
     // take turns: the lock of the session is what makes them take turns.
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock(session.get()));
+    const std::lock_guard<protocols::ssh::SessionLock> lock(
+        protocols::ssh::sshSessionLock(session.get()));
     sftp_session sftp = sftp_new(native);
     if (sftp == nullptr) {
         const char* reason = ssh_get_error(native);
@@ -116,7 +146,8 @@ void SftpSubsystem::close() {
         return;
     }
     {
-        const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock(native_session_));
+        const std::lock_guard<protocols::ssh::SessionLock> lock(
+            protocols::ssh::sshSessionLock(native_session_));
         sftp_free(static_cast<sftp_session>(session_));
     }
     session_ = nullptr;
@@ -124,12 +155,14 @@ void SftpSubsystem::close() {
 }
 
 std::string SftpSubsystem::homeDirectory(std::string& error) {
+    const CallTimer timer("homeDirectory");
     if (session_ == nullptr) {
         error = "the sftp subsystem is not open";
         return {};
     }
     auto* sftp = static_cast<sftp_session>(session_);
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock(native_session_));
+    const std::lock_guard<protocols::ssh::SessionLock> lock(
+        protocols::ssh::sshSessionLock(native_session_));
     char* path = sftp_canonicalize_path(sftp, ".");
     if (path == nullptr) {
         error = errorText(sftp);
@@ -142,13 +175,15 @@ std::string SftpSubsystem::homeDirectory(std::string& error) {
 
 std::vector<SftpFileInfo> SftpSubsystem::listDirectory(const std::string& path,
                                                        std::string& error) {
+    const CallTimer timer("listDirectory");
     std::vector<SftpFileInfo> entries;
     if (session_ == nullptr) {
         error = "the sftp subsystem is not open";
         return entries;
     }
     auto* sftp = static_cast<sftp_session>(session_);
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock(native_session_));
+    const std::lock_guard<protocols::ssh::SessionLock> lock(
+        protocols::ssh::sshSessionLock(native_session_));
     sftp_dir directory = sftp_opendir(sftp, path.c_str());
     if (directory == nullptr) {
         error = errorText(sftp);
@@ -176,12 +211,14 @@ std::vector<SftpFileInfo> SftpSubsystem::listDirectory(const std::string& path,
 }
 
 std::optional<SftpFileInfo> SftpSubsystem::stat(const std::string& path, std::string& error) {
+    const CallTimer timer("stat");
     if (session_ == nullptr) {
         error = "the sftp subsystem is not open";
         return std::nullopt;
     }
     auto* sftp = static_cast<sftp_session>(session_);
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock(native_session_));
+    const std::lock_guard<protocols::ssh::SessionLock> lock(
+        protocols::ssh::sshSessionLock(native_session_));
     sftp_attributes attributes = sftp_stat(sftp, path.c_str());
     if (attributes == nullptr) {
         error = errorText(sftp);
@@ -198,7 +235,8 @@ std::string SftpSubsystem::canonicalPath(const std::string& path, std::string& e
         return {};
     }
     auto* sftp = static_cast<sftp_session>(session_);
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock(native_session_));
+    const std::lock_guard<protocols::ssh::SessionLock> lock(
+        protocols::ssh::sshSessionLock(native_session_));
     char* canonical = sftp_canonicalize_path(sftp, path.c_str());
     if (canonical == nullptr) {
         error = errorText(sftp);
@@ -211,6 +249,7 @@ std::string SftpSubsystem::canonicalPath(const std::string& path, std::string& e
 
 bool SftpSubsystem::download(const std::string& remote_path, const std::string& local_path,
                              std::string& error) {
+    const CallTimer timer("download");
     if (session_ == nullptr) {
         error = "the sftp subsystem is not open";
         return false;
@@ -218,7 +257,8 @@ bool SftpSubsystem::download(const std::string& remote_path, const std::string& 
     auto* sftp = static_cast<sftp_session>(session_);
     sftp_file file = nullptr;
     {
-        const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock(native_session_));
+        const std::lock_guard<protocols::ssh::SessionLock> lock(
+            protocols::ssh::sshSessionLock(native_session_));
         sftp_file opened = sftp_open(sftp, remote_path.c_str(), kReadOnly, 0);
         if (opened == nullptr) {
             error = errorText(sftp);
@@ -238,7 +278,8 @@ bool SftpSubsystem::download(const std::string& remote_path, const std::string& 
         // reader thread of the channel gets its turn between two reads.
         ssize_t count = 0;
         {
-            const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock(native_session_));
+            const std::lock_guard<protocols::ssh::SessionLock> lock(
+                protocols::ssh::sshSessionLock(native_session_));
             count = sftp_read(file, buffer.data(), buffer.size());
         }
         if (count < 0) {
@@ -262,6 +303,7 @@ bool SftpSubsystem::download(const std::string& remote_path, const std::string& 
 
 bool SftpSubsystem::upload(const std::string& local_path, const std::string& remote_path,
                            std::string& error) {
+    const CallTimer timer("upload");
     if (session_ == nullptr) {
         error = "the sftp subsystem is not open";
         return false;
@@ -274,7 +316,8 @@ bool SftpSubsystem::upload(const std::string& local_path, const std::string& rem
     auto* sftp = static_cast<sftp_session>(session_);
     sftp_file file = nullptr;
     {
-        const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock(native_session_));
+        const std::lock_guard<protocols::ssh::SessionLock> lock(
+            protocols::ssh::sshSessionLock(native_session_));
         sftp_file opened =
             sftp_open(sftp, remote_path.c_str(), kWriteOnly | kCreate | kTruncate, 0644);
         if (opened == nullptr) {
@@ -294,7 +337,7 @@ bool SftpSubsystem::upload(const std::string& local_path, const std::string& rem
         while (written < static_cast<std::size_t>(count)) {
             ssize_t accepted = 0;
             {
-                const std::lock_guard<std::mutex> lock(
+                const std::lock_guard<protocols::ssh::SessionLock> lock(
                     protocols::ssh::sshSessionLock(native_session_));
                 accepted = sftp_write(file, buffer.data() + written,
                                       static_cast<std::size_t>(count) - written);
@@ -317,7 +360,8 @@ bool SftpSubsystem::remove(const std::string& path, std::string& error) {
         return false;
     }
     auto* sftp = static_cast<sftp_session>(session_);
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock(native_session_));
+    const std::lock_guard<protocols::ssh::SessionLock> lock(
+        protocols::ssh::sshSessionLock(native_session_));
     if (sftp_unlink(sftp, path.c_str()) != SSH_OK) {
         error = errorText(sftp);
         return false;
@@ -331,7 +375,8 @@ bool SftpSubsystem::makeDirectory(const std::string& path, std::string& error) {
         return false;
     }
     auto* sftp = static_cast<sftp_session>(session_);
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock(native_session_));
+    const std::lock_guard<protocols::ssh::SessionLock> lock(
+        protocols::ssh::sshSessionLock(native_session_));
     if (sftp_mkdir(sftp, path.c_str(), 0755) != SSH_OK) {
         error = errorText(sftp);
         return false;
@@ -345,7 +390,8 @@ bool SftpSubsystem::removeDirectory(const std::string& path, std::string& error)
         return false;
     }
     auto* sftp = static_cast<sftp_session>(session_);
-    const std::lock_guard<std::mutex> lock(protocols::ssh::sshSessionLock(native_session_));
+    const std::lock_guard<protocols::ssh::SessionLock> lock(
+        protocols::ssh::sshSessionLock(native_session_));
     if (sftp_rmdir(sftp, path.c_str()) != SSH_OK) {
         error = errorText(sftp);
         return false;

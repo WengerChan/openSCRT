@@ -2,6 +2,7 @@
 
 #include <libssh/libssh.h>
 
+#include <cstdint>
 #include <mutex>
 #include <utility>
 
@@ -16,7 +17,7 @@ SshJumpHostProxy::~SshJumpHostProxy() {
         // The channel belongs to the last hop's session, and the hops are still
         // there: they are cleared on the next line.
         void* session = hops_.empty() ? nullptr : hops_.back()->nativeSession().get();
-        const std::lock_guard<std::mutex> lock(sshSessionLock(session));
+        const std::lock_guard<SessionLock> lock(sshSessionLock(session));
         ssh_channel_free(static_cast<ssh_channel>(target_channel_));
         target_channel_ = nullptr;
     }
@@ -67,7 +68,7 @@ TransportResult SshJumpHostProxy::connect() {
         // libssh is not thread-safe: the session is locked while the channel is
         // opened, and the opening reads the socket itself. The hop has a reader
         // thread of its own, and it is reading the same socket.
-        const std::lock_guard<std::mutex> lock(sshSessionLock(native));
+        const std::lock_guard<SessionLock> lock(sshSessionLock(native));
         channel = ssh_channel_new(native);
         if (channel != nullptr) {
             opened = ssh_channel_open_forward(channel, chain_.target_host.c_str(),
@@ -95,6 +96,36 @@ SshNativeSession SshJumpHostProxy::lastHopSession() const noexcept {
         return SshNativeSession();
     }
     return hops_.back()->nativeSession();
+}
+
+int SshJumpHostProxy::writeTarget(const void* data, std::size_t size) {
+    if (target_channel_ == nullptr || data == nullptr || size == 0) {
+        return -1;
+    }
+    auto* channel = static_cast<ssh_channel>(target_channel_);
+    void* session = hops_.empty() ? nullptr : hops_.back()->nativeSession().get();
+    // The hop has a reader thread of its own, and it reads the same socket. The
+    // lock of the session is what makes the two of them take turns.
+    const std::lock_guard<SessionLock> lock(sshSessionLock(session));
+    return ssh_channel_write(channel, data, static_cast<std::uint32_t>(size));
+}
+
+int SshJumpHostProxy::readTarget(void* data, std::size_t size, int timeout_ms) {
+    if (target_channel_ == nullptr || data == nullptr || size == 0) {
+        return -1;
+    }
+    auto* channel = static_cast<ssh_channel>(target_channel_);
+    void* session = hops_.empty() ? nullptr : hops_.back()->nativeSession().get();
+    const std::lock_guard<SessionLock> lock(sshSessionLock(session));
+    // The poll and the read that follows it are one step, under one lock: the
+    // poll says "there is data" and the read takes it, and if the lock were let
+    // go in between, the reader thread could take the data and the read would
+    // wait for data that is not coming.
+    const int ready = ssh_channel_poll_timeout(channel, timeout_ms, 0);
+    if (ready <= 0) {
+        return ready;  // Zero: nothing came. Negative: the channel is gone.
+    }
+    return ssh_channel_read(channel, data, static_cast<std::uint32_t>(size), 0);
 }
 
 }  // namespace openscrt::protocols::ssh

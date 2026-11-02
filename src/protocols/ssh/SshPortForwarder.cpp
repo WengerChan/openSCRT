@@ -5,6 +5,7 @@
 #include <QHostAddress>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
@@ -19,6 +20,10 @@ namespace {
 // worker has two things to look at: the socket and the channel.
 constexpr int kPollTimeoutMs = 2;
 
+// How long the worker waits for a connection to come in. It is longer than the
+// poll above, because nothing else has to happen while it waits.
+constexpr int kAcceptTimeoutMs = 20;
+
 // The SOCKS5 reply codes.
 constexpr std::uint8_t kSocksSuccess = 0x00;
 constexpr std::uint8_t kSocksGeneralFailure = 0x01;
@@ -26,6 +31,32 @@ constexpr std::uint8_t kSocksCommandNotSupported = 0x07;
 
 std::uint16_t readBigEndian16(const std::uint8_t* bytes) {
     return static_cast<std::uint16_t>((bytes[0] << 8) | bytes[1]);
+}
+
+// Writes to the socket and makes sure the bytes actually left it.
+//
+// A socket that has no event loop of its own keeps what it cannot write in its own
+// buffer, and that buffer is only flushed when the socket is told it may write --
+// which needs the event loop. The worker has no event loop, so the bytes are
+// flushed here. Without that they sit in the buffer, the far end never sees them,
+// and a tunnel that is really carrying bytes looks like a tunnel that carries
+// nothing.
+bool writeAndFlush(QTcpSocket* socket, const char* data, std::size_t size) {
+    if (socket == nullptr || data == nullptr || size == 0) {
+        return false;
+    }
+    const qint64 written = socket->write(data, static_cast<qint64>(size));
+    if (written < 0) {
+        return false;
+    }
+    // What did not fit waits in the buffer of the socket until it may write. The
+    // wait has a deadline: a socket that cannot write is a broken connection, and
+    // the worker has to come back to the other connections.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (socket->bytesToWrite() > 0 && std::chrono::steady_clock::now() < deadline) {
+        socket->waitForBytesWritten(200);
+    }
+    return socket->bytesToWrite() == 0;
 }
 
 }  // namespace
@@ -51,7 +82,7 @@ bool SshPortForwarder::start(std::string& error) {
         {
             // libssh is not thread-safe: the session is locked while the request
             // is made, and the request reads the socket itself.
-            const std::lock_guard<std::mutex> lock(sshSessionLock(native));
+            const std::lock_guard<SessionLock> lock(sshSessionLock(native));
             answer = ssh_channel_listen_forward(native, rule_.listen_address.c_str(),
                                                 rule_.listen_port, &bound);
         }
@@ -87,7 +118,7 @@ void SshPortForwarder::stop() {
     }
     for (Connection& connection : connections_) {
         if (connection.channel != nullptr) {
-            const std::lock_guard<std::mutex> lock(sshSessionLock(session_.get()));
+            const std::lock_guard<SessionLock> lock(sshSessionLock(session_.get()));
             ssh_channel_free(static_cast<ssh_channel>(connection.channel));
         }
         if (connection.socket != nullptr) {
@@ -102,7 +133,16 @@ void SshPortForwarder::stop() {
 }
 
 bool SshPortForwarder::acceptPending() {
-    if (!server_ || !server_->hasPendingConnections()) {
+    if (!server_) {
+        return false;
+    }
+    // The server has no event loop of its own, so the connection is noticed by
+    // waitForNewConnection: it waits for one without an event loop. Without that
+    // the connection stays in the backlog of the listener and nobody takes it.
+    if (!server_->hasPendingConnections()) {
+        server_->waitForNewConnection(kAcceptTimeoutMs);
+    }
+    if (!server_->hasPendingConnections()) {
         return false;
     }
     QTcpSocket* socket = server_->nextPendingConnection();
@@ -135,7 +175,7 @@ bool SshPortForwarder::acceptPending() {
     {
         // libssh is not thread-safe: the session is locked while the channel is
         // opened, and the opening reads the socket itself.
-        const std::lock_guard<std::mutex> lock(sshSessionLock(native));
+        const std::lock_guard<SessionLock> lock(sshSessionLock(native));
         channel = ssh_channel_new(native);
         if (channel != nullptr) {
             opened = ssh_channel_open_forward(channel, rule_.remote_address.c_str(),
@@ -171,7 +211,7 @@ bool SshPortForwarder::acceptRemote() {
     {
         // libssh is not thread-safe: the session is locked while the request is
         // made, and the request reads the socket itself.
-        const std::lock_guard<std::mutex> lock(sshSessionLock(native));
+        const std::lock_guard<SessionLock> lock(sshSessionLock(native));
         channel = ssh_channel_open_forward_port(native, 50, &destination_port, &originator,
                                                 &originator_port);
     }
@@ -224,7 +264,7 @@ bool SshPortForwarder::readSocksRequest(Connection& connection, std::string& err
     socket->read(method_count);
     // No authentication: the connection is already inside the SSH session.
     const char answer[2] = {0x05, 0x00};
-    socket->write(answer, sizeof(answer));
+    writeAndFlush(socket, answer, sizeof(answer));
 
     // The request: the version, the command, a byte that is always zero, the kind of
     // address, the address and the port.
@@ -312,7 +352,7 @@ bool SshPortForwarder::readSocksRequest(Connection& connection, std::string& err
     {
         // libssh is not thread-safe: the session is locked while the channel is
         // opened, and the opening reads the socket itself.
-        const std::lock_guard<std::mutex> lock(sshSessionLock(native));
+        const std::lock_guard<SessionLock> lock(sshSessionLock(native));
         channel = ssh_channel_new(native);
         if (channel != nullptr) {
             opened =
@@ -342,7 +382,7 @@ void SshPortForwarder::writeSocksReply(Connection& connection, std::uint8_t code
     // The version, the answer, a byte that is always zero, the kind of address (four
     // bytes of it), the address and the port.
     const unsigned char reply[10] = {0x05, code, 0x00, 0x01, 0, 0, 0, 0, 0, 0};
-    connection.socket->write(reinterpret_cast<const char*>(reply), sizeof(reply));
+    writeAndFlush(connection.socket, reinterpret_cast<const char*>(reply), sizeof(reply));
 }
 
 bool SshPortForwarder::pump(Connection& connection) {
@@ -360,7 +400,7 @@ bool SshPortForwarder::pump(Connection& connection) {
     if (connection.socket->waitForReadyRead(kPollTimeoutMs)) {
         const QByteArray chunk = connection.socket->readAll();
         if (!chunk.isEmpty()) {
-            const std::lock_guard<std::mutex> lock(sshSessionLock(session_.get()));
+            const std::lock_guard<SessionLock> lock(sshSessionLock(session_.get()));
             ssh_channel_write(channel, chunk.constData(), static_cast<std::uint32_t>(chunk.size()));
         }
     }
@@ -374,7 +414,7 @@ bool SshPortForwarder::pump(Connection& connection) {
         // data" and the read takes it, and if the lock were let go in between,
         // another thread could take the data and the read would wait for data
         // that is not coming.
-        const std::lock_guard<std::mutex> lock(sshSessionLock(session_.get()));
+        const std::lock_guard<SessionLock> lock(sshSessionLock(session_.get()));
         ready = ssh_channel_poll_timeout(channel, kPollTimeoutMs, 0);
         if (ready > 0) {
             count = ssh_channel_read(channel, buffer, sizeof(buffer), 0);
@@ -382,7 +422,7 @@ bool SshPortForwarder::pump(Connection& connection) {
     }
     if (ready > 0) {
         if (count > 0) {
-            connection.socket->write(buffer, count);
+            writeAndFlush(connection.socket, buffer, static_cast<std::size_t>(count));
         } else if (count == 0) {
             return false;  // The far end closed.
         }

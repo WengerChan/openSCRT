@@ -268,7 +268,7 @@ void Ssh2Channel::startReader() {
                 // the data, and the read would then wait for data that is not
                 // coming -- while holding the lock, which stops every other
                 // thread that needs this session.
-                const std::lock_guard<std::mutex> lock(sshSessionLock(session.session));
+                const std::lock_guard<SessionLock> lock(sshSessionLock(session.session));
                 ready = ssh_channel_poll_timeout(session.channel, kPollTimeoutMs, 0);
                 if (ready > 0) {
                     count = ssh_channel_read(session.channel, buffer, sizeof(buffer), 0);
@@ -322,7 +322,7 @@ TransportResult Ssh2Channel::disconnect() {
     stopReader();
     if (session.channel != nullptr) {
         {
-            const std::lock_guard<std::mutex> lock(sshSessionLock(session.session));
+            const std::lock_guard<SessionLock> lock(sshSessionLock(session.session));
             ssh_channel_close(session.channel);
             ssh_channel_free(session.channel);
         }
@@ -349,7 +349,7 @@ void Ssh2Channel::send(const std::uint8_t* data, std::size_t size) {
     if (session.channel == nullptr) {
         return;
     }
-    const std::lock_guard<std::mutex> lock(sshSessionLock(session.session));
+    const std::lock_guard<SessionLock> lock(sshSessionLock(session.session));
     ssh_channel_write(session.channel, data, static_cast<std::uint32_t>(size));
 }
 
