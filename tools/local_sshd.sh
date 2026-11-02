@@ -132,6 +132,13 @@ PermitRootLogin no
 StrictModes no
 UseDNS no
 LogLevel VERBOSE
+# The limits are the distribution's defaults except for the ones the tests need.
+# MaxStartups refuses connections at random once there are many of them, and
+# MaxSessions is per connection: a test that opens twenty sessions at once is
+# then refused for a reason that has nothing to do with the code under test.
+MaxStartups 100:30:200
+MaxSessions 100
+MaxAuthTries 20
 EOF
 
 # The SFTP subsystem (P3-T4). The configuration above is the whole file, so the
